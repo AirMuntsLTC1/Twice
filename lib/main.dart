@@ -177,10 +177,38 @@ class _TwiceShellState extends State<TwiceShell> {
 
     return Scaffold(
       appBar: AppBar(
+        centerTitle: selected == 4,
         title: selected == 0
             ? const Text(
                 'Twice',
                 style: TextStyle(fontWeight: FontWeight.w900, fontSize: 28),
+              )
+            : selected == 1
+            ? const Text(
+                'Explore',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 26),
+              )
+            : selected == 2
+            ? const Text(
+                'Create',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 26),
+              )
+            : selected == 3
+            ? const Text(
+                'Activity',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 26),
+              )
+            : const Text(
+                '@you  ⌄',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
+              ),
+        leading: selected == 4
+            ? IconButton(
+                tooltip: 'Settings',
+                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Settings will be added later')),
+                ),
+                icon: const Icon(Icons.settings_outlined, size: 25),
               )
             : null,
         actions: [
@@ -551,13 +579,11 @@ class _AnimatedFollowButtonState extends State<_AnimatedFollowButton>
   }
 }
 
-
 class _WaterBookmarkButton extends StatefulWidget {
   const _WaterBookmarkButton({super.key});
 
   @override
-  State<_WaterBookmarkButton> createState() =>
-      _WaterBookmarkButtonState();
+  State<_WaterBookmarkButton> createState() => _WaterBookmarkButtonState();
 }
 
 class _WaterBookmarkButtonState extends State<_WaterBookmarkButton>
@@ -632,13 +658,12 @@ class _BookmarkWaterClipper extends CustomClipper<Path> {
 
     // Small wave along the rising waterline.
     path.quadraticBezierTo(
-      size.width * 0.25, waterY - 2.5,
-      size.width * 0.5, waterY,
+      size.width * 0.25,
+      waterY - 2.5,
+      size.width * 0.5,
+      waterY,
     );
-    path.quadraticBezierTo(
-      size.width * 0.75, waterY + 2.5,
-      size.width, waterY,
-    );
+    path.quadraticBezierTo(size.width * 0.75, waterY + 2.5, size.width, waterY);
 
     path.lineTo(size.width, size.height);
     path.close();
@@ -792,10 +817,7 @@ class PostCard extends StatelessWidget {
                               content: Text('Comments UI will be added later'),
                             ),
                           ),
-                      icon: const Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        size: 27,
-                      ),
+                      icon: const Icon(Icons.mode_comment_outlined, size: 27),
                     ),
                     _RepostActionButton(
                       onPressed: () => ScaffoldMessenger.of(context)
@@ -918,189 +940,11 @@ class CreatePage extends StatefulWidget {
 }
 
 class _CreatePageState extends State<CreatePage> {
-  Future<void> _openComposer() async {
-    await Navigator.of(context).push<void>(
-      PageRouteBuilder<void>(
-        transitionDuration: const Duration(milliseconds: 400),
-        reverseTransitionDuration: const Duration(milliseconds: 300),
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return _TwiceComposerScreen(onPost: widget.onPost);
-        },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.fastOutSlowIn,
-            reverseCurve: Curves.easeInOut,
-          );
-          return FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.985, end: 1).animate(curved),
-              child: child,
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _quickAction(IconData icon, String label, Color color) {
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: _openComposer,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 25),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: ink,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(18),
-      children: [
-        const Text(
-          'Create',
-          style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 5),
-        const Text(
-          'Share a moment with your people.',
-          style: TextStyle(color: muted),
-        ),
-        const SizedBox(height: 22),
-        Hero(
-          tag: 'twice-composer-card',
-          child: Material(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(22),
-              onTap: _openComposer,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: const Color(0xFFECECF2)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x08000000),
-                      blurRadius: 18,
-                      offset: Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    const CircleAvatar(
-                      radius: 23,
-                      backgroundColor: Color(0xFFE5DEFF),
-                      child: Icon(
-                        Icons.person_rounded,
-                        color: violet,
-                        size: 27,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        "What's on your mind?",
-                        style: TextStyle(
-                          color: muted,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: violet,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.edit_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFECECF2)),
-          ),
-          child: Row(
-            children: [
-              _quickAction(
-                Icons.photo_library_outlined,
-                'Photo',
-                const Color(0xFF28A66A),
-              ),
-              _quickAction(
-                Icons.person_add_alt_1_rounded,
-                'Tag people',
-                const Color(0xFF3985E8),
-              ),
-              _quickAction(
-                Icons.sentiment_satisfied_alt_rounded,
-                'Feeling',
-                const Color(0xFFF0A329),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 22),
-        Container(
-          height: 170,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFB7A5FF), Color(0xFFF0C3DC)],
-            ),
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: const Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.auto_awesome_rounded, size: 37),
-              SizedBox(height: 8),
-              Text(
-                'Your next moment starts here',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Tap the composer to write a post',
-                style: TextStyle(fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+    // Show the full composer directly when the Create tab is selected.
+    // Avoid a second tap and avoid a costly route transition.
+    return _TwiceComposerScreen(onPost: widget.onPost);
   }
 }
 
@@ -1882,56 +1726,8 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       children: [
-        // Profile top bar: settings left, username centered.
-        SizedBox(
-          height: 48,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: IconButton(
-                  tooltip: 'Settings',
-                  onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Settings will be added later'),
-                    ),
-                  ),
-                  icon: const Icon(Icons.settings_outlined, size: 26),
-                ),
-              ),
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Account switcher will be added later'),
-                  ),
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '@you',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      SizedBox(width: 5),
-                      Icon(Icons.keyboard_arrow_down_rounded, size: 24),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
         // Avatar on the left, statistics on the right.
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -1939,11 +1735,7 @@ class ProfilePage extends StatelessWidget {
             const CircleAvatar(
               radius: 43,
               backgroundColor: Color(0xFFECE7FF),
-              child: Icon(
-                Icons.person_rounded,
-                size: 52,
-                color: violet,
-              ),
+              child: Icon(Icons.person_rounded, size: 52, color: violet),
             ),
             const SizedBox(width: 18),
             Expanded(
@@ -1984,10 +1776,7 @@ class ProfilePage extends StatelessWidget {
           children: [
             Icon(Icons.grid_on_rounded),
             SizedBox(width: 8),
-            Text(
-              'Your posts',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
+            Text('Your posts', style: TextStyle(fontWeight: FontWeight.w800)),
           ],
         ),
         const SizedBox(height: 14),

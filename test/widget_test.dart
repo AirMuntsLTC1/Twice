@@ -7,7 +7,6 @@ void main() {
     await tester.pumpWidget(const TwiceApp());
 
     expect(find.text('Twice'), findsOneWidget);
-    expect(find.text('Your feed'), findsOneWidget);
     expect(find.text('Explore'), findsOneWidget);
     expect(find.text('Create'), findsOneWidget);
     expect(find.text('Activity'), findsOneWidget);

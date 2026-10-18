@@ -177,10 +177,12 @@ class _TwiceShellState extends State<TwiceShell> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Twice',
-          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 28),
-        ),
+        title: selected == 0
+            ? const Text(
+                'Twice',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 28),
+              )
+            : null,
         actions: [
           IconButton(
             tooltip: 'Messages',
@@ -292,7 +294,7 @@ class StoryStrip extends StatelessWidget {
                   ),
                 ),
                 child: CircleAvatar(
-                  radius: 25,
+                  radius: 32,
                   backgroundColor: colors[i],
                   child: i == 0
                       ? const Icon(Icons.add, color: Colors.white, size: 28)
@@ -364,7 +366,7 @@ class _RepostActionButtonState extends State<_RepostActionButton>
             ),
           );
         },
-        child: const Icon(Icons.repeat_rounded, size: 28),
+        child: const Icon(Icons.share_rounded, size: 28),
       ),
     );
   }
@@ -384,7 +386,7 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 2),
+    duration: const Duration(milliseconds: 500),
   );
 
   late final Animation<double> _pop = TweenSequence<double>([
@@ -549,6 +551,105 @@ class _AnimatedFollowButtonState extends State<_AnimatedFollowButton>
   }
 }
 
+
+class _WaterBookmarkButton extends StatefulWidget {
+  const _WaterBookmarkButton({super.key});
+
+  @override
+  State<_WaterBookmarkButton> createState() =>
+      _WaterBookmarkButtonState();
+}
+
+class _WaterBookmarkButtonState extends State<_WaterBookmarkButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 650),
+  );
+
+  bool _saved = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _toggleSaved() {
+    setState(() => _saved = !_saved);
+    if (_saved) {
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: _saved ? 'Unsave post' : 'Save post',
+      onPressed: _toggleSaved,
+      icon: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final progress = _controller.value;
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              const Icon(
+                Icons.bookmark_border_rounded,
+                size: 28,
+                color: Colors.black87,
+              ),
+              if (progress > 0)
+                ClipPath(
+                  clipper: _BookmarkWaterClipper(progress),
+                  child: const Icon(
+                    Icons.bookmark_rounded,
+                    size: 28,
+                    color: Color(0xFFFFD600),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _BookmarkWaterClipper extends CustomClipper<Path> {
+  const _BookmarkWaterClipper(this.progress);
+
+  final double progress;
+
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    final waterY = size.height * (1 - progress);
+    path.moveTo(0, size.height);
+    path.lineTo(0, waterY);
+
+    // Small wave along the rising waterline.
+    path.quadraticBezierTo(
+      size.width * 0.25, waterY - 2.5,
+      size.width * 0.5, waterY,
+    );
+    path.quadraticBezierTo(
+      size.width * 0.75, waterY + 2.5,
+      size.width, waterY,
+    );
+
+    path.lineTo(size.width, size.height);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant _BookmarkWaterClipper oldClipper) =>
+      oldClipper.progress != progress;
+}
+
 class PostCard extends StatelessWidget {
   const PostCard({super.key, required this.post, required this.onLike});
 
@@ -705,7 +806,7 @@ class PostCard extends StatelessWidget {
                           ),
                     ),
                     const Spacer(),
-                    const Icon(Icons.bookmark_border_rounded, size: 24),
+                    _WaterBookmarkButton(key: ValueKey(post.id)),
                   ],
                 ),
                 Padding(
@@ -1781,28 +1882,77 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
-        const Text(
-          'Your profile',
-          style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
+        // Profile top bar: settings left, username centered.
+        SizedBox(
+          height: 48,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  tooltip: 'Settings',
+                  onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Settings will be added later'),
+                    ),
+                  ),
+                  icon: const Icon(Icons.settings_outlined, size: 26),
+                ),
+              ),
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Account switcher will be added later'),
+                  ),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '@you',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(width: 5),
+                      Icon(Icons.keyboard_arrow_down_rounded, size: 24),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 24),
-        const Row(
+        const SizedBox(height: 20),
+
+        // Avatar on the left, statistics on the right.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            CircleAvatar(
-              radius: 38,
-              backgroundColor: Color(0xFFDCD2FF),
-              child: Icon(Icons.person_rounded, size: 45, color: violet),
+            const CircleAvatar(
+              radius: 43,
+              backgroundColor: Color(0xFFECE7FF),
+              child: Icon(
+                Icons.person_rounded,
+                size: 52,
+                color: violet,
+              ),
             ),
-            SizedBox(width: 24),
+            const SizedBox(width: 18),
             Expanded(
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _ProfileStat(value: '3', label: 'Posts'),
-                  _ProfileStat(value: '128', label: 'Followers'),
-                  _ProfileStat(value: '96', label: 'Following'),
+                  _ProfileStat(value: '${posts.length}', label: 'Posts'),
+                  const _ProfileStat(value: '0', label: 'Followers'),
+                  const _ProfileStat(value: '0', label: 'Following'),
                 ],
               ),
             ),
@@ -1813,11 +1963,12 @@ class ProfilePage extends StatelessWidget {
           'Your Name',
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
         ),
+        const SizedBox(height: 3),
         const Text(
           'Making every moment count ✨',
           style: TextStyle(color: muted),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 18),
         OutlinedButton(
           onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -1826,38 +1977,49 @@ class ProfilePage extends StatelessWidget {
           ),
           child: const Text('Edit profile'),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         const Divider(),
         const SizedBox(height: 8),
         const Row(
           children: [
             Icon(Icons.grid_on_rounded),
             SizedBox(width: 8),
-            Text('Your posts', style: TextStyle(fontWeight: FontWeight.w800)),
+            Text(
+              'Your posts',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
           ],
         ),
         const SizedBox(height: 14),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: posts.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 6,
-            mainAxisSpacing: 6,
-          ),
-          itemBuilder: (context, i) => Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: posts[i].art),
-              borderRadius: BorderRadius.circular(12),
+        if (posts.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Text('No posts yet', style: TextStyle(color: muted)),
             ),
-            child: const Icon(
-              Icons.auto_awesome_rounded,
-              color: Colors.white,
-              size: 28,
+          )
+        else
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: posts.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 6,
+              mainAxisSpacing: 6,
+            ),
+            itemBuilder: (context, i) => Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: posts[i].art),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.auto_awesome_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
             ),
           ),
-        ),
         const SizedBox(height: 24),
         Text(
           'C++ core: ${NativeCore.instance.isLoaded ? "connected" : "preview fallback"}',

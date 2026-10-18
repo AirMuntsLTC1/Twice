@@ -1,6 +1,7 @@
-import 'dart:ffi';
+import 'dart:ffi' hide Size;
 
 import 'package:flutter/material.dart';
+import 'package:photo_manager/photo_manager.dart';
 
 const ink = Color(0xFF171923);
 const muted = Color(0xFF7B8191);
@@ -73,6 +74,7 @@ class SocialPost {
     required this.caption,
     required this.likes,
     this.liked = false,
+    this.media = const [],
   });
 
   final int id;
@@ -84,6 +86,7 @@ class SocialPost {
   final String caption;
   int likes;
   bool liked;
+  final List<AssetEntity> media;
 }
 
 class TwiceShell extends StatefulWidget {
@@ -138,7 +141,7 @@ class _TwiceShellState extends State<TwiceShell> {
     });
   }
 
-  void createPost(String caption) {
+  void createPost(String caption, [List<AssetEntity> media = const []]) {
     setState(() {
       posts.insert(
         0,
@@ -151,6 +154,7 @@ class _TwiceShellState extends State<TwiceShell> {
           art: const [Color(0xFFB8A8FF), Color(0xFFEDC0DE)],
           caption: caption,
           likes: 0,
+          media: List<AssetEntity>.unmodifiable(media),
         ),
       );
       selected = 0;
@@ -236,9 +240,12 @@ class FeedPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
       children: [
-        const StoryStrip(),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: StoryStrip(),
+        ),
         const SizedBox(height: 8),
         ...posts.map((post) => PostCard(post: post, onLike: onLike)),
         const SizedBox(height: 16),
@@ -313,6 +320,235 @@ class StoryStrip extends StatelessWidget {
   }
 }
 
+class _RepostActionButton extends StatefulWidget {
+  const _RepostActionButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  State<_RepostActionButton> createState() => _RepostActionButtonState();
+}
+
+class _RepostActionButtonState extends State<_RepostActionButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 650),
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _repost() {
+    _controller.forward(from: 0);
+    widget.onPressed();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Repost',
+      onPressed: _repost,
+      icon: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final t = _controller.value;
+          return Transform.rotate(
+            angle: t * 2 * 3.141592653589793,
+            child: Transform.translate(
+              offset: Offset(0, -3 * (1 - (2 * t - 1).abs())),
+              child: child,
+            ),
+          );
+        },
+        child: const Icon(Icons.repeat_rounded, size: 28),
+      ),
+    );
+  }
+}
+
+class _AnimatedLikeButton extends StatefulWidget {
+  const _AnimatedLikeButton({required this.liked, required this.onPressed});
+
+  final bool liked;
+  final VoidCallback onPressed;
+
+  @override
+  State<_AnimatedLikeButton> createState() => _AnimatedLikeButtonState();
+}
+
+class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 2),
+  );
+
+  late final Animation<double> _pop = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 1.0,
+        end: 1.42,
+      ).chain(CurveTween(curve: Curves.easeOutBack)),
+      weight: 22,
+    ),
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 1.42,
+        end: 1.0,
+      ).chain(CurveTween(curve: Curves.easeInOut)),
+      weight: 18,
+    ),
+    TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 60),
+  ]).animate(_controller);
+
+  @override
+  void didUpdateWidget(covariant _AnimatedLikeButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.liked != widget.liked) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _like() {
+    widget.onPressed();
+    _controller.forward(from: 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: widget.liked ? 'Unlike post' : 'Like post',
+      onPressed: _like,
+      icon: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final progress = _controller.value;
+          return Transform.scale(
+            scale: _pop.value,
+            child: SizedBox(
+              width: 34,
+              height: 34,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(
+                    Icons.favorite_border_rounded,
+                    size: 29,
+                    color: widget.liked ? Colors.redAccent : ink,
+                  ),
+                  if (widget.liked)
+                    ClipRect(
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        heightFactor: progress,
+                        child: const Icon(
+                          Icons.favorite_rounded,
+                          size: 29,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AnimatedFollowButton extends StatefulWidget {
+  const _AnimatedFollowButton();
+
+  @override
+  State<_AnimatedFollowButton> createState() => _AnimatedFollowButtonState();
+}
+
+class _AnimatedFollowButtonState extends State<_AnimatedFollowButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+  );
+
+  bool _following = false;
+
+  void _toggleFollow() {
+    setState(() => _following = !_following);
+    _controller.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) => Transform.scale(
+        scale: 1 + (0.09 * (1 - (_controller.value * 2 - 1).abs())),
+        child: child,
+      ),
+      child: GestureDetector(
+        onTap: _toggleFollow,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+          decoration: BoxDecoration(
+            color: _following ? const Color(0xFFF3F3F3) : Colors.white,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: _following
+                  ? const Color(0xFFE2E2E2)
+                  : const Color(0xFFFF4F9A),
+            ),
+          ),
+          child: _following
+              ? const Text(
+                  'Following',
+                  style: TextStyle(
+                    color: Color(0xFF555555),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                )
+              : const ShaderMask(
+                  shaderCallback: _pinkGradient,
+                  child: Text(
+                    'Follow',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+
+  static Shader _pinkGradient(Rect bounds) {
+    return const LinearGradient(
+      colors: [Color(0xFFFF4F9A), Color(0xFFFF2D55), Color(0xFFC135E8)],
+    ).createShader(bounds);
+  }
+}
+
 class PostCard extends StatelessWidget {
   const PostCard({super.key, required this.post, required this.onLike});
 
@@ -322,11 +558,10 @@ class PostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 18),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFEDEDF3)),
+        borderRadius: BorderRadius.circular(14),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -365,6 +600,8 @@ class PostCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                _AnimatedFollowButton(),
+                const SizedBox(width: 2),
                 IconButton(
                   tooltip: 'More options',
                   onPressed: () {},
@@ -373,65 +610,68 @@ class PostCard extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            height: 235,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: post.art,
+          if (post.media.isEmpty)
+            Container(
+              height: 235,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: post.art,
+                ),
               ),
-            ),
-            child: Stack(
-              children: [
-                Positioned(
-                  top: -35,
-                  right: -15,
-                  child: Container(
-                    width: 175,
-                    height: 175,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.17),
-                      shape: BoxShape.circle,
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: -35,
+                    right: -15,
+                    child: Container(
+                      width: 175,
+                      height: 175,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.17),
+                        shape: BoxShape.circle,
+                      ),
                     ),
                   ),
-                ),
-                Positioned(
-                  bottom: -70,
-                  left: -20,
-                  child: Container(
-                    width: 220,
-                    height: 220,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.18),
-                      shape: BoxShape.circle,
+                  Positioned(
+                    bottom: -70,
+                    left: -20,
+                    child: Container(
+                      width: 220,
+                      height: 220,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        shape: BoxShape.circle,
+                      ),
                     ),
                   ),
-                ),
-                Center(
-                  child: Icon(
-                    Icons.auto_awesome_rounded,
-                    size: 66,
-                    color: Colors.white.withValues(alpha: 0.92),
-                  ),
-                ),
-                const Positioned(
-                  left: 16,
-                  bottom: 15,
-                  child: Text(
-                    'A MOMENT TO REMEMBER',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      letterSpacing: 2,
-                      fontWeight: FontWeight.w900,
+                  Center(
+                    child: Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 66,
+                      color: Colors.white.withValues(alpha: 0.92),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
+                  const Positioned(
+                    left: 16,
+                    bottom: 15,
+                    child: Text(
+                      'A MOMENT TO REMEMBER',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        letterSpacing: 2,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            _PostMediaGrid(media: post.media),
           Padding(
             padding: const EdgeInsets.fromLTRB(13, 8, 13, 14),
             child: Column(
@@ -439,16 +679,9 @@ class PostCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    IconButton(
-                      tooltip: post.liked ? 'Unlike post' : 'Like post',
+                    _AnimatedLikeButton(
+                      liked: post.liked,
                       onPressed: () => onLike(post),
-                      icon: Icon(
-                        post.liked
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: post.liked ? Colors.redAccent : ink,
-                        size: 25,
-                      ),
                     ),
                     IconButton(
                       tooltip: 'Comments',
@@ -458,17 +691,18 @@ class PostCard extends StatelessWidget {
                               content: Text('Comments UI will be added later'),
                             ),
                           ),
-                      icon: const Icon(Icons.mode_comment_outlined, size: 23),
+                      icon: const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        size: 27,
+                      ),
                     ),
-                    IconButton(
-                      tooltip: 'Share',
+                    _RepostActionButton(
                       onPressed: () => ScaffoldMessenger.of(context)
                           .showSnackBar(
                             const SnackBar(
-                              content: Text('Sharing will be added later'),
+                              content: Text('Repost will be added later'),
                             ),
                           ),
-                      icon: const Icon(Icons.send_outlined, size: 22),
                     ),
                     const Spacer(),
                     const Icon(Icons.bookmark_border_rounded, size: 24),
@@ -576,38 +810,171 @@ class _SearchPageState extends State<SearchPage> {
 class CreatePage extends StatefulWidget {
   const CreatePage({super.key, required this.onPost});
 
-  final ValueChanged<String> onPost;
+  final void Function(String caption, List<AssetEntity> media) onPost;
 
   @override
   State<CreatePage> createState() => _CreatePageState();
 }
 
 class _CreatePageState extends State<CreatePage> {
-  final controller = TextEditingController();
+  Future<void> _openComposer() async {
+    await Navigator.of(context).push<void>(
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 400),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return _TwiceComposerScreen(onPost: widget.onPost);
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.fastOutSlowIn,
+            reverseCurve: Curves.easeInOut,
+          );
+          return FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.985, end: 1).animate(curved),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+  }
 
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
+  Widget _quickAction(IconData icon, String label, Color color) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: _openComposer,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 25),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: ink,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       children: [
         const Text(
-          'Create a post',
+          'Create',
           style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 5),
         const Text(
-          'Share something worth remembering.',
+          'Share a moment with your people.',
           style: TextStyle(color: muted),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 22),
+        Hero(
+          tag: 'twice-composer-card',
+          child: Material(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(22),
+              onTap: _openComposer,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0xFFECECF2)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x08000000),
+                      blurRadius: 18,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    const CircleAvatar(
+                      radius: 23,
+                      backgroundColor: Color(0xFFE5DEFF),
+                      child: Icon(
+                        Icons.person_rounded,
+                        color: violet,
+                        size: 27,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        "What's on your mind?",
+                        style: TextStyle(
+                          color: muted,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: violet,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.edit_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         Container(
-          height: 200,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFECECF2)),
+          ),
+          child: Row(
+            children: [
+              _quickAction(
+                Icons.photo_library_outlined,
+                'Photo',
+                const Color(0xFF28A66A),
+              ),
+              _quickAction(
+                Icons.person_add_alt_1_rounded,
+                'Tag people',
+                const Color(0xFF3985E8),
+              ),
+              _quickAction(
+                Icons.sentiment_satisfied_alt_rounded,
+                'Feeling',
+                const Color(0xFFF0A329),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        Container(
+          height: 170,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFFB7A5FF), Color(0xFFF0C3DC)],
@@ -617,56 +984,735 @@ class _CreatePageState extends State<CreatePage> {
           child: const Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.add_photo_alternate_outlined, size: 45),
+              Icon(Icons.auto_awesome_rounded, size: 37),
               SizedBox(height: 8),
-              Text('Photo preview'),
+              Text(
+                'Your next moment starts here',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
               SizedBox(height: 4),
               Text(
-                'Image picking will be added later',
+                'Tap the composer to write a post',
                 style: TextStyle(fontSize: 12),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 20),
-        TextField(
-          controller: controller,
-          maxLines: 4,
-          maxLength: 500,
-          decoration: InputDecoration(
-            hintText: 'Write a caption...',
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: BorderSide.none,
+      ],
+    );
+  }
+}
+
+class _MediaThumbnail extends StatelessWidget {
+  const _MediaThumbnail({required this.asset});
+
+  final AssetEntity asset;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: asset.thumbnailDataWithSize(const ThumbnailSize(480, 480)),
+      builder: (context, snapshot) {
+        final bytes = snapshot.data;
+        if (bytes == null) {
+          return Container(
+            color: const Color(0xFFECECF2),
+            alignment: Alignment.center,
+            child: const Icon(Icons.image_outlined, color: muted),
+          );
+        }
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          gaplessPlayback: true,
+        );
+      },
+    );
+  }
+}
+
+class _PostMediaGrid extends StatelessWidget {
+  const _PostMediaGrid({required this.media});
+
+  final List<AssetEntity> media;
+
+  @override
+  Widget build(BuildContext context) {
+    if (media.length == 1) {
+      final asset = media.first;
+      return SizedBox(
+        height: 300,
+        width: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _MediaThumbnail(asset: asset),
+            if (asset.type == AssetType.video)
+              const Center(
+                child: CircleAvatar(
+                  backgroundColor: Color(0x99000000),
+                  child: Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+    return SizedBox(
+      height: 300,
+      child: GridView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(2),
+        itemCount: media.length > 4 ? 4 : media.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 3,
+          mainAxisSpacing: 3,
+        ),
+        itemBuilder: (context, index) {
+          final asset = media[index];
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              _MediaThumbnail(asset: asset),
+              if (asset.type == AssetType.video)
+                const Align(
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                ),
+              if (index == 3 && media.length > 4)
+                Container(
+                  color: const Color(0x99000000),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '+${media.length - 4}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _TwiceGalleryScreen extends StatefulWidget {
+  const _TwiceGalleryScreen();
+
+  @override
+  State<_TwiceGalleryScreen> createState() => _TwiceGalleryScreenState();
+}
+
+class _TwiceGalleryScreenState extends State<_TwiceGalleryScreen> {
+  List<AssetEntity> assets = [];
+  final List<AssetEntity> selectedAssets = [];
+  bool loading = true;
+  bool denied = false;
+  bool multiSelect = false;
+  String? loadError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGallery();
+  }
+
+  Future<void> _loadGallery() async {
+    try {
+      final permission = await PhotoManager.requestPermissionExtend();
+      if (!permission.hasAccess) {
+        if (mounted) {
+          setState(() {
+            denied = true;
+            loading = false;
+          });
+        }
+        return;
+      }
+      final results = await PhotoManager.getAssetListPaged(
+        page: 0,
+        pageCount: 180,
+        type: RequestType.common,
+      );
+      if (!mounted) return;
+      setState(() {
+        assets = results;
+        loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        loadError = 'Could not load your gallery. Please try again.';
+        loading = false;
+      });
+    }
+  }
+
+  void _toggle(AssetEntity asset, {bool longPress = false}) {
+    setState(() {
+      if (longPress) multiSelect = true;
+      final index = selectedAssets.indexWhere((item) => item.id == asset.id);
+      if (index >= 0) {
+        selectedAssets.removeAt(index);
+      } else if (selectedAssets.length < 10) {
+        selectedAssets.add(asset);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You can select up to 10 items')),
+        );
+      }
+    });
+  }
+
+  void _finish() =>
+      Navigator.of(context)
+          .pop<List<AssetEntity>>(List<AssetEntity>.of(selectedAssets));
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: canvas,
+      appBar: AppBar(
+        leading: IconButton(
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.close_rounded),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Gallery',
+              style: TextStyle(fontWeight: FontWeight.w900),
             ),
+            Text(
+              selectedAssets.isEmpty
+                  ? 'Tap to select · Hold for multiple'
+                  : '${selectedAssets.length} of 10 selected',
+              style: const TextStyle(fontSize: 11, color: muted),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: selectedAssets.isEmpty ? null : _finish,
+            child: const Text('Next'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator(color: violet))
+          : denied
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.photo_library_outlined,
+                      size: 48,
+                      color: muted,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Allow photo and video access to choose media.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () => PhotoManager.openSetting(),
+                      child: const Text('Open settings'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : loadError != null
+          ? Center(child: Text(loadError!))
+          : assets.isEmpty
+          ? const Center(child: Text('No photos or videos found'))
+          : GridView.builder(
+              padding: const EdgeInsets.all(3),
+              itemCount: assets.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 3,
+                mainAxisSpacing: 3,
+              ),
+              itemBuilder: (context, index) {
+                final asset = assets[index];
+                final selectedIndex = selectedAssets.indexWhere(
+                  (item) => item.id == asset.id,
+                );
+                final isSelected = selectedIndex >= 0;
+                return GestureDetector(
+                  onTap: () => _toggle(asset),
+                  onLongPress: () => _toggle(asset, longPress: true),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _MediaThumbnail(asset: asset),
+                      if (asset.type == AssetType.video)
+                        const Positioned(
+                          left: 5,
+                          bottom: 5,
+                          child: Icon(
+                            Icons.play_circle_fill_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Container(
+                          width: 25,
+                          height: 25,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? violet
+                                : const Color(0x66000000),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          child: isSelected
+                              ? Text(
+                                  '${selectedIndex + 1}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+      bottomNavigationBar: selectedAssets.isEmpty
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.all(12),
+              child: FilledButton(
+                onPressed: _finish,
+                style: FilledButton.styleFrom(
+                  backgroundColor: violet,
+                  minimumSize: const Size(0, 50),
+                ),
+                child: Text('Add ${selectedAssets.length} to post'),
+              ),
+            ),
+    );
+  }
+}
+
+class _TwiceComposerScreen extends StatefulWidget {
+  const _TwiceComposerScreen({required this.onPost});
+
+  final void Function(String caption, List<AssetEntity> media) onPost;
+
+  @override
+  State<_TwiceComposerScreen> createState() => _TwiceComposerScreenState();
+}
+
+class _TwiceComposerScreenState extends State<_TwiceComposerScreen>
+    with SingleTickerProviderStateMixin {
+  final controller = TextEditingController();
+  final focusNode = FocusNode();
+  final List<AssetEntity> selectedMedia = [];
+  late final AnimationController actionController;
+  bool galleryOpened = false;
+
+  @override
+  void initState() {
+    super.initState();
+    actionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 550),
+    );
+    actionController.forward();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _openGallery();
+    });
+  }
+
+  Future<void> _openGallery() async {
+    if (galleryOpened || !mounted) return;
+    galleryOpened = true;
+    final picked = await Navigator.of(context).push<List<AssetEntity>>(
+      MaterialPageRoute<List<AssetEntity>>(
+        builder: (_) => const _TwiceGalleryScreen(),
+      ),
+    );
+    if (!mounted || picked == null || picked.isEmpty) return;
+    setState(() {
+      selectedMedia
+        ..clear()
+        ..addAll(picked.take(10));
+    });
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    focusNode.dispose();
+    actionController.dispose();
+    super.dispose();
+  }
+
+  Animation<Offset> _actionSlide(int index) {
+    final begin = index * 0.13;
+    final end = (begin + 0.62).clamp(0.0, 1.0);
+    return Tween<Offset>(
+      begin: const Offset(0, 0.35),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: actionController,
+        curve: Interval(begin, end, curve: Curves.easeOutCubic),
+      ),
+    );
+  }
+
+  Widget _animatedAction(int index, IconData icon, String label, Color color) {
+    return SlideTransition(
+      position: _actionSlide(index),
+      child: FadeTransition(
+        opacity: CurvedAnimation(
+          parent: actionController,
+          curve: Interval(index * 0.13, (index * 0.13 + 0.62).clamp(0.0, 1.0)),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F7FB),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 21),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 10),
-        FilledButton.icon(
-          onPressed: () {
-            final caption = controller.text.trim();
-            if (caption.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Write a caption first')),
-              );
-              return;
-            }
-            widget.onPost(caption);
-            controller.clear();
-          },
-          icon: const Icon(Icons.send_rounded),
-          label: const Text('Publish demo post'),
-          style: FilledButton.styleFrom(backgroundColor: violet),
+      ),
+    );
+  }
+
+  void _publish() {
+    final caption = controller.text.trim();
+    if (caption.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Write a caption first')));
+      focusNode.requestFocus();
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    widget.onPost(caption, List<AssetEntity>.of(selectedMedia));
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Scaffold(
+      backgroundColor: canvas,
+      resizeToAvoidBottomInset: true,
+      appBar: AppBar(
+        backgroundColor: canvas,
+        foregroundColor: ink,
+        elevation: 0,
+        leading: IconButton(
+          tooltip: 'Close composer',
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        const SizedBox(height: 10),
-        const Text(
-          'Demo only: posts remain in memory and disappear when the app restarts.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: muted, fontSize: 12),
+        title: const Text(
+          'Create post',
+          style: TextStyle(fontWeight: FontWeight.w800),
         ),
-      ],
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Center(
+              child: FilledButton(
+                onPressed: _publish,
+                style: FilledButton.styleFrom(
+                  backgroundColor: violet,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                ),
+                child: const Text('Post'),
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: [
+            Hero(
+              tag: 'twice-composer-card',
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: const Color(0xFFECECF2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 23,
+                            backgroundColor: Color(0xFFE5DEFF),
+                            child: Icon(
+                              Icons.person_rounded,
+                              color: violet,
+                              size: 27,
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Your Profile',
+                                  style: TextStyle(
+                                    color: ink,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                SizedBox(height: 3),
+                                Text(
+                                  'Sharing with everyone',
+                                  style: TextStyle(color: muted, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.public_rounded, color: muted, size: 20),
+                        ],
+                      ),
+                      const SizedBox(height: 15),
+                      AnimatedBuilder(
+                        animation: controller,
+                        builder: (context, child) {
+                          return Stack(
+                            children: [
+                              IgnorePointer(
+                                child: AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 160),
+                                  opacity: controller.text.isEmpty ? 1 : 0,
+                                  child: const Padding(
+                                    padding: EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      "What's on your mind?",
+                                      style: TextStyle(
+                                        color: muted,
+                                        fontSize: 21,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              TextField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                autofocus: true,
+                                maxLines: null,
+                                minLines: 5,
+                                maxLength: 500,
+                                textCapitalization:
+                                    TextCapitalization.sentences,
+                                style: const TextStyle(
+                                  color: ink,
+                                  fontSize: 19,
+                                  height: 1.4,
+                                ),
+                                decoration: const InputDecoration(
+                                  hintText: '',
+                                  counterStyle: TextStyle(color: muted),
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (selectedMedia.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 112,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: selectedMedia.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final asset = selectedMedia[index];
+                    return Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: SizedBox(
+                            width: 112,
+                            height: 112,
+                            child: _MediaThumbnail(asset: asset),
+                          ),
+                        ),
+                        if (asset.type == AssetType.video)
+                          const Positioned(
+                            left: 40,
+                            top: 40,
+                            child: Icon(
+                              Icons.play_circle_fill_rounded,
+                              color: Colors.white,
+                              size: 30,
+                            ),
+                          ),
+                        Positioned(
+                          right: 4,
+                          top: 4,
+                          child: InkWell(
+                            onTap: () =>
+                                setState(() => selectedMedia.removeAt(index)),
+                            child: const CircleAvatar(
+                              radius: 13,
+                              backgroundColor: Color(0xCC171923),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+            const SizedBox(height: 18),
+            const Text(
+              'Add to your post',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: _openGallery,
+                  child: _animatedAction(
+                    0,
+                    Icons.photo_library_outlined,
+                    selectedMedia.isEmpty
+                        ? 'Photo'
+                        : 'Photo (${selectedMedia.length})',
+                    const Color(0xFF28A66A),
+                  ),
+                ),
+                _animatedAction(
+                  1,
+                  Icons.person_add_alt_1_rounded,
+                  'Tag people',
+                  const Color(0xFF3985E8),
+                ),
+                _animatedAction(
+                  2,
+                  Icons.sentiment_satisfied_alt_rounded,
+                  'Feeling',
+                  const Color(0xFFF0A329),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEDE9FF),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded, color: violet),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Choose up to 10 photos or videos. Tap to select one, or hold an item to start selecting multiple media.',
+                      style: TextStyle(color: ink, fontSize: 12, height: 1.45),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: _publish,
+              icon: const Icon(Icons.send_rounded),
+              label: const Text('Publish post'),
+              style: FilledButton.styleFrom(
+                backgroundColor: violet,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(0, 52),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

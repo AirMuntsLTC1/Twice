@@ -1,4 +1,5 @@
 import 'dart:ffi';
+
 import 'package:flutter/material.dart';
 
 const ink = Color(0xFF171923);
@@ -14,9 +15,10 @@ class NativeCore {
   NativeCore._() {
     try {
       final lib = DynamicLibrary.open('libtwice_native.so');
-      _add = lib.lookupFunction<
-          Int32 Function(Int32, Int32),
-          int Function(int, int)>('twice_native_add');
+      _add = lib
+          .lookupFunction<Int32 Function(Int32, Int32), int Function(int, int)>(
+            'twice_native_add',
+          );
     } catch (_) {
       // Keeps Flutter tests and non-Android preview environments usable.
       _add = null;
@@ -103,7 +105,8 @@ class _TwiceShellState extends State<TwiceShell> {
       initials: 'SB',
       avatar: const Color(0xFFF0B8A6),
       art: const [Color(0xFFF9C6B4), Color(0xFFE9A2C1)],
-      caption: 'Collect moments, not things. A little sunshine goes a long way ☀️',
+      caption:
+          'Collect moments, not things. A little sunshine goes a long way ☀️',
       likes: 248,
     ),
     SocialPost(
@@ -179,9 +182,7 @@ class _TwiceShellState extends State<TwiceShell> {
             tooltip: 'Messages',
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Messaging will be added later'),
-                ),
+                const SnackBar(content: Text('Messaging will be added later')),
               );
             },
             icon: const Icon(Icons.send_outlined),
@@ -238,37 +239,11 @@ class FeedPage extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       children: [
         const StoryStrip(),
-        const SizedBox(height: 20),
-        Row(
-          children: [
-            const Text(
-              'Your feed',
-              style: TextStyle(
-                fontSize: 21,
-                fontWeight: FontWeight.w800,
-                color: ink,
-              ),
-            ),
-            const Spacer(),
-            Text(
-              'FOR YOU',
-              style: TextStyle(
-                color: violet,
-                letterSpacing: 1.5,
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         ...posts.map((post) => PostCard(post: post, onLike: onLike)),
         const SizedBox(height: 16),
         const Center(
-          child: Text(
-            'You’re all caught up ✨',
-            style: TextStyle(color: muted),
-          ),
+          child: Text('You’re all caught up ✨', style: TextStyle(color: muted)),
         ),
       ],
     );
@@ -479,20 +454,20 @@ class PostCard extends StatelessWidget {
                       tooltip: 'Comments',
                       onPressed: () => ScaffoldMessenger.of(context)
                           .showSnackBar(
-                        const SnackBar(
-                          content: Text('Comments UI will be added later'),
-                        ),
-                      ),
+                            const SnackBar(
+                              content: Text('Comments UI will be added later'),
+                            ),
+                          ),
                       icon: const Icon(Icons.mode_comment_outlined, size: 23),
                     ),
                     IconButton(
                       tooltip: 'Share',
                       onPressed: () => ScaffoldMessenger.of(context)
                           .showSnackBar(
-                        const SnackBar(
-                          content: Text('Sharing will be added later'),
-                        ),
-                      ),
+                            const SnackBar(
+                              content: Text('Sharing will be added later'),
+                            ),
+                          ),
                       icon: const Icon(Icons.send_outlined, size: 22),
                     ),
                     const Spacer(),
@@ -683,9 +658,7 @@ class _CreatePageState extends State<CreatePage> {
           },
           icon: const Icon(Icons.send_rounded),
           label: const Text('Publish demo post'),
-          style: FilledButton.styleFrom(
-            backgroundColor: violet,
-          ),
+          style: FilledButton.styleFrom(backgroundColor: violet),
         ),
         const SizedBox(height: 10),
         const Text(
@@ -747,10 +720,7 @@ class _ActivityTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(vertical: 7),
-      leading: CircleAvatar(
-        backgroundColor: color,
-        child: Text(initials),
-      ),
+      leading: CircleAvatar(backgroundColor: color, child: Text(initials)),
       title: Text(message),
       subtitle: Text(time),
     );
@@ -861,7 +831,6 @@ class ProfilePage extends StatelessWidget {
 class _ProfileStat extends StatelessWidget {
   const _ProfileStat({required this.value, required this.label});
 
-  
   final String value;
   final String label;
 

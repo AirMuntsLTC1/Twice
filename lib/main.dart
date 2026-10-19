@@ -15,12 +15,12 @@ const violet = Color(0xFF7257F5);
 const canvas = Color(0xFFF7F7FB);
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-const supabasePublishableKey =
-    String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+const supabasePublishableKey = String.fromEnvironment(
+  'SUPABASE_PUBLISHABLE_KEY',
+);
 
 bool get supabaseConfigured =>
-    supabaseUrl.startsWith('https://') &&
-    supabasePublishableKey.isNotEmpty;
+    supabaseUrl.startsWith('https://') && supabasePublishableKey.isNotEmpty;
 
 // True only after Supabase has initialized successfully. If configuration is
 // missing or initialization fails, the app still starts and shows its setup
@@ -61,7 +61,6 @@ Future<void> main() async {
           'Supabase initialization failed (${error.runtimeType}): $details';
     }
   }
-
 
   runApp(const TwiceApp());
 }
@@ -116,7 +115,6 @@ class TwiceApp extends StatelessWidget {
     );
   }
 }
-
 
 class TwiceAuthGate extends StatelessWidget {
   const TwiceAuthGate({super.key});
@@ -224,8 +222,7 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
           ? 'twice_user'
           : username.substring(0, username.length > 24 ? 24 : username.length);
 
-      final response =
-          await Supabase.instance.client.functions.invoke(
+      final response = await Supabase.instance.client.functions.invoke(
         'twice-email-code',
         body: {
           'action': 'send_code',
@@ -250,7 +247,8 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
       if (!mounted) return;
       setState(() {
         _codeSent = true;
-        _message = 'If this address can receive mail, a code has been sent. '
+        _message =
+            'If this address can receive mail, a code has been sent. '
             'Check your inbox and spam folder.';
       });
     } catch (e) {
@@ -279,14 +277,9 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
     });
 
     try {
-      final response =
-          await Supabase.instance.client.functions.invoke(
+      final response = await Supabase.instance.client.functions.invoke(
         'twice-email-code',
-        body: {
-          'action': 'verify_code',
-          'email': _email,
-          'code': code,
-        },
+        body: {'action': 'verify_code', 'email': _email, 'code': code},
       );
 
       final data = response.data;
@@ -331,7 +324,9 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
           builder: (context, constraints) => SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
             child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+              constraints: BoxConstraints(
+                minHeight: constraints.maxHeight - 48,
+              ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -450,7 +445,9 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                             ),
                           )
                         : Text(
-                            _codeSent ? 'Verify and continue' : 'Send email code',
+                            _codeSent
+                                ? 'Verify and continue'
+                                : 'Send email code',
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
@@ -480,8 +477,7 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                   if (widget.configurationMissing) ...[
                     const SizedBox(height: 18),
                     _ErrorPanel(
-                      message: widget.startupError ??
-                          'Supabase configuration is missing. Check the GitHub Actions build secrets.',
+                      message: widget.startupError ?? 'Supabase configuration is missing. Check the GitHub Actions build secrets.',
                     ),
                   ],
                   if (_error != null) ...[
@@ -528,16 +524,29 @@ class SocialPost {
   final Map<String, dynamic> data;
   String get id => data['id'].toString();
   String get caption => (data['caption'] ?? '').toString();
-  Map<String, dynamic> get author => Map<String, dynamic>.from(data['profiles'] as Map? ?? const {});
-  String get name => (author['display_name'] ?? author['username'] ?? 'Twice user').toString();
+  Map<String, dynamic> get author =>
+      Map<String, dynamic>.from(data['profiles'] as Map? ?? const {});
+  String get name =>
+      (author['display_name'] ?? author['username'] ?? 'Twice user').toString();
   String get username => (author['username'] ?? 'user').toString();
   String get handle => '@$username';
   String? get avatarUrl => author['avatar_url']?.toString();
-  List<Map<String, dynamic>> get media => (data['media_resolved'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-  List<Map<String, dynamic>> get likesRows => (data['post_likes'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-  bool get liked => likesRows.any((e) => e['user_id'] == Supabase.instance.client.auth.currentUser?.id);
+  List<Map<String, dynamic>> get media =>
+      (data['media_resolved'] as List? ?? const [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+  List<Map<String, dynamic>> get likesRows =>
+      (data['post_likes'] as List? ?? const [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+  bool get liked => likesRows.any(
+    (e) => e['user_id'] == Supabase.instance.client.auth.currentUser?.id,
+  );
   int get likes => likesRows.length;
-  bool get saved => ((data['saved_posts'] as List? ?? const []).cast<Map>()).any((e) => e['user_id'] == Supabase.instance.client.auth.currentUser?.id);
+  bool get saved =>
+      ((data['saved_posts'] as List? ?? const []).cast<Map>()).any(
+        (e) => e['user_id'] == Supabase.instance.client.auth.currentUser?.id,
+      );
 }
 
 class TwiceShell extends StatefulWidget {
@@ -555,43 +564,71 @@ class _TwiceShellState extends State<TwiceShell> {
   List<SocialPost> posts = [];
 
   @override
-  void initState() { super.initState(); _loadAll(); }
+  void initState() {
+    super.initState();
+    _loadAll();
+  }
 
   Future<void> _loadAll() async {
     if (!mounted) return;
-    setState(() { loading = true; error = null; });
+    setState(() {
+      loading = true;
+      error = null;
+    });
     try {
-      final values = await Future.wait<dynamic>([repo.myProfile(), repo.feed()]);
+      final values = await Future.wait<dynamic>([
+        repo.myProfile(),
+        repo.feed(),
+      ]);
       if (!mounted) return;
       setState(() {
         profile = Map<String, dynamic>.from(values[0] as Map);
-        posts = (values[1] as List<Map<String, dynamic>>).map(SocialPost.new).toList();
+        posts = (values[1] as List<Map<String, dynamic>>)
+            .map(SocialPost.new)
+            .toList();
         loading = false;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() { loading = false; error = _friendlyError(e); });
+      setState(() {
+        loading = false;
+        error = _friendlyError(e);
+      });
     }
   }
 
   String _friendlyError(Object e) {
     final text = e.toString();
-    if (text.contains('SocketException') || text.contains('Failed host lookup')) return 'No network connection. Check your internet and try again.';
-    if (text.contains('duplicate key') || text.contains('23505')) return 'That username is already taken. Edit your profile to choose another.';
+    if (text.contains('SocketException') ||
+        text.contains('Failed host lookup')) {
+      return 'No network connection. Check your internet and try again.';
+    }
+    if (text.contains('duplicate key') || text.contains('23505')) {
+      return 'That username is already taken. Edit your profile to choose another.';
+    }
     return text.replaceAll(RegExp(r'\s+'), ' ');
   }
 
   Future<void> _like(SocialPost post) async {
     final wasLiked = post.liked;
     setState(() {
-      final rows = List<Map<String, dynamic>>.from(post.data['post_likes'] as List? ?? []);
+      final rows = List<Map<String, dynamic>>.from(
+        post.data['post_likes'] as List? ?? [],
+      );
       final uid = Supabase.instance.client.auth.currentUser!.id;
-      if (wasLiked) { rows.removeWhere((e) => e['user_id'] == uid); }
-      else { rows.add({'user_id': uid}); }
+      if (wasLiked) {
+        rows.removeWhere((e) => e['user_id'] == uid);
+      } else {
+        rows.add({'user_id': uid});
+      }
       post.data['post_likes'] = rows;
     });
-    try { await repo.toggleLike(post.id, wasLiked); }
-    catch (e) { await _loadAll(); if (mounted) _message('Like failed: $e'); }
+    try {
+      await repo.toggleLike(post.id, wasLiked);
+    } catch (e) {
+      await _loadAll();
+      if (mounted) _message('Like failed: $e');
+    }
   }
 
   Future<void> _publish(String caption, List<AssetEntity> media) async {
@@ -601,47 +638,104 @@ class _TwiceShellState extends State<TwiceShell> {
       setState(() => selected = 0);
       await _loadAll();
       if (mounted) _message('Post published.');
-    } catch (e) { if (mounted) _message('Could not publish: $e'); rethrow; }
+    } catch (e) {
+      if (mounted) _message('Could not publish: $e');
+      rethrow;
+    }
   }
 
-  void _message(String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  void _message(String message) =>
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
-    final title = ['Twice', 'Search', 'Create', 'Activity', profile['username'] == null ? 'Profile' : '@${profile['username']}'][selected];
+    final title = [
+      'Twice',
+      'Search',
+      'Create',
+      'Activity',
+      profile['username'] == null ? 'Profile' : '@${profile['username']}',
+    ][selected];
     return Scaffold(
-      appBar: AppBar(title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 25)), actions: [
-        IconButton(tooltip: 'Refresh', onPressed: _loadAll, icon: const Icon(Icons.refresh_rounded)),
-        IconButton(tooltip: 'Messages', onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const MessagesPage())), icon: const Icon(Icons.send_outlined)),
-      ]),
+      appBar: AppBar(
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 25),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loadAll,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+          IconButton(
+            tooltip: 'Messages',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const MessagesPage()),
+            ),
+            icon: const Icon(Icons.send_outlined),
+          ),
+        ],
+      ),
       body: loading && posts.isEmpty && profile.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : error != null && profile.isEmpty
-              ? _ErrorPanel(message: error!)
-              : IndexedStack(index: selected, children: [
-                  FeedPage(posts: posts, onLike: _like, onRefresh: _loadAll, onCommentChanged: _loadAll),
-                  const SearchPage(),
-                  CreatePage(onPost: _publish),
-                  const ActivityPage(),
-                  ProfilePage(profile: profile, posts: posts, onRefresh: _loadAll),
-                ]),
+          ? _ErrorPanel(message: error!)
+          : IndexedStack(
+              index: selected,
+              children: [
+                FeedPage(
+                  posts: posts,
+                  onLike: _like,
+                  onRefresh: _loadAll,
+                  onCommentChanged: _loadAll,
+                ),
+                const SearchPage(),
+                CreatePage(onPost: _publish),
+                const ActivityPage(),
+                ProfilePage(
+                  profile: profile,
+                  posts: posts,
+                  onRefresh: _loadAll,
+                ),
+              ],
+            ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selected,
         backgroundColor: Colors.white,
         indicatorColor: const Color(0xFFECE7FF),
         onDestinationSelected: (value) => setState(() => selected = value),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.search_rounded), label: 'Search'),
-          NavigationDestination(icon: Icon(Icons.add_box_outlined), selectedIcon: Icon(Icons.add_box_rounded), label: 'Create'),
-          NavigationDestination(icon: Icon(Icons.notifications_none_rounded), selectedIcon: Icon(Icons.notifications_rounded), label: 'Activity'),
-          NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Profile'),
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.search_rounded),
+            label: 'Search',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.add_box_outlined),
+            selectedIcon: Icon(Icons.add_box_rounded),
+            label: 'Create',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.notifications_none_rounded),
+            selectedIcon: Icon(Icons.notifications_rounded),
+            label: 'Activity',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Profile',
+          ),
         ],
       ),
     );
   }
 }
-
 
 class StoryStrip extends StatelessWidget {
   const StoryStrip({super.key});
@@ -662,7 +756,10 @@ class StoryStrip extends StatelessWidget {
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFFD9D5E5), width: 1.7),
+                    border: Border.all(
+                      color: const Color(0xFFD9D5E5),
+                      width: 1.7,
+                    ),
                   ),
                   child: const CircleAvatar(
                     radius: 29,
@@ -671,9 +768,12 @@ class StoryStrip extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 5),
-                const Text('Your story', maxLines: 1,
+                const Text(
+                  'Your story',
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: ink)),
+                  style: TextStyle(fontSize: 11, color: ink),
+                ),
               ],
             ),
           ),
@@ -682,7 +782,6 @@ class StoryStrip extends StatelessWidget {
     );
   }
 }
-
 
 class FeedPage extends StatelessWidget {
   const FeedPage({
@@ -713,32 +812,33 @@ class FeedPage extends StatelessWidget {
               children: [
                 Icon(Icons.dynamic_feed_outlined, size: 56, color: muted),
                 SizedBox(height: 14),
-                Text('No posts yet',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+                Text(
+                  'No posts yet',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+                ),
                 SizedBox(height: 7),
-                Text('Follow people or share your first moment.',
-                  style: TextStyle(color: muted)),
+                Text(
+                  'Follow people or share your first moment.',
+                  style: TextStyle(color: muted),
+                ),
               ],
             ),
           )
         else
-          ...posts.map((post) => PostCard(
-            post: post,
-            onLike: onLike,
-            onCommentChanged: onCommentChanged,
-          )),
+          ...posts.map(
+            (post) => PostCard(
+              post: post,
+              onLike: onLike,
+              onCommentChanged: onCommentChanged,
+            ),
+          ),
       ],
     ),
   );
 }
 
-
-
 class _AnimatedLikeButton extends StatefulWidget {
-  const _AnimatedLikeButton({
-    required this.liked,
-    required this.onPressed,
-  });
+  const _AnimatedLikeButton({required this.liked, required this.onPressed});
 
   final bool liked;
   final VoidCallback onPressed;
@@ -756,13 +856,17 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
 
   late final Animation<double> _scale = TweenSequence<double>([
     TweenSequenceItem(
-      tween: Tween(begin: 1.0, end: 1.35)
-          .chain(CurveTween(curve: Curves.easeOut)),
+      tween: Tween(
+        begin: 1.0,
+        end: 1.35,
+      ).chain(CurveTween(curve: Curves.easeOut)),
       weight: 45,
     ),
     TweenSequenceItem(
-      tween: Tween(begin: 1.35, end: 1.0)
-          .chain(CurveTween(curve: Curves.easeInOut)),
+      tween: Tween(
+        begin: 1.35,
+        end: 1.0,
+      ).chain(CurveTween(curve: Curves.easeInOut)),
       weight: 55,
     ),
   ]).animate(_controller);
@@ -872,7 +976,9 @@ class PostCard extends StatelessWidget {
                     if (value == 'copy') {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Use your device share options to share this post.'),
+                          content: Text(
+                            'Use your device share options to share this post.',
+                          ),
                         ),
                       );
                     }
@@ -899,11 +1005,7 @@ class PostCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
               child: Text(
                 post.caption,
-                style: const TextStyle(
-                  color: ink,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
+                style: const TextStyle(color: ink, fontSize: 14, height: 1.4),
               ),
             ),
 
@@ -916,7 +1018,8 @@ class PostCard extends StatelessWidget {
                   PageView.builder(
                     itemCount: media.length,
                     itemBuilder: (context, index) {
-                      final url = (media[index]['resolved_url'] ?? '').toString();
+                      final url = (media[index]['resolved_url'] ?? '')
+                          .toString();
                       return ColoredBox(
                         color: const Color(0xFFF4F5F7),
                         child: url.isEmpty
@@ -988,7 +1091,17 @@ class PostCard extends StatelessWidget {
                         await showModalBottomSheet<void>(
                           context: context,
                           isScrollControlled: true,
+                          useSafeArea: true,
                           backgroundColor: Colors.transparent,
+                          barrierColor: Colors.black54,
+                          enableDrag: true,
+                          showDragHandle: false,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(24),
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
                           builder: (_) => CommentsSheet(post: post),
                         );
                         onCommentChanged();
@@ -1025,7 +1138,9 @@ class PostCard extends StatelessWidget {
                         } catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Could not save post: $e')),
+                              SnackBar(
+                                content: Text('Could not save post: $e'),
+                              ),
                             );
                           }
                         }
@@ -1035,9 +1150,7 @@ class PostCard extends StatelessWidget {
                             ? Icons.bookmark_rounded
                             : Icons.bookmark_border_rounded,
                         size: 26,
-                        color: post.saved
-                            ? const Color(0xFFE2B900)
-                            : ink,
+                        color: post.saved ? const Color(0xFFE2B900) : ink,
                       ),
                     ),
                   ],
@@ -1098,109 +1211,551 @@ class CreatePage extends StatefulWidget {
   @override
   State<CreatePage> createState() => _CreatePageState();
 }
+
 class _CreatePageState extends State<CreatePage> {
   final controller = TextEditingController();
   final selectedMedia = <AssetEntity>[];
   bool publishing = false;
   @override
-  void dispose() { controller.dispose(); super.dispose(); }
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
   Future<void> _pick() async {
     final permission = await PhotoManager.requestPermissionExtend();
-    if (!permission.isAuth && !permission.hasAccess) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Allow photo access to select media.'))); return; }
-    final paths = await PhotoManager.getAssetPathList(type: RequestType.common, onlyAll: true);
+    if (!permission.isAuth && !permission.hasAccess) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Allow photo access to select media.')),
+        );
+      }
+      return;
+    }
+    final paths = await PhotoManager.getAssetPathList(
+      type: RequestType.common,
+      onlyAll: true,
+    );
     if (paths.isEmpty) return;
     final assets = await paths.first.getAssetListPaged(page: 0, size: 100);
     if (!mounted) return;
-    final picked = await showModalBottomSheet<List<AssetEntity>>(context: context, isScrollControlled: true, builder: (context) => _MediaPicker(assets: assets));
-    if (picked != null) setState(() { selectedMedia..clear()..addAll(picked.take(10)); });
+    final picked = await showModalBottomSheet<List<AssetEntity>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _MediaPicker(assets: assets),
+    );
+    if (picked != null) {
+      setState(() {
+        selectedMedia
+          ..clear()
+          ..addAll(picked.take(10));
+      });
+    }
   }
+
   Future<void> _publish() async {
     if (publishing) return;
     setState(() => publishing = true);
-    try { await widget.onPost(controller.text, selectedMedia); controller.clear(); setState(() => selectedMedia.clear()); }
-    catch (_) {} finally { if (mounted) setState(() => publishing = false); }
+    try {
+      await widget.onPost(controller.text, selectedMedia);
+      controller.clear();
+      setState(() => selectedMedia.clear());
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => publishing = false);
+    }
   }
+
   @override
-  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
-    const Text('Create a post', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)), const SizedBox(height: 16),
-    TextField(controller: controller, minLines: 4, maxLines: 10, maxLength: 5000, decoration: InputDecoration(hintText: "What's happening?", filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none))),
-    OutlinedButton.icon(onPressed: _pick, icon: const Icon(Icons.photo_library_outlined), label: Text(selectedMedia.isEmpty ? 'Add photos or videos' : '${selectedMedia.length} media selected')),
-    if (selectedMedia.isNotEmpty)
-      SizedBox(
-        height: 95,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: selectedMedia.map((asset) => Padding(
-            padding: const EdgeInsets.all(4),
-            child: FutureBuilder<Uint8List?>(
-              future: asset.thumbnailDataWithSize(const ThumbnailSize(180, 180)),
-              builder: (_, snapshot) => snapshot.data == null
-                ? const SizedBox(width: 80, child: Center(child: CircularProgressIndicator()))
-                : Image.memory(snapshot.data!, width: 80, height: 80, fit: BoxFit.cover),
-            ),
-          )).toList(),
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.all(16),
+    children: [
+      const Text(
+        'Create a post',
+        style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(height: 16),
+      TextField(
+        controller: controller,
+        minLines: 4,
+        maxLines: 10,
+        maxLength: 5000,
+        decoration: InputDecoration(
+          hintText: "What's happening?",
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
         ),
       ),
-    const SizedBox(height: 12), FilledButton(onPressed: publishing ? null : _publish, child: Text(publishing ? 'Publishing…' : 'Publish post')),
-  ]);
+      OutlinedButton.icon(
+        onPressed: _pick,
+        icon: const Icon(Icons.photo_library_outlined),
+        label: Text(
+          selectedMedia.isEmpty
+              ? 'Add photos or videos'
+              : '${selectedMedia.length} media selected',
+        ),
+      ),
+      if (selectedMedia.isNotEmpty)
+        SizedBox(
+          height: 95,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: selectedMedia
+                .map(
+                  (asset) => Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: FutureBuilder<Uint8List?>(
+                      future: asset.thumbnailDataWithSize(
+                        const ThumbnailSize(180, 180),
+                      ),
+                      builder: (_, snapshot) => snapshot.data == null
+                          ? const SizedBox(
+                              width: 80,
+                              child: Center(child: CircularProgressIndicator()),
+                            )
+                          : Image.memory(
+                              snapshot.data!,
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+      const SizedBox(height: 12),
+      FilledButton(
+        onPressed: publishing ? null : _publish,
+        child: Text(publishing ? 'Publishing…' : 'Publish post'),
+      ),
+    ],
+  );
 }
 
 class _MediaPicker extends StatefulWidget {
-  const _MediaPicker({required this.assets}); final List<AssetEntity> assets;
-  @override State<_MediaPicker> createState() => _MediaPickerState();
-}
-class _MediaPickerState extends State<_MediaPicker> {
-  final Set<AssetEntity> chosen = {};
-  @override Widget build(BuildContext context) => SizedBox(height: MediaQuery.sizeOf(context).height * .78, child: Column(children: [ListTile(title: const Text('Select media', style: TextStyle(fontWeight: FontWeight.w800)), trailing: TextButton(onPressed: () => Navigator.pop(context, chosen.toList()), child: const Text('Done'))), Expanded(child: GridView.builder(padding: const EdgeInsets.all(4), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 3, mainAxisSpacing: 3), itemCount: widget.assets.length, itemBuilder: (_, i) { final a = widget.assets[i]; return InkWell(onTap: () => setState(() { if (chosen.contains(a)) { chosen.remove(a); } else if (chosen.length < 10) { chosen.add(a); } }), child: Stack(fit: StackFit.expand, children: [FutureBuilder<Uint8List?>(future: a.thumbnailDataWithSize(const ThumbnailSize(220, 220)), builder: (_, s) => s.data == null ? const ColoredBox(color: canvas) : Image.memory(s.data!, fit: BoxFit.cover)), if (a.type == AssetType.video) const Align(alignment: Alignment.bottomRight, child: Icon(Icons.play_circle_fill, color: Colors.white)), if (chosen.contains(a)) const Align(alignment: Alignment.topRight, child: Icon(Icons.check_circle, color: violet))])); }))]));
+  const _MediaPicker({required this.assets});
+  final List<AssetEntity> assets;
+  @override
+  State<_MediaPicker> createState() => _MediaPickerState();
 }
 
-class SearchPage extends StatefulWidget { const SearchPage({super.key}); @override State<SearchPage> createState() => _SearchPageState(); }
+class _MediaPickerState extends State<_MediaPicker> {
+  final Set<AssetEntity> chosen = {};
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: MediaQuery.sizeOf(context).height * .78,
+    child: Column(
+      children: [
+        ListTile(
+          title: const Text(
+            'Select media',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          trailing: TextButton(
+            onPressed: () => Navigator.pop(context, chosen.toList()),
+            child: const Text('Done'),
+          ),
+        ),
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.all(4),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              crossAxisSpacing: 3,
+              mainAxisSpacing: 3,
+            ),
+            itemCount: widget.assets.length,
+            itemBuilder: (_, i) {
+              final a = widget.assets[i];
+              return InkWell(
+                onTap: () => setState(() {
+                  if (chosen.contains(a)) {
+                    chosen.remove(a);
+                  } else if (chosen.length < 10) {
+                    chosen.add(a);
+                  }
+                }),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    FutureBuilder<Uint8List?>(
+                      future: a.thumbnailDataWithSize(
+                        const ThumbnailSize(220, 220),
+                      ),
+                      builder: (_, s) => s.data == null
+                          ? const ColoredBox(color: canvas)
+                          : Image.memory(s.data!, fit: BoxFit.cover),
+                    ),
+                    if (a.type == AssetType.video)
+                      const Align(
+                        alignment: Alignment.bottomRight,
+                        child: Icon(
+                          Icons.play_circle_fill,
+                          color: Colors.white,
+                        ),
+                      ),
+                    if (chosen.contains(a))
+                      const Align(
+                        alignment: Alignment.topRight,
+                        child: Icon(Icons.check_circle, color: violet),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class SearchPage extends StatefulWidget {
+  const SearchPage({super.key});
+  @override
+  State<SearchPage> createState() => _SearchPageState();
+}
+
 class _SearchPageState extends State<SearchPage> {
-  final controller = TextEditingController(); List<Map<String, dynamic>> results = []; bool busy = false; String? error;
-  @override void dispose() { controller.dispose(); super.dispose(); }
-  Future<void> _search(String q) async {
-    if (q.trim().isEmpty) { setState(() { results = []; error = null; }); return; }
-    setState(() { busy = true; error = null; });
-    try { final data = await SocialRepository.instance.search(q); if (mounted) setState(() => results = data); }
-    catch (e) { if (mounted) setState(() => error = e.toString()); }
-    finally { if (mounted) setState(() => busy = false); }
+  final controller = TextEditingController();
+  List<Map<String, dynamic>> results = [];
+  bool busy = false;
+  String? error;
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
   }
-  @override Widget build(BuildContext context) => Column(children: [Padding(padding: const EdgeInsets.all(16), child: TextField(controller: controller, onChanged: _search, decoration: InputDecoration(hintText: 'Search people by name or @username', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(onPressed: () { controller.clear(); _search(''); }, icon: const Icon(Icons.close)), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none)))), if (busy) const LinearProgressIndicator(), if (error != null) Padding(padding: const EdgeInsets.all(16), child: Text(error!, style: const TextStyle(color: Colors.red))), Expanded(child: results.isEmpty ? Center(child: Text(controller.text.isEmpty ? 'Search for real Twice users' : 'No users found', style: const TextStyle(color: muted))) : ListView.builder(itemCount: results.length, itemBuilder: (_, i) => _UserTile(user: results[i])))]);
+
+  Future<void> _search(String q) async {
+    if (q.trim().isEmpty) {
+      setState(() {
+        results = [];
+        error = null;
+      });
+      return;
+    }
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    try {
+      final data = await SocialRepository.instance.search(q);
+      if (mounted) setState(() => results = data);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: TextField(
+          controller: controller,
+          onChanged: _search,
+          decoration: InputDecoration(
+            hintText: 'Search people by name or @username',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: IconButton(
+              onPressed: () {
+                controller.clear();
+                _search('');
+              },
+              icon: const Icon(Icons.close),
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+      ),
+      if (busy) const LinearProgressIndicator(),
+      if (error != null)
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(error!, style: const TextStyle(color: Colors.red)),
+        ),
+      Expanded(
+        child: results.isEmpty
+            ? Center(
+                child: Text(
+                  controller.text.isEmpty
+                      ? 'Search for real Twice users'
+                      : 'No users found',
+                  style: const TextStyle(color: muted),
+                ),
+              )
+            : ListView.builder(
+                itemCount: results.length,
+                itemBuilder: (_, i) => _UserTile(user: results[i]),
+              ),
+      ),
+    ],
+  );
 }
 
 class _UserTile extends StatefulWidget {
-  const _UserTile({required this.user}); final Map<String, dynamic> user;
-  @override State<_UserTile> createState() => _UserTileState();
+  const _UserTile({required this.user});
+  final Map<String, dynamic> user;
+  @override
+  State<_UserTile> createState() => _UserTileState();
 }
+
 class _UserTileState extends State<_UserTile> {
   bool following = false, busy = false;
-  @override Widget build(BuildContext context) {
+  @override
+  Widget build(BuildContext context) {
     final user = widget.user;
     if (user['result_type'] == 'post') {
       final author = user['profiles'] as Map? ?? {};
-      return ListTile(leading: const CircleAvatar(child: Icon(Icons.article_outlined)), title: Text((user['caption'] ?? 'Media post').toString(), maxLines: 2, overflow: TextOverflow.ellipsis), subtitle: Text('${author['display_name'] ?? author['username'] ?? 'Twice user'} · @${author['username'] ?? 'user'}'));
+      return ListTile(
+        leading: const CircleAvatar(child: Icon(Icons.article_outlined)),
+        title: Text(
+          (user['caption'] ?? 'Media post').toString(),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          '${author['display_name'] ?? author['username'] ?? 'Twice user'} · @${author['username'] ?? 'user'}',
+        ),
+      );
     }
     final isSelf = user['id'] == Supabase.instance.client.auth.currentUser?.id;
     return ListTile(
-      leading: CircleAvatar(backgroundImage: user['avatar_url'] == null ? null : NetworkImage(user['avatar_url'].toString()), child: user['avatar_url'] == null ? const Icon(Icons.person) : null),
-      title: Text((user['display_name'] ?? user['username'] ?? 'Twice user').toString(), style: const TextStyle(fontWeight: FontWeight.w800)),
+      leading: CircleAvatar(
+        backgroundImage: user['avatar_url'] == null
+            ? null
+            : NetworkImage(user['avatar_url'].toString()),
+        child: user['avatar_url'] == null ? const Icon(Icons.person) : null,
+      ),
+      title: Text(
+        (user['display_name'] ?? user['username'] ?? 'Twice user').toString(),
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
       subtitle: Text('@${user['username'] ?? 'user'}'),
-      trailing: isSelf ? null : Wrap(children: [
-        TextButton(onPressed: busy ? null : () async { setState(() => busy = true); try { if (following) { await SocialRepository.instance.unfollow(user['id'].toString()); } else { await SocialRepository.instance.follow(user['id'].toString(), privateAccount: user['is_private'] == true); } if (mounted) setState(() => following = !following); } catch (e) { if (mounted) { ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text('Follow action failed: $e'))); } } finally { if (mounted) setState(() => busy = false); } }, child: Text(busy ? '…' : following ? 'Following' : 'Follow')),
-        IconButton(tooltip: 'Message', onPressed: busy ? null : () async { setState(() => busy = true); try { final id = await SocialRepository.instance.createConversation(user['id'].toString()); if (context.mounted) Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ConversationPage(id: id, title: (user['display_name'] ?? user['username'] ?? 'Message').toString()))); } catch (e) { if (mounted) { ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text('Could not start conversation: $e'))); } } finally { if (mounted) setState(() => busy = false); } }, icon: const Icon(Icons.send_outlined)),
-      ]),
+      trailing: isSelf
+          ? null
+          : Wrap(
+              children: [
+                TextButton(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          setState(() => busy = true);
+                          try {
+                            if (following) {
+                              await SocialRepository.instance.unfollow(
+                                user['id'].toString(),
+                              );
+                            } else {
+                              await SocialRepository.instance.follow(
+                                user['id'].toString(),
+                                privateAccount: user['is_private'] == true,
+                              );
+                            }
+                            if (mounted) setState(() => following = !following);
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(this.context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Follow action failed: $e'),
+                                ),
+                              );
+                            }
+                          } finally {
+                            if (mounted) setState(() => busy = false);
+                          }
+                        },
+                  child: Text(
+                    busy
+                        ? '…'
+                        : following
+                        ? 'Following'
+                        : 'Follow',
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Message',
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          setState(() => busy = true);
+                          try {
+                            final id = await SocialRepository.instance
+                                .createConversation(user['id'].toString());
+                            if (context.mounted) {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => ConversationPage(
+                                    id: id,
+                                    title:
+                                        (user['display_name'] ??
+                                                user['username'] ??
+                                                'Message')
+                                            .toString(),
+                                  ),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(this.context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Could not start conversation: $e',
+                                  ),
+                                ),
+                              );
+                            }
+                          } finally {
+                            if (mounted) setState(() => busy = false);
+                          }
+                        },
+                  icon: const Icon(Icons.send_outlined),
+                ),
+              ],
+            ),
     );
   }
 }
 
-class CommentsSheet extends StatefulWidget { const CommentsSheet({super.key, required this.post}); final SocialPost post; @override State<CommentsSheet> createState() => _CommentsSheetState(); }
+class CommentsSheet extends StatefulWidget {
+  const CommentsSheet({super.key, required this.post});
+  final SocialPost post;
+  @override
+  State<CommentsSheet> createState() => _CommentsSheetState();
+}
+
 class _CommentsSheetState extends State<CommentsSheet> {
-  final controller = TextEditingController(); List<Map<String, dynamic>> rows = []; bool busy = true;
-  @override void initState() { super.initState(); _load(); }
-  @override void dispose() { controller.dispose(); super.dispose(); }
-  Future<void> _load() async { try { final data = await SocialRepository.instance.comments(widget.post.id); if (mounted) setState(() { rows = data; busy = false; }); } catch (e) { if (mounted) setState(() => busy = false); } }
-  Future<void> _send() async { final text = controller.text.trim(); if (text.isEmpty) return; try { await SocialRepository.instance.addComment(widget.post.id, text); controller.clear(); await _load(); } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Comment failed: $e'))); } }
-  @override Widget build(BuildContext context) => SafeArea(child: SizedBox(height: MediaQuery.sizeOf(context).height * .72, child: Column(children: [const Padding(padding: EdgeInsets.all(16), child: Text('Comments', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800))), Expanded(child: busy ? const Center(child: CircularProgressIndicator()) : rows.isEmpty ? const Center(child: Text('No comments yet')) : ListView.builder(itemCount: rows.length, itemBuilder: (_, i) { final r = rows[i]; final p = r['profiles'] as Map? ?? {}; return ListTile(title: Text((p['display_name'] ?? p['username'] ?? 'User').toString()), subtitle: Text((r['body'] ?? '').toString())); })), Padding(padding: EdgeInsets.fromLTRB(12, 8, 12, MediaQuery.viewInsetsOf(context).bottom + 12), child: Row(children: [Expanded(child: TextField(controller: controller, decoration: const InputDecoration(hintText: 'Write a comment…'))), IconButton(onPressed: _send, icon: const Icon(Icons.send, color: violet))]))])));
+  final controller = TextEditingController();
+  List<Map<String, dynamic>> rows = [];
+  bool busy = true;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await SocialRepository.instance.comments(widget.post.id);
+      if (mounted) {
+        setState(() {
+          rows = data;
+          busy = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _send() async {
+    final text = controller.text.trim();
+    if (text.isEmpty) return;
+    try {
+      await SocialRepository.instance.addComment(widget.post.id, text);
+      controller.clear();
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Comment failed: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: MediaQuery.sizeOf(context).height * .78,
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    child: Column(
+      children: [
+        const SizedBox(height: 10),
+        Container(
+          width: 38,
+          height: 4,
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text(
+            'Comments',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+        ),
+        Expanded(
+          child: busy
+              ? const Center(child: CircularProgressIndicator())
+              : rows.isEmpty
+              ? const Center(child: Text('No comments yet'))
+              : ListView.builder(
+                  itemCount: rows.length,
+                  itemBuilder: (_, i) {
+                    final r = rows[i];
+                    final p = r['profiles'] as Map? ?? {};
+                    return ListTile(
+                      title: Text(
+                        (p['display_name'] ?? p['username'] ?? 'User')
+                            .toString(),
+                      ),
+                      subtitle: Text((r['body'] ?? '').toString()),
+                    );
+                  },
+                ),
+        ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            12,
+            8,
+            12,
+            12 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    hintText: 'Write a comment…',
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: _send,
+                icon: const Icon(Icons.send, color: violet),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class ActivityPage extends StatefulWidget {
@@ -1246,7 +1801,10 @@ class _ActivityPageState extends State<ActivityPage> {
               children: const [
                 SizedBox(height: 180),
                 Center(
-                  child: Text('No activity yet', style: TextStyle(color: muted)),
+                  child: Text(
+                    'No activity yet',
+                    style: TextStyle(color: muted),
+                  ),
                 ),
               ],
             ),
@@ -1293,7 +1851,537 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
+class EditProfilePage extends StatefulWidget {
+  const EditProfilePage({
+    super.key,
+    required this.profile,
+    required this.onSaved,
+  });
+
+  final Map<String, dynamic> profile;
+  final Future<void> Function() onSaved;
+
+  @override
+  State<EditProfilePage> createState() => _EditProfilePageState();
+}
+
+class _EditProfilePageState extends State<EditProfilePage> {
+  late final TextEditingController display;
+  late final TextEditingController username;
+  late final TextEditingController bio;
+  AssetEntity? photo;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    display = TextEditingController(
+      text: (widget.profile['display_name'] ?? '').toString(),
+    );
+    username = TextEditingController(
+      text: (widget.profile['username'] ?? '').toString(),
+    );
+    bio = TextEditingController(text: (widget.profile['bio'] ?? '').toString());
+  }
+
+  @override
+  void dispose() {
+    display.dispose();
+    username.dispose();
+    bio.dispose();
+    super.dispose();
+  }
+
+  Future<void> _choosePhoto() async {
+    final permission = await PhotoManager.requestPermissionExtend();
+    if (!permission.isAuth && !permission.hasAccess) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Allow photo access to continue.')),
+        );
+      }
+      return;
+    }
+    final paths = await PhotoManager.getAssetPathList(
+      type: RequestType.common,
+      onlyAll: true,
+    );
+    if (paths.isEmpty) return;
+    final assets = await paths.first.getAssetListPaged(page: 0, size: 100);
+    if (!mounted) return;
+    final photos = assets
+        .where((a) => a.type == AssetType.image || a.type == AssetType.video)
+        .toList();
+    final picked = await showModalBottomSheet<List<AssetEntity>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _MediaPicker(assets: photos),
+    );
+    if (picked != null && picked.isNotEmpty && mounted) {
+      setState(() => photo = picked.first);
+    }
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+    if (display.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Enter a display name.')));
+      return;
+    }
+    setState(() => saving = true);
+    try {
+      await SocialRepository.instance.updateProfile(
+        displayName: display.text,
+        username: username.text,
+        bio: bio.text,
+        avatarAsset: photo,
+      );
+      await widget.onSaved();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile updated successfully')),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not save profile: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  InputDecoration _decoration(String label, IconData icon) => InputDecoration(
+    labelText: label,
+    prefixIcon: Icon(icon, color: violet),
+    filled: true,
+    fillColor: Colors.white,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(18),
+      borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(18),
+      borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(18),
+      borderSide: const BorderSide(color: violet, width: 1.5),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final avatar = (widget.profile['avatar_url'] ?? '').toString();
+    return Scaffold(
+      backgroundColor: canvas,
+      appBar: AppBar(
+        backgroundColor: canvas,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: saving ? null : () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        title: const Text(
+          'Edit Profile',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+        ),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(22, 22, 22, 24),
+                children: [
+                  Center(
+                    child: Column(
+                      children: [
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white,
+                                border: Border.all(
+                                  color: const Color(0xFFE5DFFF),
+                                  width: 2,
+                                ),
+                              ),
+                              child: ClipOval(
+                                child: SizedBox(
+                                  width: 112,
+                                  height: 112,
+                                  child: photo != null
+                                      ? FutureBuilder<Uint8List?>(
+                                          future: photo!.thumbnailDataWithSize(
+                                            const ThumbnailSize(360, 360),
+                                          ),
+                                          builder: (_, snap) =>
+                                              snap.data == null
+                                              ? const Center(
+                                                  child:
+                                                      CircularProgressIndicator(),
+                                                )
+                                              : Image.memory(
+                                                  snap.data!,
+                                                  fit: BoxFit.cover,
+                                                ),
+                                        )
+                                      : avatar.isNotEmpty
+                                      ? Image.network(
+                                          avatar,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, _, _) => const Icon(
+                                            Icons.person_rounded,
+                                            size: 54,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.person_rounded,
+                                          size: 54,
+                                          color: muted,
+                                        ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Material(
+                                color: violet,
+                                shape: const CircleBorder(),
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap: _choosePhoto,
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(10),
+                                    child: Icon(
+                                      Icons.add_rounded,
+                                      color: Colors.white,
+                                      size: 22,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton.icon(
+                          onPressed: _choosePhoto,
+                          icon: const Icon(Icons.photo_outlined),
+                          label: const Text('Change profile photo'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: display,
+                    textCapitalization: TextCapitalization.words,
+                    maxLength: 60,
+                    decoration: _decoration(
+                      'Display name',
+                      Icons.person_outline_rounded,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: username,
+                    autocorrect: false,
+                    textCapitalization: TextCapitalization.none,
+                    decoration: _decoration(
+                      '@Username',
+                      Icons.alternate_email_rounded,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: bio,
+                    maxLines: 4,
+                    maxLength: 160,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: _decoration('Bio', Icons.notes_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: Color(0xFFECECF2))),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: FilledButton(
+                  onPressed: saving ? null : _save,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: violet,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  child: saving
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Save Changes',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class FollowListPage extends StatefulWidget {
+  const FollowListPage({
+    super.key,
+    required this.profileId,
+    required this.followers,
+  });
+
+  final String profileId;
+  final bool followers;
+
+  @override
+  State<FollowListPage> createState() => _FollowListPageState();
+}
+
+class _FollowListPageState extends State<FollowListPage> {
+  List<Map<String, dynamic>> users = [];
+  bool loading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (mounted) {
+      setState(() {
+        loading = true;
+        error = null;
+      });
+    }
+    try {
+      final result = await SocialRepository.instance.followProfiles(
+        profileId: widget.profileId,
+        followers: widget.followers,
+      );
+      if (!mounted) return;
+      setState(() {
+        users = result;
+        loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        error = e.toString();
+        loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.followers ? 'Followers' : 'Following';
+    return Scaffold(
+      backgroundColor: canvas,
+      appBar: AppBar(
+        backgroundColor: canvas,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+        ),
+      ),
+      body: SafeArea(
+        child: loading
+            ? const Center(child: CircularProgressIndicator(color: violet))
+            : error != null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.cloud_off_rounded,
+                        size: 42,
+                        color: muted,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Could not load users',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        error!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: muted),
+                      ),
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        onPressed: _load,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Try again'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : users.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEDE9FF),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.people_outline_rounded,
+                        size: 36,
+                        color: violet,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      widget.followers
+                          ? 'No followers yet'
+                          : 'Not following anyone yet',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'People will appear here when available.',
+                      style: TextStyle(color: muted),
+                    ),
+                  ],
+                ),
+              )
+            : RefreshIndicator(
+                color: violet,
+                onRefresh: _load,
+                child: ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  itemCount: users.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (_, index) {
+                    final user = users[index];
+                    final name = (user['display_name'] ?? '').toString().trim();
+                    final username = (user['username'] ?? '').toString().trim();
+                    final avatar = (user['avatar_url'] ?? '').toString().trim();
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFECECF2)),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 27,
+                            backgroundColor: const Color(0xFFEDE9FF),
+                            backgroundImage: avatar.isNotEmpty
+                                ? NetworkImage(avatar)
+                                : null,
+                            child: avatar.isEmpty
+                                ? const Icon(
+                                    Icons.person_rounded,
+                                    color: violet,
+                                    size: 28,
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(width: 13),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name.isEmpty ? username : name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  username.isEmpty ? '@user' : '@$username',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: muted,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+      ),
+    );
+  }
+}
+
 class _ProfilePageState extends State<ProfilePage> {
+  bool _accountMenuOpen = false;
+
   int selectedTab = 0;
   int followersCount = 0;
   int followingCount = 0;
@@ -1305,6 +2393,83 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadFollowCounts();
   }
 
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Log out of Twice?'),
+        content: const Text(
+          'You will be signed out of your account on this device.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFD92D20),
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
+      // TwiceAuthGate listens to onAuthStateChange and returns to sign-in.
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not log out. Please try again.')),
+      );
+    }
+  }
+
+  Widget _clickableFollowStat(String value, String label, bool followers) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: _countsLoading
+          ? null
+          : () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => FollowListPage(
+                    profileId: (widget.profile['id'] ?? '').toString(),
+                    followers: followers,
+                  ),
+                ),
+              );
+            },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: const TextStyle(
+                color: muted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadFollowCounts() async {
     final id = (widget.profile['id'] ?? '').toString();
     if (id.isEmpty) {
@@ -1314,8 +2479,16 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final db = Supabase.instance.client;
       final values = await Future.wait<List<dynamic>>([
-        db.from('follows').select('follower_id').eq('following_id', id).eq('status', 'accepted'),
-        db.from('follows').select('following_id').eq('follower_id', id).eq('status', 'accepted'),
+        db
+            .from('follows')
+            .select('follower_id')
+            .eq('following_id', id)
+            .eq('status', 'accepted'),
+        db
+            .from('follows')
+            .select('following_id')
+            .eq('follower_id', id)
+            .eq('status', 'accepted'),
       ]);
       if (!mounted) return;
       setState(() {
@@ -1338,97 +2511,45 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   List<SocialPost> get _myPosts => widget.posts
-      .where((p) =>
-          p.data['user_id'] ==
-          Supabase.instance.client.auth.currentUser?.id)
+      .where(
+        (p) =>
+            p.data['user_id'] == Supabase.instance.client.auth.currentUser?.id,
+      )
       .toList();
 
   List<SocialPost> get _visiblePosts {
     if (selectedTab == 1) {
-      return _myPosts.where((p) => p.media.any((m) =>
-          (m['media_type'] ?? '').toString().toLowerCase() == 'image')).toList();
+      return _myPosts
+          .where(
+            (p) => p.media.any(
+              (m) =>
+                  (m['media_type'] ?? '').toString().toLowerCase() == 'image',
+            ),
+          )
+          .toList();
     }
     if (selectedTab == 2) {
-      return _myPosts.where((p) => p.media.any((m) =>
-          (m['media_type'] ?? '').toString().toLowerCase() == 'video')).toList();
+      return _myPosts
+          .where(
+            (p) => p.media.any(
+              (m) =>
+                  (m['media_type'] ?? '').toString().toLowerCase() == 'video',
+            ),
+          )
+          .toList();
     }
     return _myPosts;
   }
 
   Future<void> _edit() async {
-    final display = TextEditingController(
-      text: (widget.profile['display_name'] ?? '').toString(),
-    );
-    final username = TextEditingController(
-      text: (widget.profile['username'] ?? '').toString(),
-    );
-    final bio = TextEditingController(
-      text: (widget.profile['bio'] ?? '').toString(),
-    );
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Edit profile'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: display,
-                decoration: const InputDecoration(labelText: 'Display name'),
-              ),
-              TextField(
-                controller: username,
-                decoration: const InputDecoration(labelText: '@username'),
-              ),
-              TextField(
-                controller: bio,
-                maxLines: 3,
-                maxLength: 160,
-                decoration: const InputDecoration(labelText: 'Bio'),
-              ),
-            ],
-          ),
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EditProfilePage(
+          profile: Map<String, dynamic>.from(widget.profile),
+          onSaved: widget.onRefresh,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
-
-    if (ok == true && mounted) {
-      try {
-        await SocialRepository.instance.updateProfile(
-          displayName: display.text,
-          username: username.text,
-          bio: bio.text,
-        );
-        await widget.onRefresh();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Profile updated')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Profile update failed: $e')),
-          );
-        }
-      }
-    }
-
-    display.dispose();
-    username.dispose();
-    bio.dispose();
   }
 
   Future<void> _shareProfile() async {
@@ -1437,8 +2558,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
     final profileUrl = 'https://twice.app/@$username';
     final avatarUrl = (widget.profile['avatar_url'] ?? '').toString().trim();
-    final displayName =
-        (widget.profile['display_name'] ?? '').toString().trim();
+    final displayName = (widget.profile['display_name'] ?? '')
+        .toString()
+        .trim();
     final brightness = ScreenBrightness();
 
     try {
@@ -1452,7 +2574,10 @@ class _ProfilePageState extends State<ProfilePage> {
         context: context,
         barrierDismissible: true,
         builder: (dialogContext) => Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
           backgroundColor: Colors.white,
           elevation: 18,
           shape: RoundedRectangleBorder(
@@ -1546,8 +2671,11 @@ class _ProfilePageState extends State<ProfilePage> {
                   const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.qr_code_scanner_rounded,
-                          size: 18, color: violet),
+                      Icon(
+                        Icons.qr_code_scanner_rounded,
+                        size: 18,
+                        color: violet,
+                      ),
                       SizedBox(width: 8),
                       Flexible(
                         child: Text(
@@ -1608,15 +2736,15 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _stat(String value, String label) => Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 3),
-          Text(label, style: const TextStyle(color: muted, fontSize: 12)),
-        ],
-      );
+    children: [
+      Text(
+        value,
+        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(height: 3),
+      Text(label, style: const TextStyle(color: muted, fontSize: 12)),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1635,12 +2763,45 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    username.isEmpty ? 'Your profile' : '@$username',
-                    style: const TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w900,
-                    ),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          username.isEmpty ? 'Your profile' : '@$username',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Material(
+                        color: _accountMenuOpen
+                            ? const Color(0xFFEDE9FF)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => setState(
+                            () => _accountMenuOpen = !_accountMenuOpen,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(7),
+                            child: AnimatedRotation(
+                              turns: _accountMenuOpen ? 0.5 : 0,
+                              duration: const Duration(milliseconds: 220),
+                              child: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                size: 23,
+                                color: violet,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
@@ -1655,6 +2816,71 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ],
             ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeInOutCubic,
+            child: _accountMenuOpen
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFE8E7F0)),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x0D171923),
+                            blurRadius: 18,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () {
+                            setState(() => _accountMenuOpen = false);
+                            _logout();
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 13,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.logout_rounded,
+                                  color: Color(0xFFD92D20),
+                                  size: 21,
+                                ),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Log out',
+                                    style: TextStyle(
+                                      color: Color(0xFFD92D20),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.arrow_forward_ios_rounded,
+                                  size: 14,
+                                  color: muted,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : const SizedBox(width: double.infinity, height: 0),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -1677,8 +2903,16 @@ class _ProfilePageState extends State<ProfilePage> {
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       _stat('${_myPosts.length}', 'Posts'),
-                      _stat(_countsLoading ? '…' : '$followersCount', 'Followers'),
-                      _stat(_countsLoading ? '…' : '$followingCount', 'Following'),
+                      _clickableFollowStat(
+                        _countsLoading ? '…' : '$followersCount',
+                        'Followers',
+                        true,
+                      ),
+                      _clickableFollowStat(
+                        _countsLoading ? '…' : '$followingCount',
+                        'Following',
+                        false,
+                      ),
                     ],
                   ),
                 ),
@@ -1690,7 +2924,10 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if ((profile['display_name'] ?? '').toString().trim().isNotEmpty)
+                if ((profile['display_name'] ?? '')
+                    .toString()
+                    .trim()
+                    .isNotEmpty)
                   Text(
                     profile['display_name'].toString().trim(),
                     style: const TextStyle(
@@ -1738,14 +2975,18 @@ class _ProfilePageState extends State<ProfilePage> {
               padding: const EdgeInsets.symmetric(vertical: 55, horizontal: 24),
               child: Column(
                 children: [
-                  const Icon(Icons.photo_library_outlined, size: 43, color: muted),
+                  const Icon(
+                    Icons.photo_library_outlined,
+                    size: 43,
+                    color: muted,
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     selectedTab == 0
                         ? 'No posts yet'
                         : selectedTab == 1
-                            ? 'No photos yet'
-                            : 'No videos yet',
+                        ? 'No photos yet'
+                        : 'No videos yet',
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 17,
@@ -1782,7 +3023,10 @@ class _ProfilePageState extends State<ProfilePage> {
                       item.data['post_likes'] = rows;
                     });
                     try {
-                      await SocialRepository.instance.toggleLike(item.id, wasLiked);
+                      await SocialRepository.instance.toggleLike(
+                        item.id,
+                        wasLiked,
+                      );
                     } catch (e) {
                       await widget.onRefresh();
                       if (mounted) {
@@ -1838,17 +3082,167 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 }
 
-class MessagesPage extends StatefulWidget { const MessagesPage({super.key}); @override State<MessagesPage> createState() => _MessagesPageState(); }
+class MessagesPage extends StatefulWidget {
+  const MessagesPage({super.key});
+  @override
+  State<MessagesPage> createState() => _MessagesPageState();
+}
+
 class _MessagesPageState extends State<MessagesPage> {
   late Future<List<Map<String, dynamic>>> future;
-  @override void initState() { super.initState(); future = SocialRepository.instance.conversations(); }
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Messages')), body: FutureBuilder<List<Map<String, dynamic>>>(future: future, builder: (_, s) { if (s.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator()); if (s.hasError) return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text('Could not load conversations: ${s.error}'))); final rows = s.data ?? []; if (rows.isEmpty) return const Center(child: Text('No conversations yet')); return ListView.builder(itemCount: rows.length, itemBuilder: (_, i) { final r = rows[i]; final c = r['conversations'] as Map? ?? {}; return ListTile(leading: const CircleAvatar(child: Icon(Icons.person)), title: Text((c['title'] ?? 'Conversation').toString()), subtitle: const Text('Open conversation'), onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ConversationPage(id: r['conversation_id'].toString(), title: (c['title'] ?? 'Conversation').toString())))); }); }));
+  @override
+  void initState() {
+    super.initState();
+    future = SocialRepository.instance.conversations();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Messages')),
+    body: FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (_, s) {
+        if (s.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (s.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text('Could not load conversations: ${s.error}'),
+            ),
+          );
+        }
+        final rows = s.data ?? [];
+        if (rows.isEmpty) {
+          return const Center(child: Text('No conversations yet'));
+        }
+        return ListView.builder(
+          itemCount: rows.length,
+          itemBuilder: (_, i) {
+            final r = rows[i];
+            final c = r['conversations'] as Map? ?? {};
+            return ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.person)),
+              title: Text((c['title'] ?? 'Conversation').toString()),
+              subtitle: const Text('Open conversation'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ConversationPage(
+                    id: r['conversation_id'].toString(),
+                    title: (c['title'] ?? 'Conversation').toString(),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ),
+  );
 }
-class ConversationPage extends StatefulWidget { const ConversationPage({super.key, required this.id, required this.title}); final String id, title; @override State<ConversationPage> createState() => _ConversationPageState(); }
+
+class ConversationPage extends StatefulWidget {
+  const ConversationPage({super.key, required this.id, required this.title});
+  final String id, title;
+  @override
+  State<ConversationPage> createState() => _ConversationPageState();
+}
+
 class _ConversationPageState extends State<ConversationPage> {
-  final controller = TextEditingController(); late Future<List<Map<String, dynamic>>> future;
-  @override void initState() { super.initState(); future = SocialRepository.instance.messages(widget.id); }
-  @override void dispose() { controller.dispose(); super.dispose(); }
-  Future<void> _send() async { try { await SocialRepository.instance.sendMessage(widget.id, controller.text); controller.clear(); setState(() => future = SocialRepository.instance.messages(widget.id)); } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Message failed: $e'))); } }
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.title)), body: Column(children: [Expanded(child: FutureBuilder<List<Map<String, dynamic>>>(future: future, builder: (_, s) { if (s.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator()); if (s.hasError) return Center(child: Text('Could not load messages: ${s.error}')); final rows = s.data ?? []; return ListView.builder(reverse: false, padding: const EdgeInsets.all(12), itemCount: rows.length, itemBuilder: (_, i) { final r = rows[i]; final own = r['sender_id'] == Supabase.instance.client.auth.currentUser?.id; return Align(alignment: own ? Alignment.centerRight : Alignment.centerLeft, child: Container(margin: const EdgeInsets.symmetric(vertical: 4), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: own ? const Color(0xFFECE7FF) : Colors.white, borderRadius: BorderRadius.circular(16)), child: Text((r['body'] ?? '').toString()))); }); })), SafeArea(child: Padding(padding: const EdgeInsets.all(8), child: Row(children: [Expanded(child: TextField(controller: controller, decoration: const InputDecoration(hintText: 'Message…'))), IconButton(onPressed: _send, icon: const Icon(Icons.send, color: violet))])))]));
+  final controller = TextEditingController();
+  late Future<List<Map<String, dynamic>>> future;
+  @override
+  void initState() {
+    super.initState();
+    future = SocialRepository.instance.messages(widget.id);
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    try {
+      await SocialRepository.instance.sendMessage(widget.id, controller.text);
+      controller.clear();
+      setState(() => future = SocialRepository.instance.messages(widget.id));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Message failed: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(widget.title)),
+    body: Column(
+      children: [
+        Expanded(
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: future,
+            builder: (_, s) {
+              if (s.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (s.hasError) {
+                return Center(
+                  child: Text('Could not load messages: ${s.error}'),
+                );
+              }
+              final rows = s.data ?? [];
+              return ListView.builder(
+                reverse: false,
+                padding: const EdgeInsets.all(12),
+                itemCount: rows.length,
+                itemBuilder: (_, i) {
+                  final r = rows[i];
+                  final own =
+                      r['sender_id'] ==
+                      Supabase.instance.client.auth.currentUser?.id;
+                  return Align(
+                    alignment: own
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: own ? const Color(0xFFECE7FF) : Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text((r['body'] ?? '').toString()),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(hintText: 'Message…'),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _send,
+                  icon: const Icon(Icons.send, color: violet),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }

@@ -51,8 +51,32 @@ jobs:
           flutter-version: '3.47.7'
           cache: true
 
+      - name: Cache Dart package downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-dart-pub-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-dart-pub-
+
       - name: Resolve Dart dependencies
         run: flutter pub get
+
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          key: ${{ runner.os }}-android-ndk-28.2.13676358
+
+      - name: Cache native CMake build intermediates
+        uses: actions/cache@v4
+        with:
+          path: |
+            android/app/.cxx
+            android/.cxx
+          key: ${{ runner.os }}-twice-native-${{ hashFiles('android/app/src/main/cpp/**', 'android/app/build.gradle.kts', 'android/settings.gradle.kts', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-twice-native-
 
       - name: Build ARM64 release APK
         run: flutter build apk --release --target-platform android-arm64 --split-per-abi --no-pub --dart-define=SUPABASE_URL=${{ vars.SUPABASE_URL }} --dart-define=SUPABASE_PUBLISHABLE_KEY=${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
@@ -63,7 +87,7 @@ jobs:
           name: Twice-ARM64-Release
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
   verify:
     name: Verify Dart code and tests
@@ -88,6 +112,14 @@ jobs:
           channel: stable
           flutter-version: '3.47.7'
           cache: true
+
+      - name: Cache Dart package downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-dart-pub-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-dart-pub-
 
       - name: Resolve Dart dependencies
         run: flutter pub get

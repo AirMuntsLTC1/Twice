@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ffi' hide Size;
 
 import 'package:flutter/material.dart';
@@ -918,7 +919,9 @@ class _PostMediaItemState extends State<_PostMediaItem> {
   VideoPlayerController? _controller;
   bool _failed = false;
   bool _userPaused = false;
+  bool _showVideoControls = true;
   double _visibleFraction = 0;
+  Timer? _controlsTimer;
 
   bool get _isVideo =>
       (widget.media['media_type'] ?? '').toString().toLowerCase() == 'video';
@@ -956,6 +959,15 @@ class _PostMediaItemState extends State<_PostMediaItem> {
     }
   }
 
+  void _showControlsTemporarily() {
+    if (!mounted) return;
+    setState(() => _showVideoControls = true);
+    _controlsTimer?.cancel();
+    _controlsTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _showVideoControls = false);
+    });
+  }
+
   void _syncPlayback(VideoPlayerController controller) {
     if (!mounted || !controller.value.isInitialized) return;
     if (_visibleFraction >= 0.6 && !_userPaused) {
@@ -982,6 +994,7 @@ class _PostMediaItemState extends State<_PostMediaItem> {
 
   @override
   void dispose() {
+    _controlsTimer?.cancel();
     _controller?.pause();
     _controller?.dispose();
     super.dispose();
@@ -1033,56 +1046,60 @@ class _PostMediaItemState extends State<_PostMediaItem> {
       );
     }
 
-    return VisibilityDetector(
-      key: ValueKey('twice-video-$url'),
-      onVisibilityChanged: (info) {
-        _visibleFraction = info.visibleFraction;
-        _syncPlayback(controller);
-      },
-      child: ColoredBox(
-        color: Colors.black,
-        child: Stack(
-          fit: StackFit.expand,
-          alignment: Alignment.center,
-          children: [
-            FittedBox(
-              fit: BoxFit.contain,
-              child: SizedBox(
-                width: controller.value.size.width,
-                height: controller.value.size.height,
-                child: VideoPlayer(controller),
-              ),
-            ),
-            Center(
-              child: Material(
-                color: const Color(0x99000000),
-                shape: const CircleBorder(),
-                child: IconButton(
-                  tooltip: controller.value.isPlaying
-                      ? 'Pause video'
-                      : 'Play video',
-                  onPressed: () {
-                    setState(() {
-                      if (controller.value.isPlaying) {
-                        _userPaused = true;
-                        controller.pause();
-                      } else {
-                        _userPaused = false;
-                        _syncPlayback(controller);
-                      }
-                    });
-                  },
-                  icon: Icon(
-                    controller.value.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: 42,
-                  ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _showControlsTemporarily,
+      child: VisibilityDetector(
+        key: ValueKey('twice-video-$url'),
+        onVisibilityChanged: (info) {
+          _visibleFraction = info.visibleFraction;
+          _syncPlayback(controller);
+        },
+        child: ColoredBox(
+          color: Colors.black,
+          child: Stack(
+            fit: StackFit.expand,
+            alignment: Alignment.center,
+            children: [
+              FittedBox(
+                fit: BoxFit.contain,
+                child: SizedBox(
+                  width: controller.value.size.width,
+                  height: controller.value.size.height,
+                  child: VideoPlayer(controller),
                 ),
               ),
-            ),
-          ],
+              if (_showVideoControls)
+                Center(
+                  child: Material(
+                    color: const Color(0x99000000),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      tooltip: controller.value.isPlaying
+                          ? 'Pause video'
+                          : 'Play video',
+                      onPressed: () {
+                        if (controller.value.isPlaying) {
+                          _userPaused = true;
+                          controller.pause();
+                        } else {
+                          _userPaused = false;
+                          _syncPlayback(controller);
+                        }
+                        _showControlsTemporarily();
+                      },
+                      icon: Icon(
+                        controller.value.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 42,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

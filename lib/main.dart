@@ -1575,13 +1575,14 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  (profile['display_name'] ?? username).toString(),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
+                if ((profile['display_name'] ?? '').toString().trim().isNotEmpty)
+                  Text(
+                    profile['display_name'].toString().trim(),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
                 if (bio.isNotEmpty) ...[
                   const SizedBox(height: 5),
                   Text(bio, style: const TextStyle(height: 1.4)),

@@ -2,14 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:twice/main.dart';
 
 void main() {
-  testWidgets('Twice displays its social feed and navigation',
+  testWidgets('Twice displays Google sign-in when not configured',
       (WidgetTester tester) async {
     await tester.pumpWidget(const TwiceApp());
+    await tester.pumpAndSettle();
 
-    expect(find.text('Twice'), findsOneWidget);
-    expect(find.text('Explore'), findsOneWidget);
-    expect(find.text('Create'), findsOneWidget);
-    expect(find.text('Activity'), findsOneWidget);
-    expect(find.text('Profile'), findsOneWidget);
+    expect(find.text('Welcome to Twice'), findsOneWidget);
+    expect(find.text('Continue with Google'), findsOneWidget);
   });
 }

@@ -5,13 +5,31 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 const ink = Color(0xFF171923);
 const muted = Color(0xFF7B8191);
 const violet = Color(0xFF7257F5);
 const canvas = Color(0xFFF7F7FB);
 
-void main() {
+const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const supabasePublishableKey =
+    String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+
+bool get supabaseConfigured =>
+    supabaseUrl.startsWith('https://') &&
+    supabasePublishableKey.isNotEmpty;
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (supabaseConfigured) {
+    await Supabase.initialize(
+      url: supabaseUrl,
+      publishableKey: supabasePublishableKey,
+    );
+  }
+
   runApp(const TwiceApp());
 }
 
@@ -61,7 +79,198 @@ class TwiceApp extends StatelessWidget {
           centerTitle: false,
         ),
       ),
-      home: const TwiceShell(),
+      home: const TwiceAuthGate(),
+    );
+  }
+}
+
+
+class TwiceAuthGate extends StatelessWidget {
+  const TwiceAuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!supabaseConfigured) {
+      return const TwiceSignInPage(configurationMissing: true);
+    }
+
+    return StreamBuilder<AuthState>(
+      stream: Supabase.instance.client.auth.onAuthStateChange,
+      builder: (context, snapshot) {
+        final session = Supabase.instance.client.auth.currentSession;
+        if (session != null) return const TwiceShell();
+        return const TwiceSignInPage();
+      },
+    );
+  }
+}
+
+class TwiceSignInPage extends StatefulWidget {
+  const TwiceSignInPage({super.key, this.configurationMissing = false});
+
+  final bool configurationMissing;
+
+  @override
+  State<TwiceSignInPage> createState() => _TwiceSignInPageState();
+}
+
+class _TwiceSignInPageState extends State<TwiceSignInPage> {
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _continueWithGoogle() async {
+    if (widget.configurationMissing || _loading) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      await Supabase.instance.client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: 'twice://login-callback',
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _error = 'Unable to start Google sign-in. Please try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: canvas,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        color: violet,
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        't.',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 49,
+                          fontWeight: FontWeight.w900,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  const Text(
+                    'Welcome to Twice',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: ink,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Your people. Your moments. All in one place.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: muted, fontSize: 15, height: 1.5),
+                  ),
+                  const SizedBox(height: 42),
+                  OutlinedButton(
+                    onPressed: _loading || widget.configurationMissing
+                        ? null
+                        : _continueWithGoogle,
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(58),
+                      backgroundColor: Colors.white,
+                      foregroundColor: ink,
+                      side: const BorderSide(color: Color(0xFFE2E3EA)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(17),
+                      ),
+                    ),
+                    child: _loading
+                        ? const SizedBox(
+                            width: 23,
+                            height: 23,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'G',
+                                style: TextStyle(
+                                  fontSize: 23,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF4285F4),
+                                ),
+                              ),
+                              SizedBox(width: 12),
+                              Text(
+                                'Continue with Google',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                  if (widget.configurationMissing) ...[
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Supabase is not configured for this build. '
+                      'Please use the GitHub Actions release build.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: muted, fontSize: 12, height: 1.5),
+                    ),
+                  ],
+                  if (_error != null) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.red, fontSize: 13),
+                    ),
+                  ],
+                  const SizedBox(height: 34),
+                  const Text(
+                    'Secure sign-in powered by Google and Supabase.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    "By continuing, you agree to Twice's Terms of Service "
+                    'and Privacy Policy.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: muted, fontSize: 11, height: 1.6),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

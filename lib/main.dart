@@ -28,6 +28,8 @@ bool get supabaseConfigured =>
 // screen instead of remaining on Android's Flutter splash screen.
 bool supabaseReady = false;
 String? supabaseStartupError;
+bool googleSignInReady = false;
+String? googleSignInStartupError;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,6 +62,18 @@ Future<void> main() async {
           .replaceAll(supabasePublishableKey, '[key hidden]');
       supabaseStartupError =
           'Supabase initialization failed (${error.runtimeType}): $details';
+    }
+  }
+
+  if (googleServerClientId.isNotEmpty) {
+    try {
+      await GoogleSignIn.instance.initialize(
+        serverClientId: googleServerClientId,
+      );
+      googleSignInReady = true;
+    } catch (error) {
+      debugPrint('Twice Google Sign-In initialization failed: $error');
+      googleSignInStartupError = error.runtimeType.toString();
     }
   }
 
@@ -201,11 +215,14 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
           'Missing GOOGLE_SERVER_CLIENT_ID build setting. Add the Google Web OAuth client ID as a GitHub Actions secret.',
         );
       }
+      if (!googleSignInReady) {
+        throw StateError(
+          'Google Sign-In initialization failed${googleSignInStartupError == null ? '' : ' (${googleSignInStartupError!})'}. Check the Google OAuth configuration.',
+        );
+      }
 
-      // Use Google Sign-In's native Android account chooser. This avoids the
-      // browser-based Supabase OAuth redirect that was opening localhost:3000.
+      // Google Sign-In is initialized once during app startup.
       final google = GoogleSignIn.instance;
-      await google.initialize(serverClientId: googleServerClientId);
       final account = await google.authenticate();
       final idToken = account.authentication.idToken;
       if (idToken == null || idToken.isEmpty) {
@@ -219,6 +236,15 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
         idToken: idToken,
       );
     } catch (error) {
+      // Best-effort cleanup; never replace the original authentication error.
+      try {
+        if (googleSignInReady) {
+          await GoogleSignIn.instance.signOut();
+        }
+      } catch (cleanupError) {
+        debugPrint('Twice Google Sign-In cleanup failed: $cleanupError');
+      }
+
       if (mounted) {
         final details = error
             .toString()

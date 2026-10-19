@@ -1,6 +1,9 @@
 import 'dart:ffi' hide Size;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 const ink = Color(0xFF171923);
@@ -394,7 +397,7 @@ class _RepostActionButtonState extends State<_RepostActionButton>
             ),
           );
         },
-        child: const Icon(Icons.share_rounded, size: 28),
+        child: const Icon(Icons.repeat_rounded, size: 28),
       ),
     );
   }
@@ -675,6 +678,157 @@ class _BookmarkWaterClipper extends CustomClipper<Path> {
       oldClipper.progress != progress;
 }
 
+void _showComments(BuildContext context, SocialPost post) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) => _TwiceCommentsSheet(post: post),
+  );
+}
+
+class _TwiceCommentsSheet extends StatefulWidget {
+  const _TwiceCommentsSheet({required this.post});
+
+  final SocialPost post;
+
+  @override
+  State<_TwiceCommentsSheet> createState() => _TwiceCommentsSheetState();
+}
+
+class _TwiceCommentsSheetState extends State<_TwiceCommentsSheet> {
+  final TextEditingController _controller = TextEditingController();
+  final List<String> _comments = [];
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _send() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _comments.add(text));
+    _controller.clear();
+    FocusScope.of(context).unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      padding: EdgeInsets.only(bottom: bottom),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.65,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 38,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD9D9E0),
+                borderRadius: BorderRadius.circular(9),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Comments',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+            ),
+            const Divider(height: 22),
+            Expanded(
+              child: _comments.isEmpty
+                  ? const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.chat_bubble_outline_rounded, size: 36),
+                          SizedBox(height: 10),
+                          Text(
+                            'No comments yet',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          SizedBox(height: 4),
+                          Text('Be the first to comment.'),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _comments.length,
+                      itemBuilder: (context, index) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const CircleAvatar(
+                          backgroundColor: Color(0xFFECE7FF),
+                          child: Icon(Icons.person_rounded, color: violet),
+                        ),
+                        title: const Text(
+                          '@you',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: Text(_comments[index]),
+                      ),
+                    ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                child: Row(
+                  children: [
+                    const CircleAvatar(
+                      radius: 17,
+                      backgroundColor: Color(0xFFECE7FF),
+                      child: Icon(
+                        Icons.person_rounded,
+                        size: 20,
+                        color: violet,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: InputDecoration(
+                          hintText: 'Add a comment...',
+                          filled: true,
+                          fillColor: const Color(0xFFF4F4F8),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 15,
+                            vertical: 11,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        onSubmitted: (_) => _send(),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Post comment',
+                      onPressed: _send,
+                      icon: const Icon(Icons.send_rounded, color: violet),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class PostCard extends StatelessWidget {
   const PostCard({super.key, required this.post, required this.onLike});
 
@@ -811,13 +965,11 @@ class PostCard extends StatelessWidget {
                     ),
                     IconButton(
                       tooltip: 'Comments',
-                      onPressed: () => ScaffoldMessenger.of(context)
-                          .showSnackBar(
-                            const SnackBar(
-                              content: Text('Comments UI will be added later'),
-                            ),
-                          ),
-                      icon: const Icon(Icons.mode_comment_outlined, size: 27),
+                      onPressed: () => _showComments(context, post),
+                      icon: const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        size: 27,
+                      ),
                     ),
                     _RepostActionButton(
                       onPressed: () => ScaffoldMessenger.of(context)
@@ -1296,9 +1448,6 @@ class _TwiceComposerScreenState extends State<_TwiceComposerScreen>
       duration: const Duration(milliseconds: 550),
     );
     actionController.forward();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _openGallery();
-    });
   }
 
   Future<void> _openGallery() async {
@@ -1718,6 +1867,212 @@ class _ActivityTile extends StatelessWidget {
   }
 }
 
+class ProfileShareScreen extends StatelessWidget {
+  const ProfileShareScreen({super.key});
+
+  // Temporary local identifier. Public profile URLs and deep-link routing
+  // must be connected when Twice has real account identities.
+  static const String profileName = 'Your Name';
+  static const String profileBio = 'Making every moment count ✨';
+  static const String profileHandle = '@youraccount';
+  static const String profileLink = 'twice://profile/your-name';
+
+  Future<void> _copyProfileLink(BuildContext context) async {
+    await Clipboard.setData(const ClipboardData(text: profileLink));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Profile link copied')));
+  }
+
+  Future<void> _shareProfile(BuildContext context) async {
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          text: '$profileName on Twice\n$profileLink',
+          subject: 'My Twice profile',
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open sharing')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Share profile'), centerTitle: true),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        children: [
+          const SizedBox(height: 8),
+          const Center(
+            child: Text(
+              'Your profile',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Center(
+            child: Text(
+              'Let people find you on Twice',
+              style: TextStyle(color: muted),
+            ),
+          ),
+          const SizedBox(height: 28),
+          Row(
+            children: [
+              const CircleAvatar(
+                radius: 28,
+                backgroundColor: Color(0xFFECE7FF),
+                child: Icon(Icons.person_rounded, size: 34, color: violet),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      profileName,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(profileHandle, style: TextStyle(color: muted)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.qr_code_rounded, color: violet, size: 28),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFFE7E2F2)),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  QrImageView(
+                    data: profileLink,
+                    version: QrVersions.auto,
+                    size: 244,
+                    padding: EdgeInsets.zero,
+                    backgroundColor: Colors.white,
+                    errorCorrectionLevel: QrErrorCorrectLevel.H,
+                    eyeStyle: const QrEyeStyle(
+                      eyeShape: QrEyeShape.square,
+                      color: Color(0xFF17131F),
+                    ),
+                    dataModuleStyle: const QrDataModuleStyle(
+                      dataModuleShape: QrDataModuleShape.square,
+                      color: Color(0xFF17131F),
+                    ),
+                  ),
+                  Container(
+                    width: 62,
+                    height: 62,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECE7FF),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 5),
+                    ),
+                    child: const Icon(
+                      Icons.person_rounded,
+                      size: 38,
+                      color: violet,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Center(
+            child: Text(
+              'Scan this code to access the profile link',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: muted),
+            ),
+          ),
+          const SizedBox(height: 26),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4F1FC),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'PROFILE LINK',
+                  style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1.1,
+                    color: muted,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: SelectableText(
+                        profileLink,
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Copy profile link',
+                      onPressed: () => _copyProfileLink(context),
+                      icon: const Icon(Icons.copy_rounded, color: violet),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 50,
+            child: FilledButton.icon(
+              onPressed: () => _copyProfileLink(context),
+              icon: const Icon(Icons.copy_rounded),
+              label: const Text('Copy link'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 50,
+            child: OutlinedButton.icon(
+              onPressed: () => _shareProfile(context),
+              icon: const Icon(Icons.share_rounded),
+              label: const Text('Share profile'),
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Note: this is a temporary profile identifier. A public profile link '
+            'that opens the correct account requires account IDs and app '
+            'deep-link routing.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key, required this.posts});
 
@@ -1761,13 +2116,33 @@ class ProfilePage extends StatelessWidget {
           style: TextStyle(color: muted),
         ),
         const SizedBox(height: 18),
-        OutlinedButton(
-          onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Profile editing will be added later'),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Profile editing will be added later'),
+                  ),
+                ),
+                child: const Text('Edit profile'),
+              ),
             ),
-          ),
-          child: const Text('Edit profile'),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const ProfileShareScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.share_rounded, size: 18),
+                label: const Text('Share profile'),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         const Divider(),

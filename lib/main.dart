@@ -1267,7 +1267,9 @@ class _CreatePageState extends State<CreatePage> {
         await videoPaths.first.getAssetListPaged(page: 0, size: 100),
       );
     }
-    assets.sort((a, b) => b.createDateSecond.compareTo(a.createDateSecond));
+    assets.sort(
+      (a, b) => (b.createDateSecond ?? 0).compareTo(a.createDateSecond ?? 0),
+    );
     if (!mounted || assets.isEmpty) return;
     final picked = await showModalBottomSheet<List<AssetEntity>>(
       context: context,

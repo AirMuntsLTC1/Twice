@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 const ink = Color(0xFF171923);
 const muted = Color(0xFF7B8191);
@@ -15,6 +16,8 @@ const canvas = Color(0xFFF7F7FB);
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabasePublishableKey =
     String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+const googleServerClientId =
+    String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
 
 bool get supabaseConfigured =>
     supabaseUrl.startsWith('https://') &&
@@ -193,10 +196,27 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
     });
 
     try {
-      await Supabase.instance.client.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: 'twice://login-callback',
-        queryParams: {'prompt': 'select_account'},
+      if (googleServerClientId.isEmpty) {
+        throw StateError(
+          'Missing GOOGLE_SERVER_CLIENT_ID build setting. Add the Google Web OAuth client ID as a GitHub Actions secret.',
+        );
+      }
+
+      // Use Google Sign-In's native Android account chooser. This avoids the
+      // browser-based Supabase OAuth redirect that was opening localhost:3000.
+      final google = GoogleSignIn.instance;
+      await google.initialize(serverClientId: googleServerClientId);
+      final account = await google.authenticate();
+      final idToken = account.authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw StateError(
+          'Google did not return an ID token. Check the Web OAuth client ID and Android SHA-1 configuration.',
+        );
+      }
+
+      await Supabase.instance.client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
       );
     } catch (error) {
       if (mounted) {

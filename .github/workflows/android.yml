@@ -80,11 +80,12 @@ jobs:
 
       - name: Verify Supabase build configuration
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_URL: [REDACTED] secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: [REDACTED] secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
           test -n "$SUPABASE_URL" || { echo "::error::SUPABASE_URL secret is empty or unavailable"; exit 1; }
           test -n "$SUPABASE_PUBLISHABLE_KEY" || { echo "::error::SUPABASE_PUBLISHABLE_KEY secret is empty or unavailable"; exit 1; }
+          test -n "$GOOGLE_SERVER_CLIENT_ID" || { echo "::error::GOOGLE_SERVER_CLIENT_ID secret is empty or unavailable"; exit 1; }
           case "$SUPABASE_URL" in
             https://*.supabase.co) echo "Supabase URL format looks valid." ;;
             *) echo "::error::SUPABASE_URL format is invalid"; exit 1 ;;
@@ -92,7 +93,7 @@ jobs:
           echo "Both Supabase configuration values are present."
 
       - name: Build ARM64 release APK
-        run: flutter build apk --release --target-platform android-arm64 --split-per-abi --no-pub --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_PUBLISHABLE_KEY=${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: flutter build apk --release --target-platform android-arm64 --split-per-abi --no-pub --dart-define=SUPABASE_URL=[REDACTED] secrets.SUPABASE_URL }} --dart-define=SUPABASE_PUBLISHABLE_KEY=[REDACTED] secrets.SUPABASE_PUBLISHABLE_KEY }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

@@ -24,13 +24,22 @@ bool get supabaseConfigured =>
 // missing or initialization fails, the app still starts and shows its setup
 // screen instead of remaining on Android's Flutter splash screen.
 bool supabaseReady = false;
+String? supabaseStartupError;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Never let a bad/missing Supabase configuration prevent Flutter from
   // drawing the first frame indefinitely.
-  if (supabaseConfigured) {
+  if (!supabaseConfigured) {
+    final missing = <String>[
+      if (!supabaseUrl.startsWith('https://')) 'SUPABASE_URL',
+      if (supabasePublishableKey.isEmpty) 'SUPABASE_PUBLISHABLE_KEY',
+    ];
+    supabaseStartupError =
+        'Missing or invalid build configuration: ${missing.join(', ')}. '
+        'Check GitHub Repository secrets and rebuild the APK.';
+  } else {
     try {
       await Supabase.initialize(
         url: supabaseUrl,
@@ -42,6 +51,12 @@ Future<void> main() async {
       debugPrint('Twice Supabase startup failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       supabaseReady = false;
+      final details = error
+          .toString()
+          .replaceAll(supabaseUrl, '[Supabase URL hidden]')
+          .replaceAll(supabasePublishableKey, '[key hidden]');
+      supabaseStartupError =
+          'Supabase initialization failed (${error.runtimeType}): $details';
     }
   }
 
@@ -106,7 +121,7 @@ class TwiceAuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!supabaseReady) {
-      return const TwiceSignInPage(configurationMissing: true);
+      return TwiceSignInPage(\n        configurationMissing: true,\n        startupError: supabaseStartupError,\n      );
     }
 
     return StreamBuilder<AuthState>(
@@ -121,9 +136,14 @@ class TwiceAuthGate extends StatelessWidget {
 }
 
 class TwiceSignInPage extends StatefulWidget {
-  const TwiceSignInPage({super.key, this.configurationMissing = false});
+  const TwiceSignInPage({
+    super.key,
+    this.configurationMissing = false,
+    this.startupError,
+  });
 
   final bool configurationMissing;
+  final String? startupError;
 
   @override
   State<TwiceSignInPage> createState() => _TwiceSignInPageState();
@@ -146,10 +166,14 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
         OAuthProvider.google,
         redirectTo: 'twice://login-callback',
       );
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
+        final details = error
+            .toString()
+            .replaceAll(supabaseUrl, '[Supabase URL hidden]')
+            .replaceAll(supabasePublishableKey, '[key hidden]');
         setState(() {
-          _error = 'Unable to start Google sign-in. Please try again.';
+          _error = 'Google sign-in failed (${error.runtimeType}): $details';
         });
       }
     } finally {
@@ -252,20 +276,14 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                   ),
                   if (widget.configurationMissing) ...[
                     const SizedBox(height: 18),
-                    const Text(
-                      'Supabase is not configured for this build. '
-                      'Please use the GitHub Actions release build.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: muted, fontSize: 12, height: 1.5),
+                    _ErrorPanel(
+                      message: widget.startupError ??
+                          'Supabase configuration is missing. Check the GitHub Actions build secrets.',
                     ),
                   ],
                   if (_error != null) ...[
                     const SizedBox(height: 16),
-                    Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.red, fontSize: 13),
-                    ),
+                    _ErrorPanel(message: _error!),
                   ],
                   const SizedBox(height: 34),
                   const Text(

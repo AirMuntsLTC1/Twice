@@ -94,7 +94,14 @@ jobs:
           echo "Supabase and Google configuration values are present."
 
       - name: Build ARM64 release APK
-        run: flutter build apk --release --target-platform android-arm64 --split-per-abi --no-pub --dart-define=SUPABASE_URL=[REDACTED] secrets.SUPABASE_URL }} --dart-define=SUPABASE_PUBLISHABLE_KEY=[REDACTED] secrets.SUPABASE_PUBLISHABLE_KEY }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: >-
+          flutter build apk --release --target-platform android-arm64
+          --split-per-abi --no-pub
+          --dart-define=SUPABASE_URL=$SUPABASE_URL
+          --dart-define=SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

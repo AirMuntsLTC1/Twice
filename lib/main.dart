@@ -2,6 +2,8 @@ import 'dart:ffi' hide Size;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:video_player/video_player.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -903,6 +905,190 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
   );
 }
 
+class _PostMediaItem extends StatefulWidget {
+  const _PostMediaItem({required this.media});
+
+  final Map<String, dynamic> media;
+
+  @override
+  State<_PostMediaItem> createState() => _PostMediaItemState();
+}
+
+class _PostMediaItemState extends State<_PostMediaItem> {
+  VideoPlayerController? _controller;
+  bool _failed = false;
+  bool _userPaused = false;
+  double _visibleFraction = 0;
+
+  bool get _isVideo =>
+      (widget.media['media_type'] ?? '').toString().toLowerCase() == 'video';
+
+  String get _url => (widget.media['resolved_url'] ?? '').toString().trim();
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeVideo();
+  }
+
+  Future<void> _initializeVideo() async {
+    if (!_isVideo || _url.isEmpty) {
+      if (_isVideo && mounted) setState(() => _failed = true);
+      return;
+    }
+
+    final controller = VideoPlayerController.networkUrl(Uri.parse(_url));
+    _controller = controller;
+    try {
+      await controller.initialize();
+      await controller.setLooping(true);
+      await controller.setVolume(1);
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {});
+      _syncPlayback(controller);
+    } catch (_) {
+      await controller.dispose();
+      if (identical(_controller, controller)) _controller = null;
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  void _syncPlayback(VideoPlayerController controller) {
+    if (!mounted || !controller.value.isInitialized) return;
+    if (_visibleFraction >= 0.6 && !_userPaused) {
+      if (!controller.value.isPlaying) controller.play();
+    } else {
+      if (controller.value.isPlaying) controller.pause();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _PostMediaItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.media['resolved_url'] != widget.media['resolved_url'] ||
+        oldWidget.media['media_type'] != widget.media['media_type']) {
+      final old = _controller;
+      _controller = null;
+      _failed = false;
+      _userPaused = false;
+      _visibleFraction = 0;
+      old?.dispose();
+      _initializeVideo();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.pause();
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _url;
+
+    if (!_isVideo) {
+      return ColoredBox(
+        color: const Color(0xFFF4F5F7),
+        child: url.isEmpty
+            ? const Center(
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  size: 42,
+                  color: muted,
+                ),
+              )
+            : Image.network(
+                url,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                errorBuilder: (_, _, _) => const Center(
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    size: 42,
+                    color: muted,
+                  ),
+                ),
+              ),
+      );
+    }
+
+    final controller = _controller;
+    if (_failed) {
+      return const ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: Icon(Icons.error_outline, color: Colors.white, size: 42),
+        ),
+      );
+    }
+    if (controller == null || !controller.value.isInitialized) {
+      return const ColoredBox(
+        color: Colors.black,
+        child: Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+
+    return VisibilityDetector(
+      key: ValueKey('twice-video-$url'),
+      onVisibilityChanged: (info) {
+        _visibleFraction = info.visibleFraction;
+        _syncPlayback(controller);
+      },
+      child: ColoredBox(
+        color: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          alignment: Alignment.center,
+          children: [
+            FittedBox(
+              fit: BoxFit.contain,
+              child: SizedBox(
+                width: controller.value.size.width,
+                height: controller.value.size.height,
+                child: VideoPlayer(controller),
+              ),
+            ),
+            Center(
+              child: Material(
+                color: const Color(0x99000000),
+                shape: const CircleBorder(),
+                child: IconButton(
+                  tooltip: controller.value.isPlaying
+                      ? 'Pause video'
+                      : 'Play video',
+                  onPressed: () {
+                    setState(() {
+                      if (controller.value.isPlaying) {
+                        _userPaused = true;
+                        controller.pause();
+                      } else {
+                        _userPaused = false;
+                        _syncPlayback(controller);
+                      }
+                    });
+                  },
+                  icon: Icon(
+                    controller.value.isPlaying
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 42,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class PostCard extends StatelessWidget {
   const PostCard({
     super.key,
@@ -1035,29 +1221,7 @@ class PostCard extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final url = (media[index]['resolved_url'] ?? '')
                           .toString();
-                      return ColoredBox(
-                        color: const Color(0xFFF4F5F7),
-                        child: url.isEmpty
-                            ? const Center(
-                                child: Icon(
-                                  Icons.broken_image_outlined,
-                                  size: 42,
-                                  color: muted,
-                                ),
-                              )
-                            : Image.network(
-                                url,
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                errorBuilder: (_, _, _) => const Center(
-                                  child: Icon(
-                                    Icons.broken_image_outlined,
-                                    size: 42,
-                                    color: muted,
-                                  ),
-                                ),
-                              ),
-                      );
+                      return _PostMediaItem(media: media[index]);
                     },
                   ),
                   if (media.length > 1)

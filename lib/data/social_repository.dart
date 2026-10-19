@@ -63,7 +63,7 @@ class SocialRepository {
 
   Future<List<Map<String, dynamic>>> feed({int limit = 30, int offset = 0}) async {
     await ensureProfile();
-    final rows = await _db.from('posts').select('id,user_id,caption,visibility,comments_enabled,created_at,profiles(id,username,display_name,avatar_url),post_media(id,media_url,media_type,position),post_likes(user_id),saved_posts(user_id)')
+    final rows = await _db.from('posts').select('id,user_id,caption,visibility,comments_enabled,created_at,profiles!posts_user_id_fkey(id,username,display_name,avatar_url),post_media(id,media_url,media_type,position),post_likes(user_id),saved_posts(user_id)')
       .order('created_at', ascending: false).range(offset, offset + limit - 1);
     return Future.wait((rows as List).map((raw) async {
       final post = Map<String, dynamic>.from(raw as Map);
@@ -150,7 +150,7 @@ class SocialRepository {
       usersById[user['id'].toString()] = user;
     }
     results.addAll(usersById.values.map((e) => {...e, 'result_type': 'user'}));
-    final posts = await _db.from('posts').select('id,user_id,caption,created_at,profiles(username,display_name,avatar_url)').ilike('caption', '%$safe%').order('created_at', ascending: false).limit(20);
+    final posts = await _db.from('posts').select('id,user_id,caption,created_at,profiles!posts_user_id_fkey(username,display_name,avatar_url)').ilike('caption', '%$safe%').order('created_at', ascending: false).limit(20);
     results.addAll((posts as List).map((e) => {...Map<String, dynamic>.from(e as Map), 'result_type': 'post'}));
     return results;
   }

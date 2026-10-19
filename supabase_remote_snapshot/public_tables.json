@@ -1,0 +1,55 @@
+[
+  {
+    "table_name": "blocks"
+  },
+  {
+    "table_name": "comment_likes"
+  },
+  {
+    "table_name": "comments"
+  },
+  {
+    "table_name": "conversation_members"
+  },
+  {
+    "table_name": "conversations"
+  },
+  {
+    "table_name": "follows"
+  },
+  {
+    "table_name": "messages"
+  },
+  {
+    "table_name": "notifications"
+  },
+  {
+    "table_name": "post_likes"
+  },
+  {
+    "table_name": "post_media"
+  },
+  {
+    "table_name": "posts"
+  },
+  {
+    "table_name": "profiles"
+  },
+  {
+    "table_name": "saved_posts"
+  },
+  {
+    "table_name": "stories"
+  },
+  {
+    "table_name": "story_reactions"
+  },
+  {
+    "table_name": "story_views"
+  }
+]
+
+-- STDERR --
+Initialising login role...
+
+-- EXIT CODE: 0 --

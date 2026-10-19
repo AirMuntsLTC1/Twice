@@ -1,0 +1,380 @@
+[
+  {
+    "cmd": "DELETE",
+    "policyname": "blocks_delete_own",
+    "schemaname": "public",
+    "tablename": "blocks"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "blocks_insert_own",
+    "schemaname": "public",
+    "tablename": "blocks"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "blocks_read_own",
+    "schemaname": "public",
+    "tablename": "blocks"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "comment_likes_delete_self",
+    "schemaname": "public",
+    "tablename": "comment_likes"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "comment_likes_insert_self",
+    "schemaname": "public",
+    "tablename": "comment_likes"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "comment_likes_read_authenticated",
+    "schemaname": "public",
+    "tablename": "comment_likes"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "comments_delete_self",
+    "schemaname": "public",
+    "tablename": "comments"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "comments_insert_self",
+    "schemaname": "public",
+    "tablename": "comments"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "comments_read_authenticated",
+    "schemaname": "public",
+    "tablename": "comments"
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "comments_update_self",
+    "schemaname": "public",
+    "tablename": "comments"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "conversation_members_add_creator_or_self",
+    "schemaname": "public",
+    "tablename": "conversation_members"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "conversation_members_read_members",
+    "schemaname": "public",
+    "tablename": "conversation_members"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "conversation_members_remove_self",
+    "schemaname": "public",
+    "tablename": "conversation_members"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "conversations_create_self",
+    "schemaname": "public",
+    "tablename": "conversations"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "conversations_read_members",
+    "schemaname": "public",
+    "tablename": "conversations"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "follows_create_self",
+    "schemaname": "public",
+    "tablename": "follows"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "follows_delete_participant",
+    "schemaname": "public",
+    "tablename": "follows"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "follows_read_participants",
+    "schemaname": "public",
+    "tablename": "follows"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "messages_delete_sender",
+    "schemaname": "public",
+    "tablename": "messages"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "messages_insert_members",
+    "schemaname": "public",
+    "tablename": "messages"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "messages_read_members",
+    "schemaname": "public",
+    "tablename": "messages"
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "messages_update_sender",
+    "schemaname": "public",
+    "tablename": "messages"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "notifications_read_own",
+    "schemaname": "public",
+    "tablename": "notifications"
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "notifications_update_own",
+    "schemaname": "public",
+    "tablename": "notifications"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "post_likes_delete_self",
+    "schemaname": "public",
+    "tablename": "post_likes"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "post_likes_insert_self",
+    "schemaname": "public",
+    "tablename": "post_likes"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "post_likes_read_authenticated",
+    "schemaname": "public",
+    "tablename": "post_likes"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "post_media_delete_owner",
+    "schemaname": "public",
+    "tablename": "post_media"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "post_media_insert_owner",
+    "schemaname": "public",
+    "tablename": "post_media"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "post_media_read_visible_post",
+    "schemaname": "public",
+    "tablename": "post_media"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "posts_delete_self",
+    "schemaname": "public",
+    "tablename": "posts"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "posts_insert_self",
+    "schemaname": "public",
+    "tablename": "posts"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "posts_read_visible",
+    "schemaname": "public",
+    "tablename": "posts"
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "posts_update_self",
+    "schemaname": "public",
+    "tablename": "posts"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "profiles_insert_self",
+    "schemaname": "public",
+    "tablename": "profiles"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "profiles_read_authenticated",
+    "schemaname": "public",
+    "tablename": "profiles"
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "profiles_update_self",
+    "schemaname": "public",
+    "tablename": "profiles"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "saved_posts_delete_own",
+    "schemaname": "public",
+    "tablename": "saved_posts"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "saved_posts_insert_own",
+    "schemaname": "public",
+    "tablename": "saved_posts"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "saved_posts_read_own",
+    "schemaname": "public",
+    "tablename": "saved_posts"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "stories_delete_self",
+    "schemaname": "public",
+    "tablename": "stories"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "stories_insert_self",
+    "schemaname": "public",
+    "tablename": "stories"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "stories_read_authenticated",
+    "schemaname": "public",
+    "tablename": "stories"
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "stories_update_self",
+    "schemaname": "public",
+    "tablename": "stories"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "story_reactions_delete_self",
+    "schemaname": "public",
+    "tablename": "story_reactions"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "story_reactions_insert_self",
+    "schemaname": "public",
+    "tablename": "story_reactions"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "story_reactions_read_authenticated",
+    "schemaname": "public",
+    "tablename": "story_reactions"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "story_views_insert_self",
+    "schemaname": "public",
+    "tablename": "story_views"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "story_views_read_owner_or_viewer",
+    "schemaname": "public",
+    "tablename": "story_views"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "avatars_delete_own_folder",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "avatars_insert_own_folder",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "avatars_read_public",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "avatars_update_own_folder",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "chat_media_delete_own_folder",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "chat_media_insert_own_folder",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "chat_media_read_authenticated",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "post_media_delete_own_folder",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "post_media_insert_own_folder",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "post_media_read_authenticated",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "post_media_update_own_folder",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "stories_delete_own_folder",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "stories_insert_own_folder",
+    "schemaname": "storage",
+    "tablename": "objects"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "stories_read_authenticated",
+    "schemaname": "storage",
+    "tablename": "objects"
+  }
+]

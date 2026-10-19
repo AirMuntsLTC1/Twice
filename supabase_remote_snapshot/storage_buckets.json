@@ -1,0 +1,62 @@
+[
+  {
+    "allowed_mime_types": [
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ],
+    "file_size_limit": 5242880,
+    "id": "avatars",
+    "name": "avatars",
+    "public": true
+  },
+  {
+    "allowed_mime_types": [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "video/mp4",
+      "video/webm",
+      "audio/mpeg",
+      "application/pdf"
+    ],
+    "file_size_limit": 26214400,
+    "id": "chat-media",
+    "name": "chat-media",
+    "public": false
+  },
+  {
+    "allowed_mime_types": [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "video/mp4",
+      "video/webm"
+    ],
+    "file_size_limit": 52428800,
+    "id": "post-media",
+    "name": "post-media",
+    "public": false
+  },
+  {
+    "allowed_mime_types": [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "video/mp4",
+      "video/webm"
+    ],
+    "file_size_limit": 52428800,
+    "id": "stories",
+    "name": "stories",
+    "public": false
+  }
+]
+
+-- STDERR --
+Initialising login role...
+
+-- EXIT CODE: 0 --

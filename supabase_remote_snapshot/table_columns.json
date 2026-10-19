@@ -1,0 +1,1447 @@
+[
+  {
+    "column_default": null,
+    "column_name": "blocker_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "blocks",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "blocked_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "blocks",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "blocks",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "comment_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "comment_likes",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "comment_likes",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "comment_likes",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "comments",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "post_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "comments",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "comments",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "parent_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "ordinal_position": 4,
+    "table_name": "comments",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "body",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 5,
+    "table_name": "comments",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 6,
+    "table_name": "comments",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 7,
+    "table_name": "comments",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "conversation_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "conversation_members",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "conversation_members",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "joined_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "conversation_members",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "last_read_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 4,
+    "table_name": "conversation_members",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "conversations",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "false",
+    "column_name": "is_group",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "conversations",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "title",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 3,
+    "table_name": "conversations",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "created_by",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "ordinal_position": 4,
+    "table_name": "conversations",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 5,
+    "table_name": "conversations",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "follower_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "follows",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "following_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "follows",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "'accepted'::text",
+    "column_name": "status",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "follows",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "follows",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "messages",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "conversation_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "messages",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "sender_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "messages",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "''::text",
+    "column_name": "body",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "messages",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "media_url",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 5,
+    "table_name": "messages",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "media_type",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 6,
+    "table_name": "messages",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 7,
+    "table_name": "messages",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "edited_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 8,
+    "table_name": "messages",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "deleted_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 9,
+    "table_name": "messages",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "notifications",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "recipient_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "notifications",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "actor_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "ordinal_position": 3,
+    "table_name": "notifications",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "type",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "notifications",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "post_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "ordinal_position": 5,
+    "table_name": "notifications",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "comment_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "ordinal_position": 6,
+    "table_name": "notifications",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "story_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "ordinal_position": 7,
+    "table_name": "notifications",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "false",
+    "column_name": "is_read",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "ordinal_position": 8,
+    "table_name": "notifications",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 9,
+    "table_name": "notifications",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "post_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "post_likes",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "post_likes",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "post_likes",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "post_media",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "post_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "post_media",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "media_url",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "post_media",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "media_type",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "post_media",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "0",
+    "column_name": "position",
+    "data_type": "integer",
+    "is_nullable": "NO",
+    "ordinal_position": 5,
+    "table_name": "post_media",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "width",
+    "data_type": "integer",
+    "is_nullable": "YES",
+    "ordinal_position": 6,
+    "table_name": "post_media",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "height",
+    "data_type": "integer",
+    "is_nullable": "YES",
+    "ordinal_position": 7,
+    "table_name": "post_media",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 8,
+    "table_name": "post_media",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "posts",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "posts",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "''::text",
+    "column_name": "caption",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "posts",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "'public'::text",
+    "column_name": "visibility",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "posts",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "true",
+    "column_name": "comments_enabled",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "ordinal_position": 5,
+    "table_name": "posts",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 6,
+    "table_name": "posts",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 7,
+    "table_name": "posts",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "profiles",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "username",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "profiles",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "''::text",
+    "column_name": "display_name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "profiles",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "''::text",
+    "column_name": "bio",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "profiles",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "avatar_url",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 5,
+    "table_name": "profiles",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "false",
+    "column_name": "is_private",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "ordinal_position": 6,
+    "table_name": "profiles",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 7,
+    "table_name": "profiles",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 8,
+    "table_name": "profiles",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "saved_posts",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "post_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "saved_posts",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "saved_posts",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "stories",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "stories",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "media_url",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "stories",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "media_type",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "stories",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "''::text",
+    "column_name": "caption",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 5,
+    "table_name": "stories",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "(now() + '24:00:00'::interval)",
+    "column_name": "expires_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 6,
+    "table_name": "stories",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 7,
+    "table_name": "stories",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "story_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "story_reactions",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "story_reactions",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "'❤️'::text",
+    "column_name": "reaction",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "story_reactions",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "story_reactions",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "story_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "story_views",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "viewer_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "story_views",
+    "table_schema": "public"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "viewed_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "story_views",
+    "table_schema": "public"
+  },
+  {
+    "column_default": null,
+    "column_name": "id",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "owner",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "ordinal_position": 3,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 4,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 5,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "false",
+    "column_name": "public",
+    "data_type": "boolean",
+    "is_nullable": "YES",
+    "ordinal_position": 6,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "false",
+    "column_name": "avif_autodetection",
+    "data_type": "boolean",
+    "is_nullable": "YES",
+    "ordinal_position": 7,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "file_size_limit",
+    "data_type": "bigint",
+    "is_nullable": "YES",
+    "ordinal_position": 8,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "allowed_mime_types",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "ordinal_position": 9,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "owner_id",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 10,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "'STANDARD'::storage.buckettype",
+    "column_name": "type",
+    "data_type": "USER-DEFINED",
+    "is_nullable": "NO",
+    "ordinal_position": 11,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "'DISABLED'::text",
+    "column_name": "versioning_status",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 12,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "lifecycle_configuration",
+    "data_type": "jsonb",
+    "is_nullable": "YES",
+    "ordinal_position": 13,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "lifecycle_configuration_generation",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "ordinal_position": 14,
+    "table_name": "buckets",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "buckets_analytics",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "'ANALYTICS'::storage.buckettype",
+    "column_name": "type",
+    "data_type": "USER-DEFINED",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "buckets_analytics",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "'ICEBERG'::text",
+    "column_name": "format",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "buckets_analytics",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "buckets_analytics",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 5,
+    "table_name": "buckets_analytics",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 6,
+    "table_name": "buckets_analytics",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "deleted_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 7,
+    "table_name": "buckets_analytics",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "id",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "buckets_vectors",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "'VECTOR'::storage.buckettype",
+    "column_name": "type",
+    "data_type": "USER-DEFINED",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "buckets_vectors",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "buckets_vectors",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "buckets_vectors",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "id",
+    "data_type": "integer",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "migrations",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "name",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "migrations",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "hash",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "migrations",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "CURRENT_TIMESTAMP",
+    "column_name": "executed_at",
+    "data_type": "timestamp without time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 4,
+    "table_name": "migrations",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "bucket_id",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 2,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 3,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "owner",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "ordinal_position": 4,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 5,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 6,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "last_accessed_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 7,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "metadata",
+    "data_type": "jsonb",
+    "is_nullable": "YES",
+    "ordinal_position": 8,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "path_tokens",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "ordinal_position": 9,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "version",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 10,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "owner_id",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 11,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "user_metadata",
+    "data_type": "jsonb",
+    "is_nullable": "YES",
+    "ordinal_position": 12,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "archived_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "ordinal_position": 13,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "false",
+    "column_name": "is_delete_marker",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "ordinal_position": 14,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "false",
+    "column_name": "is_versioned",
+    "data_type": "boolean",
+    "is_nullable": "NO",
+    "ordinal_position": 15,
+    "table_name": "objects",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "id",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "s3_multipart_uploads",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "0",
+    "column_name": "in_progress_size",
+    "data_type": "bigint",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "s3_multipart_uploads",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "upload_signature",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "s3_multipart_uploads",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "bucket_id",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "s3_multipart_uploads",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "key",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 5,
+    "table_name": "s3_multipart_uploads",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "version",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 6,
+    "table_name": "s3_multipart_uploads",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "owner_id",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 7,
+    "table_name": "s3_multipart_uploads",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 8,
+    "table_name": "s3_multipart_uploads",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "user_metadata",
+    "data_type": "jsonb",
+    "is_nullable": "YES",
+    "ordinal_position": 9,
+    "table_name": "s3_multipart_uploads",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "metadata",
+    "data_type": "jsonb",
+    "is_nullable": "YES",
+    "ordinal_position": 10,
+    "table_name": "s3_multipart_uploads",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "s3_multipart_uploads_parts",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "upload_id",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "s3_multipart_uploads_parts",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "0",
+    "column_name": "size",
+    "data_type": "bigint",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "s3_multipart_uploads_parts",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "part_number",
+    "data_type": "integer",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "s3_multipart_uploads_parts",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "bucket_id",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 5,
+    "table_name": "s3_multipart_uploads_parts",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "key",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 6,
+    "table_name": "s3_multipart_uploads_parts",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "etag",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 7,
+    "table_name": "s3_multipart_uploads_parts",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "owner_id",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "ordinal_position": 8,
+    "table_name": "s3_multipart_uploads_parts",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "version",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 9,
+    "table_name": "s3_multipart_uploads_parts",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 10,
+    "table_name": "s3_multipart_uploads_parts",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "gen_random_uuid()",
+    "column_name": "id",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 1,
+    "table_name": "vector_indexes",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 2,
+    "table_name": "vector_indexes",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "bucket_id",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 3,
+    "table_name": "vector_indexes",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "data_type",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 4,
+    "table_name": "vector_indexes",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "dimension",
+    "data_type": "integer",
+    "is_nullable": "NO",
+    "ordinal_position": 5,
+    "table_name": "vector_indexes",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "distance_metric",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "ordinal_position": 6,
+    "table_name": "vector_indexes",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": null,
+    "column_name": "metadata_configuration",
+    "data_type": "jsonb",
+    "is_nullable": "YES",
+    "ordinal_position": 7,
+    "table_name": "vector_indexes",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 8,
+    "table_name": "vector_indexes",
+    "table_schema": "storage"
+  },
+  {
+    "column_default": "now()",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "ordinal_position": 9,
+    "table_name": "vector_indexes",
+    "table_schema": "storage"
+  }
+]
+
+-- STDERR --
+Initialising login role...
+
+-- EXIT CODE: 0 --

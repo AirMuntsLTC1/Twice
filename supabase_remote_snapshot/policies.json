@@ -1,0 +1,637 @@
+[
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "blocks_delete_own",
+    "qual": "(blocker_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "blocks",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "blocks_insert_own",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "blocks",
+    "with_check": "(blocker_id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "blocks_read_own",
+    "qual": "(blocker_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "blocks",
+    "with_check": null
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "comment_likes_delete_self",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "comment_likes",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "comment_likes_insert_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "comment_likes",
+    "with_check": "((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1\n   FROM (comments c\n     JOIN posts p ON ((p.id = c.post_id)))\n  WHERE (c.id = comment_likes.comment_id))))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "comment_likes_read_authenticated",
+    "qual": "(EXISTS ( SELECT 1\n   FROM (comments c\n     JOIN posts p ON ((p.id = c.post_id)))\n  WHERE (c.id = comment_likes.comment_id)))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "comment_likes",
+    "with_check": null
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "comments_delete_self",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "comments",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "comments_insert_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "comments",
+    "with_check": "((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1\n   FROM posts p\n  WHERE ((p.id = comments.post_id) AND p.comments_enabled))))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "comments_read_authenticated",
+    "qual": "(EXISTS ( SELECT 1\n   FROM posts p\n  WHERE (p.id = comments.post_id)))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "comments",
+    "with_check": null
+  },
+  {
+    "cmd": "UPDATE",
+    "permissive": "PERMISSIVE",
+    "policyname": "comments_update_self",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "comments",
+    "with_check": "(user_id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "conversation_members_add_creator_or_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "conversation_members",
+    "with_check": "(((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1\n   FROM conversations c\n  WHERE ((c.id = conversation_members.conversation_id) AND (c.created_by = ( SELECT auth.uid() AS uid)))))) OR (EXISTS ( SELECT 1\n   FROM conversations c\n  WHERE ((c.id = conversation_members.conversation_id) AND (c.created_by = ( SELECT auth.uid() AS uid))))))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "conversation_members_read_members",
+    "qual": "is_conversation_member(conversation_id)",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "conversation_members",
+    "with_check": null
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "conversation_members_remove_self",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "conversation_members",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "conversations_create_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "conversations",
+    "with_check": "(created_by = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "conversations_read_members",
+    "qual": "is_conversation_member(id)",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "conversations",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "follows_create_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "follows",
+    "with_check": "((follower_id = ( SELECT auth.uid() AS uid)) AND (follower_id \u003c\u003e following_id) AND (((status = 'pending'::text) AND (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = follows.following_id) AND p.is_private)))) OR ((status = 'accepted'::text) AND (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = follows.following_id) AND (NOT p.is_private)))))))"
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "follows_delete_participant",
+    "qual": "((follower_id = ( SELECT auth.uid() AS uid)) OR (following_id = ( SELECT auth.uid() AS uid)))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "follows",
+    "with_check": null
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "follows_read_participants",
+    "qual": "((follower_id = ( SELECT auth.uid() AS uid)) OR (following_id = ( SELECT auth.uid() AS uid)))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "follows",
+    "with_check": null
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "messages_delete_sender",
+    "qual": "(sender_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "messages",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "messages_insert_members",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "messages",
+    "with_check": "((sender_id = ( SELECT auth.uid() AS uid)) AND is_conversation_member(conversation_id))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "messages_read_members",
+    "qual": "is_conversation_member(conversation_id)",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "messages",
+    "with_check": null
+  },
+  {
+    "cmd": "UPDATE",
+    "permissive": "PERMISSIVE",
+    "policyname": "messages_update_sender",
+    "qual": "(sender_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "messages",
+    "with_check": "(sender_id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "notifications_read_own",
+    "qual": "(recipient_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "notifications",
+    "with_check": null
+  },
+  {
+    "cmd": "UPDATE",
+    "permissive": "PERMISSIVE",
+    "policyname": "notifications_update_own",
+    "qual": "(recipient_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "notifications",
+    "with_check": "(recipient_id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "post_likes_delete_self",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "post_likes",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "post_likes_insert_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "post_likes",
+    "with_check": "((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1\n   FROM posts p\n  WHERE (p.id = post_likes.post_id))))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "post_likes_read_authenticated",
+    "qual": "(EXISTS ( SELECT 1\n   FROM posts p\n  WHERE (p.id = post_likes.post_id)))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "post_likes",
+    "with_check": null
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "post_media_delete_owner",
+    "qual": "(EXISTS ( SELECT 1\n   FROM posts p\n  WHERE ((p.id = post_media.post_id) AND (p.user_id = ( SELECT auth.uid() AS uid)))))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "post_media",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "post_media_insert_owner",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "post_media",
+    "with_check": "(EXISTS ( SELECT 1\n   FROM posts p\n  WHERE ((p.id = post_media.post_id) AND (p.user_id = ( SELECT auth.uid() AS uid)))))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "post_media_read_visible_post",
+    "qual": "(EXISTS ( SELECT 1\n   FROM posts p\n  WHERE (p.id = post_media.post_id)))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "post_media",
+    "with_check": null
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "posts_delete_self",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "posts",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "posts_insert_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "posts",
+    "with_check": "(user_id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "posts_read_visible",
+    "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR ((NOT (EXISTS ( SELECT 1\n   FROM blocks b\n  WHERE (((b.blocker_id = posts.user_id) AND (b.blocked_id = ( SELECT auth.uid() AS uid))) OR ((b.blocker_id = ( SELECT auth.uid() AS uid)) AND (b.blocked_id = posts.user_id)))))) AND (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = posts.user_id) AND ((NOT p.is_private) OR (EXISTS ( SELECT 1\n           FROM follows f\n          WHERE ((f.follower_id = ( SELECT auth.uid() AS uid)) AND (f.following_id = posts.user_id) AND (f.status = 'accepted'::text)))))))) AND ((visibility = 'public'::text) OR ((visibility = 'followers'::text) AND (EXISTS ( SELECT 1\n   FROM follows f\n  WHERE ((f.follower_id = ( SELECT auth.uid() AS uid)) AND (f.following_id = posts.user_id) AND (f.status = 'accepted'::text))))))))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "posts",
+    "with_check": null
+  },
+  {
+    "cmd": "UPDATE",
+    "permissive": "PERMISSIVE",
+    "policyname": "posts_update_self",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "posts",
+    "with_check": "(user_id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "profiles_insert_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "profiles",
+    "with_check": "(id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "profiles_read_authenticated",
+    "qual": "true",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "profiles",
+    "with_check": null
+  },
+  {
+    "cmd": "UPDATE",
+    "permissive": "PERMISSIVE",
+    "policyname": "profiles_update_self",
+    "qual": "(id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "profiles",
+    "with_check": "(id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "saved_posts_delete_own",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "saved_posts",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "saved_posts_insert_own",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "saved_posts",
+    "with_check": "(user_id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "saved_posts_read_own",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "saved_posts",
+    "with_check": null
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "stories_delete_self",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "stories",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "stories_insert_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "stories",
+    "with_check": "(user_id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "stories_read_authenticated",
+    "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR ((expires_at \u003e now()) AND ((NOT (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = stories.user_id) AND p.is_private)))) OR (EXISTS ( SELECT 1\n   FROM follows f\n  WHERE ((f.follower_id = ( SELECT auth.uid() AS uid)) AND (f.following_id = stories.user_id) AND (f.status = 'accepted'::text)))))))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "stories",
+    "with_check": null
+  },
+  {
+    "cmd": "UPDATE",
+    "permissive": "PERMISSIVE",
+    "policyname": "stories_update_self",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "stories",
+    "with_check": "(user_id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "story_reactions_delete_self",
+    "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "story_reactions",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "story_reactions_insert_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "story_reactions",
+    "with_check": "((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1\n   FROM stories s\n  WHERE (s.id = story_reactions.story_id))))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "story_reactions_read_authenticated",
+    "qual": "(EXISTS ( SELECT 1\n   FROM stories s\n  WHERE (s.id = story_reactions.story_id)))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "story_reactions",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "story_views_insert_self",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "story_views",
+    "with_check": "(viewer_id = ( SELECT auth.uid() AS uid))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "story_views_read_owner_or_viewer",
+    "qual": "((viewer_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n   FROM stories s\n  WHERE ((s.id = story_views.story_id) AND (s.user_id = ( SELECT auth.uid() AS uid))))))",
+    "roles": "{authenticated}",
+    "schemaname": "public",
+    "tablename": "story_views",
+    "with_check": null
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "avatars_delete_own_folder",
+    "qual": "((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))",
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "avatars_insert_own_folder",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": "((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "avatars_read_public",
+    "qual": "(bucket_id = 'avatars'::text)",
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": null
+  },
+  {
+    "cmd": "UPDATE",
+    "permissive": "PERMISSIVE",
+    "policyname": "avatars_update_own_folder",
+    "qual": "((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))",
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": "((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))"
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "chat_media_delete_own_folder",
+    "qual": "((bucket_id = 'chat-media'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))",
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "chat_media_insert_own_folder",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": "((bucket_id = 'chat-media'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "chat_media_read_conversation_members",
+    "qual": "((bucket_id = 'chat-media'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (EXISTS ( SELECT 1\n   FROM conversation_members cm\n  WHERE (((cm.conversation_id)::text = (storage.foldername(objects.name))[2]) AND (cm.user_id = ( SELECT auth.uid() AS uid))))))",
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": null
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "post_media_delete_own_folder",
+    "qual": "((bucket_id = 'post-media'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))",
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "post_media_insert_own_folder",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": "((bucket_id = 'post-media'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "post_media_read_visible_post",
+    "qual": "((bucket_id = 'post-media'::text) AND (EXISTS ( SELECT 1\n   FROM posts p\n  WHERE (((p.id)::text = (storage.foldername(objects.name))[2]) AND ((p.user_id)::text = (storage.foldername(objects.name))[1])))))",
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": null
+  },
+  {
+    "cmd": "UPDATE",
+    "permissive": "PERMISSIVE",
+    "policyname": "post_media_update_own_folder",
+    "qual": "((bucket_id = 'post-media'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))",
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": "((bucket_id = 'post-media'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))"
+  },
+  {
+    "cmd": "DELETE",
+    "permissive": "PERMISSIVE",
+    "policyname": "stories_delete_own_folder",
+    "qual": "((bucket_id = 'stories'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))",
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": null
+  },
+  {
+    "cmd": "INSERT",
+    "permissive": "PERMISSIVE",
+    "policyname": "stories_insert_own_folder",
+    "qual": null,
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": "((bucket_id = 'stories'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))"
+  },
+  {
+    "cmd": "SELECT",
+    "permissive": "PERMISSIVE",
+    "policyname": "stories_read_visible_story",
+    "qual": "((bucket_id = 'stories'::text) AND (EXISTS ( SELECT 1\n   FROM stories s\n  WHERE (((s.id)::text = (storage.foldername(objects.name))[2]) AND ((s.user_id)::text = (storage.foldername(objects.name))[1])))))",
+    "roles": "{authenticated}",
+    "schemaname": "storage",
+    "tablename": "objects",
+    "with_check": null
+  }
+]
+
+-- STDERR --
+Initialising login role...
+
+-- EXIT CODE: 0 --

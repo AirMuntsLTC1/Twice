@@ -1,0 +1,22 @@
+TWICE NATIVE GOOGLE SIGN-IN FIX
+
+Files in this ZIP replace files in your existing ~/Twice project. This changes Google login from browser OAuth to the native Google Sign-In account chooser, then signs in to Supabase using the Google ID token.
+
+INSTALL IN TERMUX
+1. Copy this ZIP into ~/storage/downloads.
+2. Run: cd ~/Twice && unzip -o ~/storage/downloads/Twice_Native_Google_SignIn_Fix.zip
+3. Review: git diff --check
+4. Commit/push: git add lib/main.dart pubspec.yaml .github/workflows/android.yml && git commit -m "Use native Google account chooser for sign in" && git push origin main
+
+REQUIRED GITHUB SECRET
+Add GOOGLE_SERVER_CLIENT_ID in repository Settings > Secrets and variables > Actions. Its value must be the Google OAuth CLIENT ID of type Web application (not the Android client ID). The same Web client ID must be configured in Supabase Authentication > Sign In / Providers > Google. Do not put a client secret in the app or in Dart defines.
+
+GOOGLE CLOUD SETUP
+Create/configure an Android OAuth client for package com.twice.app (confirm applicationId in android/app/build.gradle.kts) and add the SHA-1 fingerprint of the signing certificate used by your GitHub Actions build. Since the current release is debug-signed, use the debug keystore SHA-1 for that CI build.
+
+NOTES
+- The native account chooser is provided by Google Play services; it is not an embedded web page.
+- Supabase Google provider must be enabled.
+- Supabase's allowed redirect URLs no longer control this native ID-token login path.
+- The ZIP does not include secrets. pubspec.lock is intentionally not replaced; GitHub Actions runs flutter pub get and updates dependency resolution on its runner.
+- This patch has not been run through your GitHub Actions build here. Check CI output before installing the APK.

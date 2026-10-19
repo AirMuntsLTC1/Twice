@@ -1,0 +1,95 @@
+[
+  {
+    "action_statement": "EXECUTE FUNCTION set_updated_at()",
+    "action_timing": "BEFORE",
+    "event_manipulation": "UPDATE",
+    "event_object_schema": "public",
+    "event_object_table": "comments",
+    "trigger_name": "comments_set_updated_at"
+  },
+  {
+    "action_statement": "EXECUTE FUNCTION set_updated_at()",
+    "action_timing": "BEFORE",
+    "event_manipulation": "UPDATE",
+    "event_object_schema": "public",
+    "event_object_table": "posts",
+    "trigger_name": "posts_set_updated_at"
+  },
+  {
+    "action_statement": "EXECUTE FUNCTION set_updated_at()",
+    "action_timing": "BEFORE",
+    "event_manipulation": "UPDATE",
+    "event_object_schema": "public",
+    "event_object_table": "profiles",
+    "trigger_name": "profiles_set_updated_at"
+  },
+  {
+    "action_statement": "EXECUTE FUNCTION storage.enforce_bucket_name_length()",
+    "action_timing": "BEFORE",
+    "event_manipulation": "UPDATE",
+    "event_object_schema": "storage",
+    "event_object_table": "buckets",
+    "trigger_name": "enforce_bucket_name_length_trigger"
+  },
+  {
+    "action_statement": "EXECUTE FUNCTION storage.enforce_bucket_name_length()",
+    "action_timing": "BEFORE",
+    "event_manipulation": "INSERT",
+    "event_object_schema": "storage",
+    "event_object_table": "buckets",
+    "trigger_name": "enforce_bucket_name_length_trigger"
+  },
+  {
+    "action_statement": "EXECUTE FUNCTION storage.protect_bucket_control_columns('service_role')",
+    "action_timing": "BEFORE",
+    "event_manipulation": "INSERT",
+    "event_object_schema": "storage",
+    "event_object_table": "buckets",
+    "trigger_name": "protect_bucket_control_insert"
+  },
+  {
+    "action_statement": "EXECUTE FUNCTION storage.protect_bucket_control_columns()",
+    "action_timing": "BEFORE",
+    "event_manipulation": "UPDATE",
+    "event_object_schema": "storage",
+    "event_object_table": "buckets",
+    "trigger_name": "protect_bucket_control_update"
+  },
+  {
+    "action_statement": "EXECUTE FUNCTION storage.enforce_bucket_lifecycle_service_role('service_role')",
+    "action_timing": "AFTER",
+    "event_manipulation": "UPDATE",
+    "event_object_schema": "storage",
+    "event_object_table": "buckets",
+    "trigger_name": "protect_bucket_control_update_role"
+  },
+  {
+    "action_statement": "EXECUTE FUNCTION storage.protect_delete()",
+    "action_timing": "BEFORE",
+    "event_manipulation": "DELETE",
+    "event_object_schema": "storage",
+    "event_object_table": "buckets",
+    "trigger_name": "protect_buckets_delete"
+  },
+  {
+    "action_statement": "EXECUTE FUNCTION storage.protect_delete()",
+    "action_timing": "BEFORE",
+    "event_manipulation": "DELETE",
+    "event_object_schema": "storage",
+    "event_object_table": "objects",
+    "trigger_name": "protect_objects_delete"
+  },
+  {
+    "action_statement": "EXECUTE FUNCTION storage.update_updated_at_column()",
+    "action_timing": "BEFORE",
+    "event_manipulation": "UPDATE",
+    "event_object_schema": "storage",
+    "event_object_table": "objects",
+    "trigger_name": "update_objects_updated_at"
+  }
+]
+
+-- STDERR --
+Initialising login role...
+
+-- EXIT CODE: 0 --

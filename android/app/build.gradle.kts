@@ -41,8 +41,8 @@ android {
             signingConfig = signingConfigs.getByName("debug")
 
             // Reduce unused Java/Kotlin code and Android resources.
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

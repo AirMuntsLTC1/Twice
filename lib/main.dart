@@ -2,6 +2,7 @@ import 'dart:ffi' hide Size;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -1431,65 +1432,179 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _shareProfile() async {
-    final username = (widget.profile['username'] ?? '').toString();
-    final profileUrl = 'https://twice.app/@$username';
+    final username = (widget.profile['username'] ?? '').toString().trim();
+    if (username.isEmpty || !mounted) return;
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(
-              radius: 29,
-              backgroundImage: widget.profile['avatar_url'] == null
-                  ? null
-                  : NetworkImage(widget.profile['avatar_url'].toString()),
-              child: widget.profile['avatar_url'] == null
-                  ? const Icon(Icons.person, size: 30)
-                  : null,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              (widget.profile['display_name'] ?? username).toString(),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
+    final profileUrl = 'https://twice.app/@$username';
+    final avatarUrl = (widget.profile['avatar_url'] ?? '').toString().trim();
+    final displayName =
+        (widget.profile['display_name'] ?? '').toString().trim();
+    final brightness = ScreenBrightness();
+
+    try {
+      await brightness.setApplicationScreenBrightness(1.0);
+      if (!mounted) {
+        await brightness.resetApplicationScreenBrightness();
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) => Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          backgroundColor: Colors.white,
+          elevation: 18,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(32),
+          ),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ),
+                  Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFFEAE7FF),
+                        width: 3,
+                      ),
+                    ),
+                    child: CircleAvatar(
+                      backgroundColor: const Color(0xFFF0F2F5),
+                      backgroundImage: avatarUrl.isNotEmpty
+                          ? NetworkImage(avatarUrl)
+                          : null,
+                      child: avatarUrl.isEmpty
+                          ? const Icon(Icons.person_rounded, size: 38)
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    displayName.isNotEmpty ? displayName : '@$username',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: ink,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '@$username',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: muted, fontSize: 14),
+                  ),
+                  const SizedBox(height: 22),
+                  Center(
+                    child: Container(
+                      width: 292,
+                      height: 292,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(26),
+                        border: Border.all(color: const Color(0xFFECEAF5)),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x12000000),
+                            blurRadius: 22,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: QrImageView(
+                        data: profileUrl,
+                        version: QrVersions.auto,
+                        size: 272,
+                        backgroundColor: Colors.white,
+                        errorCorrectionLevel: QrErrorCorrectLevel.H,
+                        embeddedImage: avatarUrl.isNotEmpty
+                            ? NetworkImage(avatarUrl)
+                            : null,
+                        embeddedImageStyle: const QrEmbeddedImageStyle(
+                          size: Size(58, 58),
+                        ),
+                        embeddedImageEmitsError: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.qr_code_scanner_rounded,
+                          size: 18, color: violet),
+                      SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Scan to find this profile on Twice',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: muted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: violet,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(17),
+                        ),
+                      ),
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: profileUrl),
+                        );
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop();
+                        }
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Profile link copied'),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.copy_rounded),
+                      label: const Text(
+                        'Copy profile link',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            Text('@$username', style: const TextStyle(color: muted)),
-            const SizedBox(height: 18),
-            QrImageView(
-              data: profileUrl,
-              version: QrVersions.auto,
-              size: 210,
-              backgroundColor: Colors.white,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Scan to find this profile',
-              style: TextStyle(color: muted, fontSize: 12),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: profileUrl));
-                Navigator.pop(dialogContext);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Profile link copied')),
-                );
-              },
-              icon: const Icon(Icons.copy_rounded),
-              label: const Text('Copy profile link'),
-            ),
-          ],
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      await brightness.resetApplicationScreenBrightness();
+    }
   }
 
   Widget _stat(String value, String label) => Column(

@@ -121,7 +121,10 @@ class TwiceAuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!supabaseReady) {
-      return TwiceSignInPage(\n        configurationMissing: true,\n        startupError: supabaseStartupError,\n      );
+      return TwiceSignInPage(
+        configurationMissing: true,
+        startupError: supabaseStartupError,
+      );
     }
 
     return StreamBuilder<AuthState>(
@@ -131,6 +134,34 @@ class TwiceAuthGate extends StatelessWidget {
         if (session != null) return const TwiceShell();
         return const TwiceSignInPage();
       },
+    );
+  }
+}
+
+class _ErrorPanel extends StatelessWidget {
+  const _ErrorPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF0F0),
+        border: Border.all(color: const Color(0xFFFFCACA)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: SelectableText(
+        message,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFFB42318),
+          fontSize: 12,
+          height: 1.45,
+        ),
+      ),
     );
   }
 }

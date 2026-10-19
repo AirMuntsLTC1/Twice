@@ -3,10 +3,10 @@ import 'dart:ffi' hide Size;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'data/social_repository.dart';
 
 const ink = Color(0xFF171923);
 const muted = Color(0xFF7B8191);
@@ -361,196 +361,158 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
 }
 
 class SocialPost {
-  SocialPost({
-    required this.id,
-    required this.name,
-    required this.handle,
-    required this.initials,
-    required this.avatar,
-    required this.art,
-    required this.caption,
-    required this.likes,
-    this.liked = false,
-    this.media = const [],
-  });
-
-  final int id;
-  final String name;
-  final String handle;
-  final String initials;
-  final Color avatar;
-  final List<Color> art;
-  final String caption;
-  int likes;
-  bool liked;
-  final List<AssetEntity> media;
+  SocialPost(this.data);
+  final Map<String, dynamic> data;
+  String get id => data['id'].toString();
+  String get caption => (data['caption'] ?? '').toString();
+  Map<String, dynamic> get author => Map<String, dynamic>.from(data['profiles'] as Map? ?? const {});
+  String get name => (author['display_name'] ?? author['username'] ?? 'Twice user').toString();
+  String get username => (author['username'] ?? 'user').toString();
+  String get handle => '@$username';
+  String? get avatarUrl => author['avatar_url']?.toString();
+  List<Map<String, dynamic>> get media => (data['media_resolved'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  List<Map<String, dynamic>> get likesRows => (data['post_likes'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  bool get liked => likesRows.any((e) => e['user_id'] == Supabase.instance.client.auth.currentUser?.id);
+  int get likes => likesRows.length;
+  bool get saved => ((data['saved_posts'] as List? ?? const []).cast<Map>()).any((e) => e['user_id'] == Supabase.instance.client.auth.currentUser?.id);
 }
 
 class TwiceShell extends StatefulWidget {
   const TwiceShell({super.key});
-
   @override
   State<TwiceShell> createState() => _TwiceShellState();
 }
 
 class _TwiceShellState extends State<TwiceShell> {
+  final repo = SocialRepository.instance;
   int selected = 0;
-  int nextId = 10;
+  bool loading = true;
+  String? error;
+  Map<String, dynamic> profile = {};
+  List<SocialPost> posts = [];
 
-  final List<SocialPost> posts = [
-    SocialPost(
-      id: 1,
-      name: 'Sofia Bennett',
-      handle: '@sofia.b',
-      initials: 'SB',
-      avatar: const Color(0xFFF0B8A6),
-      art: const [Color(0xFFF9C6B4), Color(0xFFE9A2C1)],
-      caption:
-          'Collect moments, not things. A little sunshine goes a long way ☀️',
-      likes: 248,
-    ),
-    SocialPost(
-      id: 2,
-      name: 'Marcus Lee',
-      handle: '@marcuslee',
-      initials: 'ML',
-      avatar: const Color(0xFFB8C8F4),
-      art: const [Color(0xFF91C9C2), Color(0xFF6E8CD5)],
-      caption: 'Slow mornings, good coffee, and absolutely nowhere to rush. ☕',
-      likes: 182,
-    ),
-    SocialPost(
-      id: 3,
-      name: 'Ava Morgan',
-      handle: '@avamorgan',
-      initials: 'AM',
-      avatar: const Color(0xFFE6C9F2),
-      art: const [Color(0xFFB6A0E8), Color(0xFFEDB6D1)],
-      caption: 'Make room for the little things that make you happy.',
-      likes: 96,
-    ),
-  ];
+  @override
+  void initState() { super.initState(); _loadAll(); }
 
-  void toggleLike(SocialPost post) {
-    setState(() {
-      post.liked = !post.liked;
-      post.likes += post.liked ? 1 : -1;
-    });
+  Future<void> _loadAll() async {
+    if (!mounted) return;
+    setState(() { loading = true; error = null; });
+    try {
+      final values = await Future.wait<dynamic>([repo.myProfile(), repo.feed()]);
+      if (!mounted) return;
+      setState(() {
+        profile = Map<String, dynamic>.from(values[0] as Map);
+        posts = (values[1] as List<Map<String, dynamic>>).map(SocialPost.new).toList();
+        loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { loading = false; error = _friendlyError(e); });
+    }
   }
 
-  void createPost(String caption, [List<AssetEntity> media = const []]) {
-    setState(() {
-      posts.insert(
-        0,
-        SocialPost(
-          id: nextId++,
-          name: 'Your Profile',
-          handle: '@you',
-          initials: 'Y',
-          avatar: violet,
-          art: const [Color(0xFFB8A8FF), Color(0xFFEDC0DE)],
-          caption: caption,
-          likes: 0,
-          media: List<AssetEntity>.unmodifiable(media),
-        ),
-      );
-      selected = 0;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Demo post added to your feed')),
-    );
+  String _friendlyError(Object e) {
+    final text = e.toString();
+    if (text.contains('SocketException') || text.contains('Failed host lookup')) return 'No network connection. Check your internet and try again.';
+    if (text.contains('duplicate key') || text.contains('23505')) return 'That username is already taken. Edit your profile to choose another.';
+    return text.replaceAll(RegExp(r'\s+'), ' ');
   }
+
+  Future<void> _like(SocialPost post) async {
+    final wasLiked = post.liked;
+    setState(() {
+      final rows = List<Map<String, dynamic>>.from(post.data['post_likes'] as List? ?? []);
+      final uid = Supabase.instance.client.auth.currentUser!.id;
+      if (wasLiked) { rows.removeWhere((e) => e['user_id'] == uid); }
+      else { rows.add({'user_id': uid}); }
+      post.data['post_likes'] = rows;
+    });
+    try { await repo.toggleLike(post.id, wasLiked); }
+    catch (e) { await _loadAll(); if (mounted) _message('Like failed: $e'); }
+  }
+
+  Future<void> _publish(String caption, List<AssetEntity> media) async {
+    try {
+      await repo.publishPost(caption, media);
+      if (!mounted) return;
+      setState(() => selected = 0);
+      await _loadAll();
+      if (mounted) _message('Post published.');
+    } catch (e) { if (mounted) _message('Could not publish: $e'); rethrow; }
+  }
+
+  void _message(String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
-    final screens = <Widget>[
-      FeedPage(posts: posts, onLike: toggleLike),
-      SearchPage(posts: posts),
-      CreatePage(onPost: createPost),
-      const ActivityPage(),
-      ProfilePage(posts: posts),
-    ];
-
+    final title = ['Twice', 'Search', 'Create', 'Activity', profile['username'] == null ? 'Profile' : '@${profile['username']}'][selected];
     return Scaffold(
-      appBar: AppBar(
-        centerTitle: selected == 4,
-        title: selected == 0
-            ? const Text(
-                'Twice',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 28),
-              )
-            : selected == 1
-            ? const Text(
-                'Explore',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 26),
-              )
-            : selected == 2
-            ? const Text(
-                'Create',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 26),
-              )
-            : selected == 3
-            ? const Text(
-                'Activity',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 26),
-              )
-            : const Text(
-                '@you  ⌄',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
-              ),
-        leading: selected == 4
-            ? IconButton(
-                tooltip: 'Settings',
-                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Settings will be added later')),
-                ),
-                icon: const Icon(Icons.settings_outlined, size: 25),
-              )
-            : null,
-        actions: [
-          IconButton(
-            tooltip: 'Messages',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Messaging will be added later')),
-              );
-            },
-            icon: const Icon(Icons.send_outlined),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: IndexedStack(index: selected, children: screens),
+      appBar: AppBar(title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 25)), actions: [
+        IconButton(tooltip: 'Refresh', onPressed: _loadAll, icon: const Icon(Icons.refresh_rounded)),
+        IconButton(tooltip: 'Messages', onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const MessagesPage())), icon: const Icon(Icons.send_outlined)),
+      ]),
+      body: loading && posts.isEmpty && profile.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : error != null && profile.isEmpty
+              ? _ErrorPanel(message: error!)
+              : IndexedStack(index: selected, children: [
+                  FeedPage(posts: posts, onLike: _like, onRefresh: _loadAll, onCommentChanged: _loadAll),
+                  const SearchPage(),
+                  CreatePage(onPost: _publish),
+                  const ActivityPage(),
+                  ProfilePage(profile: profile, posts: posts, onRefresh: _loadAll),
+                ]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selected,
         backgroundColor: Colors.white,
         indicatorColor: const Color(0xFFECE7FF),
         onDestinationSelected: (value) => setState(() => selected = value),
         destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.search_rounded),
-            label: 'Explore',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.add_box_outlined),
-            selectedIcon: Icon(Icons.add_box_rounded),
-            label: 'Create',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_border_rounded),
-            selectedIcon: Icon(Icons.favorite_rounded),
-            label: 'Activity',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
+          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Home'),
+          NavigationDestination(icon: Icon(Icons.search_rounded), label: 'Search'),
+          NavigationDestination(icon: Icon(Icons.add_box_outlined), selectedIcon: Icon(Icons.add_box_rounded), label: 'Create'),
+          NavigationDestination(icon: Icon(Icons.notifications_none_rounded), selectedIcon: Icon(Icons.notifications_rounded), label: 'Activity'),
+          NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Profile'),
+        ],
+      ),
+    );
+  }
+}
+
+
+class StoryStrip extends StatelessWidget {
+  const StoryStrip({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 104,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+        children: [
+          SizedBox(
+            width: 70,
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFFD9D5E5), width: 1.7),
+                  ),
+                  child: const CircleAvatar(
+                    radius: 29,
+                    backgroundColor: Color(0xFFF0F0F4),
+                    child: Icon(Icons.add_rounded, size: 29, color: ink),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                const Text('Your story', maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: ink)),
+              ],
+            ),
           ),
         ],
       ),
@@ -558,147 +520,62 @@ class _TwiceShellState extends State<TwiceShell> {
   }
 }
 
+
 class FeedPage extends StatelessWidget {
-  const FeedPage({super.key, required this.posts, required this.onLike});
+  const FeedPage({
+    super.key,
+    required this.posts,
+    required this.onLike,
+    required this.onRefresh,
+    required this.onCommentChanged,
+  });
 
   final List<SocialPost> posts;
   final ValueChanged<SocialPost> onLike;
+  final Future<void> Function() onRefresh;
+  final VoidCallback onCommentChanged;
 
   @override
-  Widget build(BuildContext context) {
-    return ListView(
+  Widget build(BuildContext context) => RefreshIndicator(
+    onRefresh: onRefresh,
+    child: ListView(
       padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: StoryStrip(),
-        ),
-        const SizedBox(height: 8),
-        ...posts.map((post) => PostCard(post: post, onLike: onLike)),
-        const SizedBox(height: 16),
-        const Center(
-          child: Text('You’re all caught up ✨', style: TextStyle(color: muted)),
-        ),
-      ],
-    );
-  }
-}
-
-class StoryStrip extends StatelessWidget {
-  const StoryStrip({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    const names = ['Your story', 'Sofia', 'Marcus', 'Ava', 'Noah', 'Mia'];
-    const colors = [
-      violet,
-      Color(0xFFF0B8A6),
-      Color(0xFFB8C8F4),
-      Color(0xFFE6C9F2),
-      Color(0xFFB4DFCD),
-      Color(0xFFF0D18D),
-    ];
-
-    return SizedBox(
-      height: 105,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: names.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 15),
-        itemBuilder: (context, i) => SizedBox(
-          width: 61,
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: i == 0 ? const Color(0xFFD9D5E5) : violet,
-                    width: 1.7,
-                  ),
-                ),
-                child: CircleAvatar(
-                  radius: 32,
-                  backgroundColor: colors[i],
-                  child: i == 0
-                      ? const Icon(Icons.add, color: Colors.white, size: 28)
-                      : Text(
-                          names[i][0],
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: ink,
-                          ),
-                        ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                names[i],
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: ink),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RepostActionButton extends StatefulWidget {
-  const _RepostActionButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  State<_RepostActionButton> createState() => _RepostActionButtonState();
-}
-
-class _RepostActionButtonState extends State<_RepostActionButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 650),
-  );
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _repost() {
-    _controller.forward(from: 0);
-    widget.onPressed();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: 'Repost',
-      onPressed: _repost,
-      icon: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          final t = _controller.value;
-          return Transform.rotate(
-            angle: t * 2 * 3.141592653589793,
-            child: Transform.translate(
-              offset: Offset(0, -3 * (1 - (2 * t - 1).abs())),
-              child: child,
+        const StoryStrip(),
+        const SizedBox(height: 5),
+        if (posts.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 70),
+            child: Column(
+              children: [
+                Icon(Icons.dynamic_feed_outlined, size: 56, color: muted),
+                SizedBox(height: 14),
+                Text('No posts yet',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+                SizedBox(height: 7),
+                Text('Follow people or share your first moment.',
+                  style: TextStyle(color: muted)),
+              ],
             ),
-          );
-        },
-        child: const Icon(Icons.repeat_rounded, size: 28),
-      ),
-    );
-  }
+          )
+        else
+          ...posts.map((post) => PostCard(
+            post: post,
+            onLike: onLike,
+            onCommentChanged: onCommentChanged,
+          )),
+      ],
+    ),
+  );
 }
+
+
 
 class _AnimatedLikeButton extends StatefulWidget {
-  const _AnimatedLikeButton({required this.liked, required this.onPressed});
+  const _AnimatedLikeButton({
+    required this.liked,
+    required this.onPressed,
+  });
 
   final bool liked;
   final VoidCallback onPressed;
@@ -711,25 +588,20 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 500),
+    duration: const Duration(milliseconds: 380),
   );
 
-  late final Animation<double> _pop = TweenSequence<double>([
+  late final Animation<double> _scale = TweenSequence<double>([
     TweenSequenceItem(
-      tween: Tween(
-        begin: 1.0,
-        end: 1.42,
-      ).chain(CurveTween(curve: Curves.easeOutBack)),
-      weight: 22,
+      tween: Tween(begin: 1.0, end: 1.35)
+          .chain(CurveTween(curve: Curves.easeOut)),
+      weight: 45,
     ),
     TweenSequenceItem(
-      tween: Tween(
-        begin: 1.42,
-        end: 1.0,
-      ).chain(CurveTween(curve: Curves.easeInOut)),
-      weight: 18,
+      tween: Tween(begin: 1.35, end: 1.0)
+          .chain(CurveTween(curve: Curves.easeInOut)),
+      weight: 55,
     ),
-    TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 60),
   ]).animate(_controller);
 
   @override
@@ -746,414 +618,64 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
     super.dispose();
   }
 
-  void _like() {
-    widget.onPressed();
-    _controller.forward(from: 0);
-  }
-
   @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: widget.liked ? 'Unlike post' : 'Like post',
-      onPressed: _like,
-      icon: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          final progress = _controller.value;
-          return Transform.scale(
-            scale: _pop.value,
-            child: SizedBox(
-              width: 34,
-              height: 34,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Icon(
-                    Icons.favorite_border_rounded,
-                    size: 29,
-                    color: widget.liked ? Colors.redAccent : ink,
-                  ),
-                  if (widget.liked)
-                    ClipRect(
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        heightFactor: progress,
-                        child: const Icon(
-                          Icons.favorite_rounded,
-                          size: 29,
-                          color: Colors.redAccent,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          );
-        },
+  Widget build(BuildContext context) => IconButton(
+    tooltip: widget.liked ? 'Unlike post' : 'Like post',
+    onPressed: () {
+      _controller.forward(from: 0);
+      widget.onPressed();
+    },
+    icon: ScaleTransition(
+      scale: _scale,
+      child: Icon(
+        widget.liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+        size: 27,
+        color: widget.liked ? Colors.redAccent : ink,
       ),
-    );
-  }
-}
-
-class _AnimatedFollowButton extends StatefulWidget {
-  const _AnimatedFollowButton();
-
-  @override
-  State<_AnimatedFollowButton> createState() => _AnimatedFollowButtonState();
-}
-
-class _AnimatedFollowButtonState extends State<_AnimatedFollowButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 280),
+    ),
   );
-
-  bool _following = false;
-
-  void _toggleFollow() {
-    setState(() => _following = !_following);
-    _controller.forward(from: 0);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) => Transform.scale(
-        scale: 1 + (0.09 * (1 - (_controller.value * 2 - 1).abs())),
-        child: child,
-      ),
-      child: GestureDetector(
-        onTap: _toggleFollow,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
-          decoration: BoxDecoration(
-            color: _following ? const Color(0xFFF3F3F3) : Colors.white,
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(
-              color: _following
-                  ? const Color(0xFFE2E2E2)
-                  : const Color(0xFFFF4F9A),
-            ),
-          ),
-          child: _following
-              ? const Text(
-                  'Following',
-                  style: TextStyle(
-                    color: Color(0xFF555555),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                )
-              : const ShaderMask(
-                  shaderCallback: _pinkGradient,
-                  child: Text(
-                    'Follow',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-        ),
-      ),
-    );
-  }
-
-  static Shader _pinkGradient(Rect bounds) {
-    return const LinearGradient(
-      colors: [Color(0xFFFF4F9A), Color(0xFFFF2D55), Color(0xFFC135E8)],
-    ).createShader(bounds);
-  }
-}
-
-class _WaterBookmarkButton extends StatefulWidget {
-  const _WaterBookmarkButton({super.key});
-
-  @override
-  State<_WaterBookmarkButton> createState() => _WaterBookmarkButtonState();
-}
-
-class _WaterBookmarkButtonState extends State<_WaterBookmarkButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 650),
-  );
-
-  bool _saved = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _toggleSaved() {
-    setState(() => _saved = !_saved);
-    if (_saved) {
-      _controller.forward();
-    } else {
-      _controller.reverse();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: _saved ? 'Unsave post' : 'Save post',
-      onPressed: _toggleSaved,
-      icon: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          final progress = _controller.value;
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              const Icon(
-                Icons.bookmark_border_rounded,
-                size: 28,
-                color: Colors.black87,
-              ),
-              if (progress > 0)
-                ClipPath(
-                  clipper: _BookmarkWaterClipper(progress),
-                  child: const Icon(
-                    Icons.bookmark_rounded,
-                    size: 28,
-                    color: Color(0xFFFFD600),
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _BookmarkWaterClipper extends CustomClipper<Path> {
-  const _BookmarkWaterClipper(this.progress);
-
-  final double progress;
-
-  @override
-  Path getClip(Size size) {
-    final path = Path();
-    final waterY = size.height * (1 - progress);
-    path.moveTo(0, size.height);
-    path.lineTo(0, waterY);
-
-    // Small wave along the rising waterline.
-    path.quadraticBezierTo(
-      size.width * 0.25,
-      waterY - 2.5,
-      size.width * 0.5,
-      waterY,
-    );
-    path.quadraticBezierTo(size.width * 0.75, waterY + 2.5, size.width, waterY);
-
-    path.lineTo(size.width, size.height);
-    path.close();
-    return path;
-  }
-
-  @override
-  bool shouldReclip(covariant _BookmarkWaterClipper oldClipper) =>
-      oldClipper.progress != progress;
-}
-
-void _showComments(BuildContext context, SocialPost post) {
-  showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (sheetContext) => _TwiceCommentsSheet(post: post),
-  );
-}
-
-class _TwiceCommentsSheet extends StatefulWidget {
-  const _TwiceCommentsSheet({required this.post});
-
-  final SocialPost post;
-
-  @override
-  State<_TwiceCommentsSheet> createState() => _TwiceCommentsSheetState();
-}
-
-class _TwiceCommentsSheetState extends State<_TwiceCommentsSheet> {
-  final TextEditingController _controller = TextEditingController();
-  final List<String> _comments = [];
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _send() {
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
-    setState(() => _comments.add(text));
-    _controller.clear();
-    FocusScope.of(context).unfocus();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 180),
-      padding: EdgeInsets.only(bottom: bottom),
-      child: Container(
-        height: MediaQuery.of(context).size.height * 0.65,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 38,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFD9D9E0),
-                borderRadius: BorderRadius.circular(9),
-              ),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'Comments',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-            ),
-            const Divider(height: 22),
-            Expanded(
-              child: _comments.isEmpty
-                  ? const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.chat_bubble_outline_rounded, size: 36),
-                          SizedBox(height: 10),
-                          Text(
-                            'No comments yet',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          SizedBox(height: 4),
-                          Text('Be the first to comment.'),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: _comments.length,
-                      itemBuilder: (context, index) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const CircleAvatar(
-                          backgroundColor: Color(0xFFECE7FF),
-                          child: Icon(Icons.person_rounded, color: violet),
-                        ),
-                        title: const Text(
-                          '@you',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        subtitle: Text(_comments[index]),
-                      ),
-                    ),
-            ),
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                child: Row(
-                  children: [
-                    const CircleAvatar(
-                      radius: 17,
-                      backgroundColor: Color(0xFFECE7FF),
-                      child: Icon(
-                        Icons.person_rounded,
-                        size: 20,
-                        color: violet,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        textCapitalization: TextCapitalization.sentences,
-                        decoration: InputDecoration(
-                          hintText: 'Add a comment...',
-                          filled: true,
-                          fillColor: const Color(0xFFF4F4F8),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 15,
-                            vertical: 11,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                        onSubmitted: (_) => _send(),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Post comment',
-                      onPressed: _send,
-                      icon: const Icon(Icons.send_rounded, color: violet),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class PostCard extends StatelessWidget {
-  const PostCard({super.key, required this.post, required this.onLike});
+  const PostCard({
+    super.key,
+    required this.post,
+    required this.onLike,
+    required this.onCommentChanged,
+  });
 
   final SocialPost post;
   final ValueChanged<SocialPost> onLike;
+  final VoidCallback onCommentChanged;
 
   @override
   Widget build(BuildContext context) {
+    final media = post.media;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEDEDED)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.all(13),
+            padding: const EdgeInsets.fromLTRB(13, 12, 8, 10),
             child: Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: post.avatar,
-                  child: Text(
-                    post.initials,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: ink,
-                    ),
-                  ),
+                  radius: 22,
+                  backgroundColor: const Color(0xFFF0F2F5),
+                  backgroundImage: post.avatarUrl == null
+                      ? null
+                      : NetworkImage(post.avatarUrl!),
+                  child: post.avatarUrl == null
+                      ? const Icon(Icons.person_outline_rounded, color: muted)
+                      : null,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -1162,92 +684,132 @@ class PostCard extends StatelessWidget {
                     children: [
                       Text(
                         post.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
+                          fontSize: 14,
                           fontWeight: FontWeight.w800,
-                          fontSize: 13,
+                          color: ink,
                         ),
                       ),
+                      const SizedBox(height: 2),
                       Text(
-                        post.handle,
-                        style: const TextStyle(color: muted, fontSize: 11),
+                        '${post.handle} · ${_timeAgo(post.data['created_at'])}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: muted),
                       ),
                     ],
                   ),
                 ),
-                _AnimatedFollowButton(),
-                const SizedBox(width: 2),
-                IconButton(
-                  tooltip: 'More options',
-                  onPressed: () {},
-                  icon: const Icon(Icons.more_horiz),
+                PopupMenuButton<String>(
+                  tooltip: 'Post options',
+                  icon: const Icon(Icons.more_horiz_rounded, color: ink),
+                  onSelected: (value) {
+                    if (value == 'copy') {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Use your device share options to share this post.'),
+                        ),
+                      );
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'copy',
+                      child: Row(
+                        children: [
+                          Icon(Icons.ios_share_rounded, size: 19),
+                          SizedBox(width: 10),
+                          Text('Share options'),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          if (post.media.isEmpty)
-            Container(
-              height: 235,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: post.art,
+
+          if (post.caption.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+              child: Text(
+                post.caption,
+                style: const TextStyle(
+                  color: ink,
+                  fontSize: 14,
+                  height: 1.4,
                 ),
               ),
+            ),
+
+          if (media.isNotEmpty)
+            AspectRatio(
+              aspectRatio: media.length == 1 ? 1 : 0.92,
               child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Positioned(
-                    top: -35,
-                    right: -15,
-                    child: Container(
-                      width: 175,
-                      height: 175,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.17),
-                        shape: BoxShape.circle,
+                  PageView.builder(
+                    itemCount: media.length,
+                    itemBuilder: (context, index) {
+                      final url = (media[index]['resolved_url'] ?? '').toString();
+                      return ColoredBox(
+                        color: const Color(0xFFF4F5F7),
+                        child: url.isEmpty
+                            ? const Center(
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 42,
+                                  color: muted,
+                                ),
+                              )
+                            : Image.network(
+                                url,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                errorBuilder: (_, _, _) => const Center(
+                                  child: Icon(
+                                    Icons.broken_image_outlined,
+                                    size: 42,
+                                    color: muted,
+                                  ),
+                                ),
+                              ),
+                      );
+                    },
+                  ),
+                  if (media.length > 1)
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xB8000000),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          child: Text(
+                            '${media.length} photos/videos',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    bottom: -70,
-                    left: -20,
-                    child: Container(
-                      width: 220,
-                      height: 220,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.18),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                  Center(
-                    child: Icon(
-                      Icons.auto_awesome_rounded,
-                      size: 66,
-                      color: Colors.white.withValues(alpha: 0.92),
-                    ),
-                  ),
-                  const Positioned(
-                    left: 16,
-                    bottom: 15,
-                    child: Text(
-                      'A MOMENT TO REMEMBER',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        letterSpacing: 2,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
                 ],
               ),
-            )
-          else
-            _PostMediaGrid(media: post.media),
+            ),
+
           Padding(
-            padding: const EdgeInsets.fromLTRB(13, 8, 13, 14),
+            padding: const EdgeInsets.fromLTRB(10, 4, 10, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1259,54 +821,94 @@ class PostCard extends StatelessWidget {
                     ),
                     IconButton(
                       tooltip: 'Comments',
-                      onPressed: () => _showComments(context, post),
+                      onPressed: () async {
+                        await showModalBottomSheet<void>(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => CommentsSheet(post: post),
+                        );
+                        onCommentChanged();
+                      },
                       icon: const Icon(
                         Icons.chat_bubble_outline_rounded,
-                        size: 27,
+                        size: 25,
+                        color: ink,
                       ),
                     ),
-                    _RepostActionButton(
-                      onPressed: () => ScaffoldMessenger.of(context)
-                          .showSnackBar(
-                            const SnackBar(
-                              content: Text('Repost will be added later'),
-                            ),
-                          ),
-                    ),
                     const Spacer(),
-                    _WaterBookmarkButton(key: ValueKey(post.id)),
+                    IconButton(
+                      tooltip: post.saved ? 'Remove saved post' : 'Save post',
+                      onPressed: () async {
+                        final wasSaved = post.saved;
+                        try {
+                          await SocialRepository.instance.toggleSaved(
+                            post.id,
+                            wasSaved,
+                          );
+                          onCommentChanged();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  wasSaved
+                                      ? 'Post removed from saved'
+                                      : 'Post saved',
+                                ),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Could not save post: $e')),
+                            );
+                          }
+                        }
+                      },
+                      icon: Icon(
+                        post.saved
+                            ? Icons.bookmark_rounded
+                            : Icons.bookmark_border_rounded,
+                        size: 26,
+                        color: post.saved
+                            ? const Color(0xFFE2B900)
+                            : ink,
+                      ),
+                    ),
                   ],
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 5),
                   child: Text(
-                    '${post.likes} likes',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: '${post.handle}  ',
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        TextSpan(text: post.caption),
-                      ],
+                    '${post.likes} ${post.likes == 1 ? 'like' : 'likes'}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: ink,
                     ),
                   ),
                 ),
-                const SizedBox(height: 7),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 5),
-                  child: Text(
-                    'View all comments',
-                    style: TextStyle(color: muted, fontSize: 12),
+                if (post.caption.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: '${post.handle}  ',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          TextSpan(text: post.caption),
+                        ],
+                      ),
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -1316,1200 +918,659 @@ class PostCard extends StatelessWidget {
   }
 }
 
-class SearchPage extends StatefulWidget {
-  const SearchPage({super.key, required this.posts});
-
-  final List<SocialPost> posts;
-
-  @override
-  State<SearchPage> createState() => _SearchPageState();
-}
-
-class _SearchPageState extends State<SearchPage> {
-  String query = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final results = widget.posts.where((p) {
-      final text = '${p.name} ${p.handle} ${p.caption}'.toLowerCase();
-      return text.contains(query.toLowerCase());
-    }).toList();
-
-    return ListView(
-      padding: const EdgeInsets.all(18),
-      children: [
-        const Text(
-          'Explore',
-          style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 15),
-        TextField(
-          onChanged: (value) => setState(() => query = value),
-          decoration: InputDecoration(
-            hintText: 'Search people and posts',
-            prefixIcon: const Icon(Icons.search),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        ...results.map(
-          (post) => ListTile(
-            contentPadding: const EdgeInsets.symmetric(vertical: 5),
-            leading: CircleAvatar(
-              backgroundColor: post.avatar,
-              child: Text(post.initials),
-            ),
-            title: Text(
-              post.name,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            subtitle: Text(post.caption, maxLines: 2),
-          ),
-        ),
-      ],
-    );
-  }
+String _timeAgo(dynamic value) {
+  final date = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+  if (date == null) return '';
+  final diff = DateTime.now().difference(date);
+  if (diff.inMinutes < 1) return 'Just now';
+  if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+  if (diff.inDays < 1) return '${diff.inHours}h ago';
+  if (diff.inDays < 7) return '${diff.inDays}d ago';
+  return '${date.day}/${date.month}/${date.year}';
 }
 
 class CreatePage extends StatefulWidget {
   const CreatePage({super.key, required this.onPost});
-
-  final void Function(String caption, List<AssetEntity> media) onPost;
-
+  final Future<void> Function(String caption, List<AssetEntity> media) onPost;
   @override
   State<CreatePage> createState() => _CreatePageState();
 }
-
 class _CreatePageState extends State<CreatePage> {
+  final controller = TextEditingController();
+  final selectedMedia = <AssetEntity>[];
+  bool publishing = false;
   @override
-  Widget build(BuildContext context) {
-    // Show the full composer directly when the Create tab is selected.
-    // Avoid a second tap and avoid a costly route transition.
-    return _TwiceComposerScreen(onPost: widget.onPost);
+  void dispose() { controller.dispose(); super.dispose(); }
+  Future<void> _pick() async {
+    final permission = await PhotoManager.requestPermissionExtend();
+    if (!permission.isAuth && !permission.hasAccess) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Allow photo access to select media.'))); return; }
+    final paths = await PhotoManager.getAssetPathList(type: RequestType.common, onlyAll: true);
+    if (paths.isEmpty) return;
+    final assets = await paths.first.getAssetListPaged(page: 0, size: 100);
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<List<AssetEntity>>(context: context, isScrollControlled: true, builder: (context) => _MediaPicker(assets: assets));
+    if (picked != null) setState(() { selectedMedia..clear()..addAll(picked.take(10)); });
+  }
+  Future<void> _publish() async {
+    if (publishing) return;
+    setState(() => publishing = true);
+    try { await widget.onPost(controller.text, selectedMedia); controller.clear(); setState(() => selectedMedia.clear()); }
+    catch (_) {} finally { if (mounted) setState(() => publishing = false); }
+  }
+  @override
+  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
+    const Text('Create a post', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)), const SizedBox(height: 16),
+    TextField(controller: controller, minLines: 4, maxLines: 10, maxLength: 5000, decoration: InputDecoration(hintText: "What's happening?", filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none))),
+    OutlinedButton.icon(onPressed: _pick, icon: const Icon(Icons.photo_library_outlined), label: Text(selectedMedia.isEmpty ? 'Add photos or videos' : '${selectedMedia.length} media selected')),
+    if (selectedMedia.isNotEmpty)
+      SizedBox(
+        height: 95,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: selectedMedia.map((asset) => Padding(
+            padding: const EdgeInsets.all(4),
+            child: FutureBuilder<Uint8List?>(
+              future: asset.thumbnailDataWithSize(const ThumbnailSize(180, 180)),
+              builder: (_, snapshot) => snapshot.data == null
+                ? const SizedBox(width: 80, child: Center(child: CircularProgressIndicator()))
+                : Image.memory(snapshot.data!, width: 80, height: 80, fit: BoxFit.cover),
+            ),
+          )).toList(),
+        ),
+      ),
+    const SizedBox(height: 12), FilledButton(onPressed: publishing ? null : _publish, child: Text(publishing ? 'Publishing…' : 'Publish post')),
+  ]);
+}
+
+class _MediaPicker extends StatefulWidget {
+  const _MediaPicker({required this.assets}); final List<AssetEntity> assets;
+  @override State<_MediaPicker> createState() => _MediaPickerState();
+}
+class _MediaPickerState extends State<_MediaPicker> {
+  final Set<AssetEntity> chosen = {};
+  @override Widget build(BuildContext context) => SizedBox(height: MediaQuery.sizeOf(context).height * .78, child: Column(children: [ListTile(title: const Text('Select media', style: TextStyle(fontWeight: FontWeight.w800)), trailing: TextButton(onPressed: () => Navigator.pop(context, chosen.toList()), child: const Text('Done'))), Expanded(child: GridView.builder(padding: const EdgeInsets.all(4), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 3, mainAxisSpacing: 3), itemCount: widget.assets.length, itemBuilder: (_, i) { final a = widget.assets[i]; return InkWell(onTap: () => setState(() { if (chosen.contains(a)) { chosen.remove(a); } else if (chosen.length < 10) { chosen.add(a); } }), child: Stack(fit: StackFit.expand, children: [FutureBuilder<Uint8List?>(future: a.thumbnailDataWithSize(const ThumbnailSize(220, 220)), builder: (_, s) => s.data == null ? const ColoredBox(color: canvas) : Image.memory(s.data!, fit: BoxFit.cover)), if (a.type == AssetType.video) const Align(alignment: Alignment.bottomRight, child: Icon(Icons.play_circle_fill, color: Colors.white)), if (chosen.contains(a)) const Align(alignment: Alignment.topRight, child: Icon(Icons.check_circle, color: violet))])); }))]));
+}
+
+class SearchPage extends StatefulWidget { const SearchPage({super.key}); @override State<SearchPage> createState() => _SearchPageState(); }
+class _SearchPageState extends State<SearchPage> {
+  final controller = TextEditingController(); List<Map<String, dynamic>> results = []; bool busy = false; String? error;
+  @override void dispose() { controller.dispose(); super.dispose(); }
+  Future<void> _search(String q) async {
+    if (q.trim().isEmpty) { setState(() { results = []; error = null; }); return; }
+    setState(() { busy = true; error = null; });
+    try { final data = await SocialRepository.instance.search(q); if (mounted) setState(() => results = data); }
+    catch (e) { if (mounted) setState(() => error = e.toString()); }
+    finally { if (mounted) setState(() => busy = false); }
+  }
+  @override Widget build(BuildContext context) => Column(children: [Padding(padding: const EdgeInsets.all(16), child: TextField(controller: controller, onChanged: _search, decoration: InputDecoration(hintText: 'Search people by name or @username', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(onPressed: () { controller.clear(); _search(''); }, icon: const Icon(Icons.close)), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none)))), if (busy) const LinearProgressIndicator(), if (error != null) Padding(padding: const EdgeInsets.all(16), child: Text(error!, style: const TextStyle(color: Colors.red))), Expanded(child: results.isEmpty ? Center(child: Text(controller.text.isEmpty ? 'Search for real Twice users' : 'No users found', style: const TextStyle(color: muted))) : ListView.builder(itemCount: results.length, itemBuilder: (_, i) => _UserTile(user: results[i])))]);
+}
+
+class _UserTile extends StatefulWidget {
+  const _UserTile({required this.user}); final Map<String, dynamic> user;
+  @override State<_UserTile> createState() => _UserTileState();
+}
+class _UserTileState extends State<_UserTile> {
+  bool following = false, busy = false;
+  @override Widget build(BuildContext context) {
+    final user = widget.user;
+    if (user['result_type'] == 'post') {
+      final author = user['profiles'] as Map? ?? {};
+      return ListTile(leading: const CircleAvatar(child: Icon(Icons.article_outlined)), title: Text((user['caption'] ?? 'Media post').toString(), maxLines: 2, overflow: TextOverflow.ellipsis), subtitle: Text('${author['display_name'] ?? author['username'] ?? 'Twice user'} · @${author['username'] ?? 'user'}'));
+    }
+    final isSelf = user['id'] == Supabase.instance.client.auth.currentUser?.id;
+    return ListTile(
+      leading: CircleAvatar(backgroundImage: user['avatar_url'] == null ? null : NetworkImage(user['avatar_url'].toString()), child: user['avatar_url'] == null ? const Icon(Icons.person) : null),
+      title: Text((user['display_name'] ?? user['username'] ?? 'Twice user').toString(), style: const TextStyle(fontWeight: FontWeight.w800)),
+      subtitle: Text('@${user['username'] ?? 'user'}'),
+      trailing: isSelf ? null : Wrap(children: [
+        TextButton(onPressed: busy ? null : () async { setState(() => busy = true); try { if (following) { await SocialRepository.instance.unfollow(user['id'].toString()); } else { await SocialRepository.instance.follow(user['id'].toString(), privateAccount: user['is_private'] == true); } if (mounted) setState(() => following = !following); } catch (e) { if (mounted) { ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text('Follow action failed: $e'))); } } finally { if (mounted) setState(() => busy = false); } }, child: Text(busy ? '…' : following ? 'Following' : 'Follow')),
+        IconButton(tooltip: 'Message', onPressed: busy ? null : () async { setState(() => busy = true); try { final id = await SocialRepository.instance.createConversation(user['id'].toString()); if (context.mounted) Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ConversationPage(id: id, title: (user['display_name'] ?? user['username'] ?? 'Message').toString()))); } catch (e) { if (mounted) { ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text('Could not start conversation: $e'))); } } finally { if (mounted) setState(() => busy = false); } }, icon: const Icon(Icons.send_outlined)),
+      ]),
+    );
   }
 }
 
-class _MediaThumbnail extends StatelessWidget {
-  const _MediaThumbnail({required this.asset});
+class CommentsSheet extends StatefulWidget { const CommentsSheet({super.key, required this.post}); final SocialPost post; @override State<CommentsSheet> createState() => _CommentsSheetState(); }
+class _CommentsSheetState extends State<CommentsSheet> {
+  final controller = TextEditingController(); List<Map<String, dynamic>> rows = []; bool busy = true;
+  @override void initState() { super.initState(); _load(); }
+  @override void dispose() { controller.dispose(); super.dispose(); }
+  Future<void> _load() async { try { final data = await SocialRepository.instance.comments(widget.post.id); if (mounted) setState(() { rows = data; busy = false; }); } catch (e) { if (mounted) setState(() => busy = false); } }
+  Future<void> _send() async { final text = controller.text.trim(); if (text.isEmpty) return; try { await SocialRepository.instance.addComment(widget.post.id, text); controller.clear(); await _load(); } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Comment failed: $e'))); } }
+  @override Widget build(BuildContext context) => SafeArea(child: SizedBox(height: MediaQuery.sizeOf(context).height * .72, child: Column(children: [const Padding(padding: EdgeInsets.all(16), child: Text('Comments', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800))), Expanded(child: busy ? const Center(child: CircularProgressIndicator()) : rows.isEmpty ? const Center(child: Text('No comments yet')) : ListView.builder(itemCount: rows.length, itemBuilder: (_, i) { final r = rows[i]; final p = r['profiles'] as Map? ?? {}; return ListTile(title: Text((p['display_name'] ?? p['username'] ?? 'User').toString()), subtitle: Text((r['body'] ?? '').toString())); })), Padding(padding: EdgeInsets.fromLTRB(12, 8, 12, MediaQuery.viewInsetsOf(context).bottom + 12), child: Row(children: [Expanded(child: TextField(controller: controller, decoration: const InputDecoration(hintText: 'Write a comment…'))), IconButton(onPressed: _send, icon: const Icon(Icons.send, color: violet))]))])));
+}
 
-  final AssetEntity asset;
+class ActivityPage extends StatefulWidget {
+  const ActivityPage({super.key});
+
+  @override
+  State<ActivityPage> createState() => _ActivityPageState();
+}
+
+class _ActivityPageState extends State<ActivityPage> {
+  late Future<List<Map<String, dynamic>>> future;
+
+  @override
+  void initState() {
+    super.initState();
+    future = SocialRepository.instance.notifications();
+  }
+
+  Future<void> _refresh() async {
+    setState(() => future = SocialRepository.instance.notifications());
+    await future;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder(
-      future: asset.thumbnailDataWithSize(const ThumbnailSize(480, 480)),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
       builder: (context, snapshot) {
-        final bytes = snapshot.data;
-        if (bytes == null) {
-          return Container(
-            color: const Color(0xFFECECF2),
-            alignment: Alignment.center,
-            child: const Icon(Icons.image_outlined, color: muted),
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text('Could not load activity: ${snapshot.error}'),
           );
         }
-        return Image.memory(
-          bytes,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          height: double.infinity,
-          gaplessPlayback: true,
+        final rows = snapshot.data ?? [];
+        if (rows.isEmpty) {
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 180),
+                Center(
+                  child: Text('No activity yet', style: TextStyle(color: muted)),
+                ),
+              ],
+            ),
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView.builder(
+            itemCount: rows.length,
+            itemBuilder: (context, index) {
+              final row = rows[index];
+              final actor = row['profiles'] as Map? ?? {};
+              return ListTile(
+                leading: const CircleAvatar(
+                  child: Icon(Icons.notifications_none),
+                ),
+                title: Text(
+                  '${actor['display_name'] ?? actor['username'] ?? 'Someone'} '
+                  '${row['type'] ?? 'interacted'} with you',
+                ),
+                subtitle: Text(_timeAgo(row['created_at'])),
+              );
+            },
+          ),
         );
       },
     );
   }
 }
 
-class _PostMediaGrid extends StatelessWidget {
-  const _PostMediaGrid({required this.media});
+class ProfilePage extends StatefulWidget {
+  const ProfilePage({
+    super.key,
+    required this.profile,
+    required this.posts,
+    required this.onRefresh,
+  });
 
-  final List<AssetEntity> media;
+  final Map<String, dynamic> profile;
+  final List<SocialPost> posts;
+  final Future<void> Function() onRefresh;
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  int selectedTab = 0;
+  int followersCount = 0;
+  int followingCount = 0;
+  bool _countsLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFollowCounts();
+  }
+
+  Future<void> _loadFollowCounts() async {
+    final id = (widget.profile['id'] ?? '').toString();
+    if (id.isEmpty) {
+      if (mounted) setState(() => _countsLoading = false);
+      return;
+    }
+    try {
+      final db = Supabase.instance.client;
+      final values = await Future.wait<List<dynamic>>([
+        db.from('follows').select('follower_id').eq('following_id', id).eq('status', 'accepted'),
+        db.from('follows').select('following_id').eq('follower_id', id).eq('status', 'accepted'),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        followersCount = values[0].length;
+        followingCount = values[1].length;
+        _countsLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _countsLoading = false);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfilePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.profile['id'] != widget.profile['id']) {
+      _countsLoading = true;
+      _loadFollowCounts();
+    }
+  }
+
+  List<SocialPost> get _myPosts => widget.posts
+      .where((p) =>
+          p.data['user_id'] ==
+          Supabase.instance.client.auth.currentUser?.id)
+      .toList();
+
+  List<SocialPost> get _visiblePosts {
+    if (selectedTab == 1) {
+      return _myPosts.where((p) => p.media.any((m) =>
+          (m['media_type'] ?? '').toString().toLowerCase() == 'image')).toList();
+    }
+    if (selectedTab == 2) {
+      return _myPosts.where((p) => p.media.any((m) =>
+          (m['media_type'] ?? '').toString().toLowerCase() == 'video')).toList();
+    }
+    return _myPosts;
+  }
+
+  Future<void> _edit() async {
+    final display = TextEditingController(
+      text: (widget.profile['display_name'] ?? '').toString(),
+    );
+    final username = TextEditingController(
+      text: (widget.profile['username'] ?? '').toString(),
+    );
+    final bio = TextEditingController(
+      text: (widget.profile['bio'] ?? '').toString(),
+    );
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit profile'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: display,
+                decoration: const InputDecoration(labelText: 'Display name'),
+              ),
+              TextField(
+                controller: username,
+                decoration: const InputDecoration(labelText: '@username'),
+              ),
+              TextField(
+                controller: bio,
+                maxLines: 3,
+                maxLength: 160,
+                decoration: const InputDecoration(labelText: 'Bio'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true && mounted) {
+      try {
+        await SocialRepository.instance.updateProfile(
+          displayName: display.text,
+          username: username.text,
+          bio: bio.text,
+        );
+        await widget.onRefresh();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Profile updated')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Profile update failed: $e')),
+          );
+        }
+      }
+    }
+
+    display.dispose();
+    username.dispose();
+    bio.dispose();
+  }
+
+  Future<void> _shareProfile() async {
+    final username = (widget.profile['username'] ?? '').toString();
+    final profileUrl = 'https://twice.app/@$username';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 29,
+              backgroundImage: widget.profile['avatar_url'] == null
+                  ? null
+                  : NetworkImage(widget.profile['avatar_url'].toString()),
+              child: widget.profile['avatar_url'] == null
+                  ? const Icon(Icons.person, size: 30)
+                  : null,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              (widget.profile['display_name'] ?? username).toString(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            Text('@$username', style: const TextStyle(color: muted)),
+            const SizedBox(height: 18),
+            QrImageView(
+              data: profileUrl,
+              version: QrVersions.auto,
+              size: 210,
+              backgroundColor: Colors.white,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Scan to find this profile',
+              style: TextStyle(color: muted, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: profileUrl));
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Profile link copied')),
+                );
+              },
+              icon: const Icon(Icons.copy_rounded),
+              label: const Text('Copy profile link'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stat(String value, String label) => Column(
+        children: [
+          Text(
+            value,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 3),
+          Text(label, style: const TextStyle(color: muted, fontSize: 12)),
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {
-    if (media.length == 1) {
-      final asset = media.first;
-      return SizedBox(
-        height: 300,
-        width: double.infinity,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _MediaThumbnail(asset: asset),
-            if (asset.type == AssetType.video)
-              const Center(
-                child: CircleAvatar(
-                  backgroundColor: Color(0x99000000),
-                  child: Icon(
-                    Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: 34,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-    }
-    return SizedBox(
-      height: 300,
-      child: GridView.builder(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(2),
-        itemCount: media.length > 4 ? 4 : media.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 3,
-          mainAxisSpacing: 3,
-        ),
-        itemBuilder: (context, index) {
-          final asset = media[index];
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              _MediaThumbnail(asset: asset),
-              if (asset.type == AssetType.video)
-                const Align(
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.play_circle_fill_rounded,
-                    color: Colors.white,
-                    size: 34,
-                  ),
-                ),
-              if (index == 3 && media.length > 4)
-                Container(
-                  color: const Color(0x99000000),
-                  alignment: Alignment.center,
+    final profile = widget.profile;
+    final username = (profile['username'] ?? '').toString();
+    final bio = (profile['bio'] ?? '').toString();
+    final posts = _visiblePosts;
+
+    return RefreshIndicator(
+      onRefresh: widget.onRefresh,
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 28),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+            child: Row(
+              children: [
+                Expanded(
                   child: Text(
-                    '+${media.length - 4}',
+                    username.isEmpty ? 'Your profile' : '@$username',
                     style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
+                      fontSize: 21,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _TwiceGalleryScreen extends StatefulWidget {
-  const _TwiceGalleryScreen();
-
-  @override
-  State<_TwiceGalleryScreen> createState() => _TwiceGalleryScreenState();
-}
-
-class _TwiceGalleryScreenState extends State<_TwiceGalleryScreen> {
-  List<AssetEntity> assets = [];
-  final List<AssetEntity> selectedAssets = [];
-  bool loading = true;
-  bool denied = false;
-  bool multiSelect = false;
-  String? loadError;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadGallery();
-  }
-
-  Future<void> _loadGallery() async {
-    try {
-      final permission = await PhotoManager.requestPermissionExtend();
-      if (!permission.hasAccess) {
-        if (mounted) {
-          setState(() {
-            denied = true;
-            loading = false;
-          });
-        }
-        return;
-      }
-      final results = await PhotoManager.getAssetListPaged(
-        page: 0,
-        pageCount: 180,
-        type: RequestType.common,
-      );
-      if (!mounted) return;
-      setState(() {
-        assets = results;
-        loading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        loadError = 'Could not load your gallery. Please try again.';
-        loading = false;
-      });
-    }
-  }
-
-  void _toggle(AssetEntity asset, {bool longPress = false}) {
-    setState(() {
-      if (longPress) multiSelect = true;
-      final index = selectedAssets.indexWhere((item) => item.id == asset.id);
-      if (index >= 0) {
-        selectedAssets.removeAt(index);
-      } else if (selectedAssets.length < 10) {
-        selectedAssets.add(asset);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You can select up to 10 items')),
-        );
-      }
-    });
-  }
-
-  void _finish() =>
-      Navigator.of(context)
-          .pop<List<AssetEntity>>(List<AssetEntity>.of(selectedAssets));
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: canvas,
-      appBar: AppBar(
-        leading: IconButton(
-          onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.close_rounded),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Gallery',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            ),
-            Text(
-              selectedAssets.isEmpty
-                  ? 'Tap to select · Hold for multiple'
-                  : '${selectedAssets.length} of 10 selected',
-              style: const TextStyle(fontSize: 11, color: muted),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: selectedAssets.isEmpty ? null : _finish,
-            child: const Text('Next'),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator(color: violet))
-          : denied
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.photo_library_outlined,
-                      size: 48,
-                      color: muted,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Allow photo and video access to choose media.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: () => PhotoManager.openSetting(),
-                      child: const Text('Open settings'),
-                    ),
-                  ],
+                IconButton(
+                  tooltip: 'Share profile',
+                  onPressed: _shareProfile,
+                  icon: const Icon(Icons.qr_code_rounded),
                 ),
-              ),
-            )
-          : loadError != null
-          ? Center(child: Text(loadError!))
-          : assets.isEmpty
-          ? const Center(child: Text('No photos or videos found'))
-          : GridView.builder(
-              padding: const EdgeInsets.all(3),
-              itemCount: assets.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: 3,
-                mainAxisSpacing: 3,
-              ),
-              itemBuilder: (context, index) {
-                final asset = assets[index];
-                final selectedIndex = selectedAssets.indexWhere(
-                  (item) => item.id == asset.id,
-                );
-                final isSelected = selectedIndex >= 0;
-                return GestureDetector(
-                  onTap: () => _toggle(asset),
-                  onLongPress: () => _toggle(asset, longPress: true),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _MediaThumbnail(asset: asset),
-                      if (asset.type == AssetType.video)
-                        const Positioned(
-                          left: 5,
-                          bottom: 5,
-                          child: Icon(
-                            Icons.play_circle_fill_rounded,
-                            color: Colors.white,
-                            size: 22,
-                          ),
-                        ),
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Container(
-                          width: 25,
-                          height: 25,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? violet
-                                : const Color(0x66000000),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 1.5),
-                          ),
-                          child: isSelected
-                              ? Text(
-                                  '${selectedIndex + 1}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                )
-                              : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-      bottomNavigationBar: selectedAssets.isEmpty
-          ? null
-          : SafeArea(
-              minimum: const EdgeInsets.all(12),
-              child: FilledButton(
-                onPressed: _finish,
-                style: FilledButton.styleFrom(
-                  backgroundColor: violet,
-                  minimumSize: const Size(0, 50),
-                ),
-                child: Text('Add ${selectedAssets.length} to post'),
-              ),
-            ),
-    );
-  }
-}
-
-class _TwiceComposerScreen extends StatefulWidget {
-  const _TwiceComposerScreen({required this.onPost});
-
-  final void Function(String caption, List<AssetEntity> media) onPost;
-
-  @override
-  State<_TwiceComposerScreen> createState() => _TwiceComposerScreenState();
-}
-
-class _TwiceComposerScreenState extends State<_TwiceComposerScreen>
-    with SingleTickerProviderStateMixin {
-  final controller = TextEditingController();
-  final focusNode = FocusNode();
-  final List<AssetEntity> selectedMedia = [];
-  late final AnimationController actionController;
-  bool galleryOpened = false;
-
-  @override
-  void initState() {
-    super.initState();
-    actionController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 550),
-    );
-    actionController.forward();
-  }
-
-  Future<void> _openGallery() async {
-    if (galleryOpened || !mounted) return;
-    galleryOpened = true;
-    final picked = await Navigator.of(context).push<List<AssetEntity>>(
-      MaterialPageRoute<List<AssetEntity>>(
-        builder: (_) => const _TwiceGalleryScreen(),
-      ),
-    );
-    if (!mounted || picked == null || picked.isEmpty) return;
-    setState(() {
-      selectedMedia
-        ..clear()
-        ..addAll(picked.take(10));
-    });
-  }
-
-  @override
-  void dispose() {
-    controller.dispose();
-    focusNode.dispose();
-    actionController.dispose();
-    super.dispose();
-  }
-
-  Animation<Offset> _actionSlide(int index) {
-    final begin = index * 0.13;
-    final end = (begin + 0.62).clamp(0.0, 1.0);
-    return Tween<Offset>(
-      begin: const Offset(0, 0.35),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: actionController,
-        curve: Interval(begin, end, curve: Curves.easeOutCubic),
-      ),
-    );
-  }
-
-  Widget _animatedAction(int index, IconData icon, String label, Color color) {
-    return SlideTransition(
-      position: _actionSlide(index),
-      child: FadeTransition(
-        opacity: CurvedAnimation(
-          parent: actionController,
-          curve: Interval(index * 0.13, (index * 0.13 + 0.62).clamp(0.0, 1.0)),
-        ),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF7F7FB),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: color, size: 21),
-              const SizedBox(width: 7),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _publish() {
-    final caption = controller.text.trim();
-    if (caption.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Write a caption first')));
-      focusNode.requestFocus();
-      return;
-    }
-
-    FocusScope.of(context).unfocus();
-    widget.onPost(caption, List<AssetEntity>.of(selectedMedia));
-    Navigator.of(context).pop();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-
-    return Scaffold(
-      backgroundColor: canvas,
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        backgroundColor: canvas,
-        foregroundColor: ink,
-        elevation: 0,
-        leading: IconButton(
-          tooltip: 'Close composer',
-          icon: const Icon(Icons.close_rounded),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: const Text(
-          'Create post',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Center(
-              child: FilledButton(
-                onPressed: _publish,
-                style: FilledButton.styleFrom(
-                  backgroundColor: violet,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                ),
-                child: const Text('Post'),
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: AnimatedPadding(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: EdgeInsets.only(bottom: bottomInset),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          children: [
-            Hero(
-              tag: 'twice-composer-card',
-              child: Material(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: const Color(0xFFECECF2)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 23,
-                            backgroundColor: Color(0xFFE5DEFF),
-                            child: Icon(
-                              Icons.person_rounded,
-                              color: violet,
-                              size: 27,
-                            ),
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Your Profile',
-                                  style: TextStyle(
-                                    color: ink,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                SizedBox(height: 3),
-                                Text(
-                                  'Sharing with everyone',
-                                  style: TextStyle(color: muted, fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(Icons.public_rounded, color: muted, size: 20),
-                        ],
-                      ),
-                      const SizedBox(height: 15),
-                      AnimatedBuilder(
-                        animation: controller,
-                        builder: (context, child) {
-                          return Stack(
-                            children: [
-                              IgnorePointer(
-                                child: AnimatedOpacity(
-                                  duration: const Duration(milliseconds: 160),
-                                  opacity: controller.text.isEmpty ? 1 : 0,
-                                  child: const Padding(
-                                    padding: EdgeInsets.only(top: 2),
-                                    child: Text(
-                                      "What's on your mind?",
-                                      style: TextStyle(
-                                        color: muted,
-                                        fontSize: 21,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              TextField(
-                                controller: controller,
-                                focusNode: focusNode,
-                                autofocus: true,
-                                maxLines: null,
-                                minLines: 5,
-                                maxLength: 500,
-                                textCapitalization:
-                                    TextCapitalization.sentences,
-                                style: const TextStyle(
-                                  color: ink,
-                                  fontSize: 19,
-                                  height: 1.4,
-                                ),
-                                decoration: const InputDecoration(
-                                  hintText: '',
-                                  counterStyle: TextStyle(color: muted),
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            if (selectedMedia.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 112,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: selectedMedia.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final asset = selectedMedia[index];
-                    return Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: SizedBox(
-                            width: 112,
-                            height: 112,
-                            child: _MediaThumbnail(asset: asset),
-                          ),
-                        ),
-                        if (asset.type == AssetType.video)
-                          const Positioned(
-                            left: 40,
-                            top: 40,
-                            child: Icon(
-                              Icons.play_circle_fill_rounded,
-                              color: Colors.white,
-                              size: 30,
-                            ),
-                          ),
-                        Positioned(
-                          right: 4,
-                          top: 4,
-                          child: InkWell(
-                            onTap: () =>
-                                setState(() => selectedMedia.removeAt(index)),
-                            child: const CircleAvatar(
-                              radius: 13,
-                              backgroundColor: Color(0xCC171923),
-                              child: Icon(
-                                Icons.close_rounded,
-                                size: 16,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
-            const SizedBox(height: 18),
-            const Text(
-              'Add to your post',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: _openGallery,
-                  child: _animatedAction(
-                    0,
-                    Icons.photo_library_outlined,
-                    selectedMedia.isEmpty
-                        ? 'Photo'
-                        : 'Photo (${selectedMedia.length})',
-                    const Color(0xFF28A66A),
-                  ),
-                ),
-                _animatedAction(
-                  1,
-                  Icons.person_add_alt_1_rounded,
-                  'Tag people',
-                  const Color(0xFF3985E8),
-                ),
-                _animatedAction(
-                  2,
-                  Icons.sentiment_satisfied_alt_rounded,
-                  'Feeling',
-                  const Color(0xFFF0A329),
+                IconButton(
+                  tooltip: 'Edit profile',
+                  onPressed: _edit,
+                  icon: const Icon(Icons.edit_outlined),
                 ),
               ],
             ),
-            const SizedBox(height: 22),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEDE9FF),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline_rounded, color: violet),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Choose up to 10 photos or videos. Tap to select one, or hold an item to start selecting multiple media.',
-                      style: TextStyle(color: ink, fontSize: 12, height: 1.45),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: _publish,
-              icon: const Icon(Icons.send_rounded),
-              label: const Text('Publish post'),
-              style: FilledButton.styleFrom(
-                backgroundColor: violet,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(0, 52),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 43,
+                  backgroundColor: const Color(0xFFF0F2F5),
+                  backgroundImage: profile['avatar_url'] == null
+                      ? null
+                      : NetworkImage(profile['avatar_url'].toString()),
+                  child: profile['avatar_url'] == null
+                      ? const Icon(Icons.person_outline_rounded, size: 43)
+                      : null,
                 ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class ActivityPage extends StatelessWidget {
-  const ActivityPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: const [
-        Text(
-          'Activity',
-          style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
-        ),
-        SizedBox(height: 8),
-        Text('Your latest interactions will appear here.'),
-        SizedBox(height: 24),
-        _ActivityTile(
-          initials: 'SB',
-          color: Color(0xFFF0B8A6),
-          message: 'Sofia shared a little sunshine with her latest post.',
-          time: 'Demo activity',
-        ),
-        _ActivityTile(
-          initials: 'ML',
-          color: Color(0xFFB8C8F4),
-          message: 'Marcus is sharing moments from his day.',
-          time: 'Demo activity',
-        ),
-      ],
-    );
-  }
-}
-
-class _ActivityTile extends StatelessWidget {
-  const _ActivityTile({
-    required this.initials,
-    required this.color,
-    required this.message,
-    required this.time,
-  });
-
-  final String initials;
-  final Color color;
-  final String message;
-  final String time;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(vertical: 7),
-      leading: CircleAvatar(backgroundColor: color, child: Text(initials)),
-      title: Text(message),
-      subtitle: Text(time),
-    );
-  }
-}
-
-class ProfileShareScreen extends StatelessWidget {
-  const ProfileShareScreen({super.key});
-
-  // Temporary local identifier. Public profile URLs and deep-link routing
-  // must be connected when Twice has real account identities.
-  static const String profileName = 'Your Name';
-  static const String profileBio = 'Making every moment count ✨';
-  static const String profileHandle = '@youraccount';
-  static const String profileLink = 'twice://profile/your-name';
-
-  Future<void> _copyProfileLink(BuildContext context) async {
-    await Clipboard.setData(const ClipboardData(text: profileLink));
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Profile link copied')));
-  }
-
-  Future<void> _shareProfile(BuildContext context) async {
-    try {
-      await SharePlus.instance.share(
-        ShareParams(
-          text: '$profileName on Twice\n$profileLink',
-          subject: 'My Twice profile',
-        ),
-      );
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Could not open sharing')));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Share profile'), centerTitle: true),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-        children: [
-          const SizedBox(height: 8),
-          const Center(
-            child: Text(
-              'Your profile',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Center(
-            child: Text(
-              'Let people find you on Twice',
-              style: TextStyle(color: muted),
-            ),
-          ),
-          const SizedBox(height: 28),
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 28,
-                backgroundColor: Color(0xFFECE7FF),
-                child: Icon(Icons.person_rounded, size: 34, color: violet),
-              ),
-              const SizedBox(width: 14),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      profileName,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(profileHandle, style: TextStyle(color: muted)),
-                  ],
+                const SizedBox(width: 22),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _stat('${_myPosts.length}', 'Posts'),
+                      _stat(_countsLoading ? '…' : '$followersCount', 'Followers'),
+                      _stat(_countsLoading ? '…' : '$followingCount', 'Following'),
+                    ],
+                  ),
                 ),
-              ),
-              const Icon(Icons.qr_code_rounded, color: violet, size: 28),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Center(
-            child: Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: const Color(0xFFE7E2F2)),
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  QrImageView(
-                    data: profileLink,
-                    version: QrVersions.auto,
-                    size: 244,
-                    padding: EdgeInsets.zero,
-                    backgroundColor: Colors.white,
-                    errorCorrectionLevel: QrErrorCorrectLevel.H,
-                    eyeStyle: const QrEyeStyle(
-                      eyeShape: QrEyeShape.square,
-                      color: Color(0xFF17131F),
-                    ),
-                    dataModuleStyle: const QrDataModuleStyle(
-                      dataModuleShape: QrDataModuleShape.square,
-                      color: Color(0xFF17131F),
-                    ),
-                  ),
-                  Container(
-                    width: 62,
-                    height: 62,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFECE7FF),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 5),
-                    ),
-                    child: const Icon(
-                      Icons.person_rounded,
-                      size: 38,
-                      color: violet,
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ),
           ),
-          const SizedBox(height: 18),
-          const Center(
-            child: Text(
-              'Scan this code to access the profile link',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: muted),
-            ),
-          ),
-          const SizedBox(height: 26),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF4F1FC),
-              borderRadius: BorderRadius.circular(16),
-            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 15, 18, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'PROFILE LINK',
-                  style: TextStyle(
-                    fontSize: 11,
-                    letterSpacing: 1.1,
-                    color: muted,
-                    fontWeight: FontWeight.w800,
+                Text(
+                  (profile['display_name'] ?? username).toString(),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 9),
+                if (bio.isNotEmpty) ...[
+                  const SizedBox(height: 5),
+                  Text(bio, style: const TextStyle(height: 1.4)),
+                ],
+                const SizedBox(height: 13),
                 Row(
                   children: [
-                    const Expanded(
-                      child: SelectableText(
-                        profileLink,
-                        style: TextStyle(fontSize: 13),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _edit,
+                        child: const Text('Edit profile'),
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Copy profile link',
-                      onPressed: () => _copyProfileLink(context),
-                      icon: const Icon(Icons.copy_rounded, color: violet),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _shareProfile,
+                        icon: const Icon(Icons.share_outlined, size: 18),
+                        label: const Text('Share profile'),
+                      ),
                     ),
                   ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 50,
-            child: FilledButton.icon(
-              onPressed: () => _copyProfileLink(context),
-              icon: const Icon(Icons.copy_rounded),
-              label: const Text('Copy link'),
+          const Divider(height: 1, color: Color(0xFFEDEDED)),
+          Row(
+            children: [
+              _profileTab(0, Icons.grid_on_rounded, 'Posts'),
+              _profileTab(1, Icons.photo_outlined, 'Photos'),
+              _profileTab(2, Icons.play_circle_outline_rounded, 'Videos'),
+            ],
+          ),
+          const Divider(height: 1, color: Color(0xFFEDEDED)),
+          if (posts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 55, horizontal: 24),
+              child: Column(
+                children: [
+                  const Icon(Icons.photo_library_outlined, size: 43, color: muted),
+                  const SizedBox(height: 12),
+                  Text(
+                    selectedTab == 0
+                        ? 'No posts yet'
+                        : selectedTab == 1
+                            ? 'No photos yet'
+                            : 'No videos yet',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 17,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Share a moment and it will appear here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: muted),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...posts.map(
+              (post) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: PostCard(
+                  post: post,
+                  onLike: (item) async {
+                    final wasLiked = item.liked;
+                    final uid = Supabase.instance.client.auth.currentUser?.id;
+                    if (uid == null) return;
+                    final rows = List<Map<String, dynamic>>.from(
+                      item.data['post_likes'] as List? ?? [],
+                    );
+                    setState(() {
+                      if (wasLiked) {
+                        rows.removeWhere((e) => e['user_id'] == uid);
+                      } else {
+                        rows.add({'user_id': uid});
+                      }
+                      item.data['post_likes'] = rows;
+                    });
+                    try {
+                      await SocialRepository.instance.toggleLike(item.id, wasLiked);
+                    } catch (e) {
+                      await widget.onRefresh();
+                      if (mounted) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          SnackBar(content: Text('Like failed: $e')),
+                        );
+                      }
+                    }
+                  },
+                  onCommentChanged: widget.onRefresh,
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 50,
-            child: OutlinedButton.icon(
-              onPressed: () => _shareProfile(context),
-              icon: const Icon(Icons.share_rounded),
-              label: const Text('Share profile'),
-            ),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Note: this is a temporary profile identifier. A public profile link '
-            'that opens the correct account requires account IDs and app '
-            'deep-link routing.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: muted),
-          ),
         ],
+      ),
+    );
+  }
+
+  Widget _profileTab(int index, IconData icon, String label) {
+    final active = selectedTab == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => selectedTab = index),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: active ? ink : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: active ? ink : muted),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: active ? FontWeight.w800 : FontWeight.w500,
+                  color: active ? ink : muted,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-class ProfilePage extends StatelessWidget {
-  const ProfilePage({super.key, required this.posts});
-
-  final List<SocialPost> posts;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-      children: [
-        // Avatar on the left, statistics on the right.
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const CircleAvatar(
-              radius: 43,
-              backgroundColor: Color(0xFFECE7FF),
-              child: Icon(Icons.person_rounded, size: 52, color: violet),
-            ),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _ProfileStat(value: '${posts.length}', label: 'Posts'),
-                  const _ProfileStat(value: '0', label: 'Followers'),
-                  const _ProfileStat(value: '0', label: 'Following'),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        const Text(
-          'Your Name',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 3),
-        const Text(
-          'Making every moment count ✨',
-          style: TextStyle(color: muted),
-        ),
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Profile editing will be added later'),
-                  ),
-                ),
-                child: const Text('Edit profile'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const ProfileShareScreen(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.share_rounded, size: 18),
-                label: const Text('Share profile'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        const Divider(),
-        const SizedBox(height: 8),
-        const Row(
-          children: [
-            Icon(Icons.grid_on_rounded),
-            SizedBox(width: 8),
-            Text('Your posts', style: TextStyle(fontWeight: FontWeight.w800)),
-          ],
-        ),
-        const SizedBox(height: 14),
-        if (posts.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 32),
-            child: Center(
-              child: Text('No posts yet', style: TextStyle(color: muted)),
-            ),
-          )
-        else
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: posts.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 6,
-              mainAxisSpacing: 6,
-            ),
-            itemBuilder: (context, i) => Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: posts[i].art),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.auto_awesome_rounded,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
-          ),
-        const SizedBox(height: 24),
-        Text(
-          'C++ core: ${NativeCore.instance.isLoaded ? "connected" : "preview fallback"}',
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: muted, fontSize: 11),
-        ),
-        Text(
-          'Native check: 2 + 3 = ${NativeCore.instance.add(2, 3)}',
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: muted, fontSize: 11),
-        ),
-      ],
-    );
-  }
+class MessagesPage extends StatefulWidget { const MessagesPage({super.key}); @override State<MessagesPage> createState() => _MessagesPageState(); }
+class _MessagesPageState extends State<MessagesPage> {
+  late Future<List<Map<String, dynamic>>> future;
+  @override void initState() { super.initState(); future = SocialRepository.instance.conversations(); }
+  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Messages')), body: FutureBuilder<List<Map<String, dynamic>>>(future: future, builder: (_, s) { if (s.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator()); if (s.hasError) return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text('Could not load conversations: ${s.error}'))); final rows = s.data ?? []; if (rows.isEmpty) return const Center(child: Text('No conversations yet')); return ListView.builder(itemCount: rows.length, itemBuilder: (_, i) { final r = rows[i]; final c = r['conversations'] as Map? ?? {}; return ListTile(leading: const CircleAvatar(child: Icon(Icons.person)), title: Text((c['title'] ?? 'Conversation').toString()), subtitle: const Text('Open conversation'), onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ConversationPage(id: r['conversation_id'].toString(), title: (c['title'] ?? 'Conversation').toString())))); }); }));
 }
-
-class _ProfileStat extends StatelessWidget {
-  const _ProfileStat({required this.value, required this.label});
-
-  final String value;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-        ),
-        Text(label, style: const TextStyle(fontSize: 11, color: muted)),
-      ],
-    );
-  }
+class ConversationPage extends StatefulWidget { const ConversationPage({super.key, required this.id, required this.title}); final String id, title; @override State<ConversationPage> createState() => _ConversationPageState(); }
+class _ConversationPageState extends State<ConversationPage> {
+  final controller = TextEditingController(); late Future<List<Map<String, dynamic>>> future;
+  @override void initState() { super.initState(); future = SocialRepository.instance.messages(widget.id); }
+  @override void dispose() { controller.dispose(); super.dispose(); }
+  Future<void> _send() async { try { await SocialRepository.instance.sendMessage(widget.id, controller.text); controller.clear(); setState(() => future = SocialRepository.instance.messages(widget.id)); } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Message failed: $e'))); } }
+  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.title)), body: Column(children: [Expanded(child: FutureBuilder<List<Map<String, dynamic>>>(future: future, builder: (_, s) { if (s.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator()); if (s.hasError) return Center(child: Text('Could not load messages: ${s.error}')); final rows = s.data ?? []; return ListView.builder(reverse: false, padding: const EdgeInsets.all(12), itemCount: rows.length, itemBuilder: (_, i) { final r = rows[i]; final own = r['sender_id'] == Supabase.instance.client.auth.currentUser?.id; return Align(alignment: own ? Alignment.centerRight : Alignment.centerLeft, child: Container(margin: const EdgeInsets.symmetric(vertical: 4), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: own ? const Color(0xFFECE7FF) : Colors.white, borderRadius: BorderRadius.circular(16)), child: Text((r['body'] ?? '').toString()))); }); })), SafeArea(child: Padding(padding: const EdgeInsets.all(8), child: Row(children: [Expanded(child: TextField(controller: controller, decoration: const InputDecoration(hintText: 'Message…'))), IconButton(onPressed: _send, icon: const Icon(Icons.send, color: violet))])))]));
 }

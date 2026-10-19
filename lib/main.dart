@@ -20,14 +20,29 @@ bool get supabaseConfigured =>
     supabaseUrl.startsWith('https://') &&
     supabasePublishableKey.isNotEmpty;
 
+// True only after Supabase has initialized successfully. If configuration is
+// missing or initialization fails, the app still starts and shows its setup
+// screen instead of remaining on Android's Flutter splash screen.
+bool supabaseReady = false;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Never let a bad/missing Supabase configuration prevent Flutter from
+  // drawing the first frame indefinitely.
   if (supabaseConfigured) {
-    await Supabase.initialize(
-      url: supabaseUrl,
-      publishableKey: supabasePublishableKey,
-    );
+    try {
+      await Supabase.initialize(
+        url: supabaseUrl,
+        publishableKey: supabasePublishableKey,
+      ).timeout(const Duration(seconds: 12));
+      supabaseReady = true;
+    } catch (error, stackTrace) {
+      // Keep startup alive; the auth gate will show the configuration screen.
+      debugPrint('Twice Supabase startup failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      supabaseReady = false;
+    }
   }
 
   runApp(const TwiceApp());
@@ -90,7 +105,7 @@ class TwiceAuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!supabaseConfigured) {
+    if (!supabaseReady) {
       return const TwiceSignInPage(configurationMissing: true);
     }
 

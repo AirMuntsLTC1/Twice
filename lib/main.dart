@@ -201,6 +201,93 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
   bool _loading = false;
   String? _error;
 
+  String _diagnoseGoogleError(String stage, Object error) {
+    final raw = error.toString();
+    final lower = raw.toLowerCase();
+    final code = DateTime.now().millisecondsSinceEpoch.toString();
+    final reference = 'TW-${code.substring(code.length - 8)}';
+    String category;
+    String cause;
+    String fix;
+
+    if (lower.contains('account reauth failed') ||
+        lower.contains('reauth') ||
+        lower.contains('error 16')) {
+      category = 'GOOGLE ACCOUNT REAUTHENTICATION';
+      cause = 'Google Play Services could not reauthenticate the selected account. The exact cause is not confirmed by this error alone.';
+      fix = 'On the phone, update Google Play Services and the Google app, confirm the account works in Android Settings, restart the phone, then retry. If it persists, inspect the Google OAuth client configuration.';
+    } else if (lower.contains('canceled') ||
+        lower.contains('cancelled')) {
+      category = 'SIGN-IN CANCELLED';
+      cause = 'Google reported that authentication was cancelled or interrupted. This can also occur when account authentication fails before returning to the app.';
+      fix = 'Retry and select an account. If it happens every time without cancelling, use the detailed error and stage below to investigate account or OAuth configuration.';
+    } else if (lower.contains('developer_error') ||
+        lower.contains('developer error') ||
+        lower.contains('10') && lower.contains('sign in')) {
+      category = 'GOOGLE OAUTH CONFIGURATION';
+      cause = 'Google rejected the app configuration. A client ID, package name, or signing certificate mismatch is possible.';
+      fix = 'Verify the Web application OAuth client ID used as GOOGLE_SERVER_CLIENT_ID, Android OAuth package com.twice.twice, and the SHA-1 of the certificate signing the installed APK.';
+    } else if (lower.contains('network') ||
+        lower.contains('socketexception') ||
+        lower.contains('unknownhost') ||
+        lower.contains('connection timed out') ||
+        lower.contains('failed host lookup')) {
+      category = 'NETWORK CONNECTION';
+      cause = 'The request could not reach a required service.';
+      fix = 'Check internet access, disable VPN or DNS filtering temporarily, and retry. Check whether Google or Supabase is reachable.';
+    } else if (lower.contains('id token') ||
+        lower.contains('idtoken') ||
+        lower.contains('invalid audience') ||
+        lower.contains('audience')) {
+      category = 'ID TOKEN / CLIENT ID';
+      cause = 'Google did not return the expected ID token or the receiving service may reject its audience.';
+      fix = 'Verify GOOGLE_SERVER_CLIENT_ID is the Web application OAuth client ID, not the Android client ID, and that the same expected client configuration is used by the app and Supabase.';
+    } else if (lower.contains('invalid login credentials') ||
+        lower.contains('provider is not enabled') ||
+        lower.contains('provider_disabled') ||
+        lower.contains('unauthorized') ||
+        lower.contains('jwt') ||
+        lower.contains('token')) {
+      category = 'SUPABASE AUTHENTICATION';
+      cause = 'Supabase may have rejected the Google token or its Google provider configuration.';
+      fix = 'In Supabase Authentication provider settings, verify Google is enabled and its client ID matches the Web OAuth client ID. Check the exact Supabase error and project configuration.';
+    } else if (stage == 'Google initialization') {
+      category = 'GOOGLE INITIALIZATION';
+      cause = 'The Google Sign-In SDK could not initialize.';
+      fix = 'Check that GOOGLE_SERVER_CLIENT_ID is present in the GitHub Actions build and is a valid Web application OAuth client ID.';
+    } else if (stage == 'Google account authentication') {
+      category = 'GOOGLE ACCOUNT AUTHENTICATION';
+      cause = 'Google failed before the app received an authenticated account.';
+      fix = 'Check Google Play Services, the selected Android account, internet access, and Google OAuth package/SHA-1/client ID settings.';
+    } else if (stage == 'ID token validation') {
+      category = 'GOOGLE ID TOKEN';
+      cause = 'The authenticated account did not provide an ID token.';
+      fix = 'Verify the Web OAuth client ID and Android OAuth client package/SHA-1 registration.';
+    } else if (stage == 'Supabase token exchange') {
+      category = 'SUPABASE TOKEN EXCHANGE';
+      cause = 'Google authentication returned a token, but Supabase sign-in did not complete.';
+      fix = 'Check the Supabase Google provider settings, Web OAuth client ID, project URL, network, and the detailed server response.';
+    } else {
+      category = 'APP CONFIGURATION / UNKNOWN ERROR';
+      cause = 'The error did not match a known signature. The original exception and failure stage are needed for further diagnosis.';
+      fix = 'Use the stage, exception type, and original error below to identify the failing component. Do not change signing keys or client IDs without verifying them first.';
+    }
+
+    final safeRaw = raw
+        .replaceAll(supabaseUrl, '[Supabase URL hidden]')
+        .replaceAll(supabasePublishableKey, '[Supabase key hidden]')
+        .replaceAll(googleServerClientId, '[Google client ID hidden]');
+
+    return 'DIAGNOSTIC REFERENCE: $reference\n'
+        'FAILED STAGE: $stage\n'
+        'CATEGORY: $category\n\n'
+        'LIKELY CAUSE:\n$cause\n\n'
+        'WHAT TO CHECK:\n$fix\n\n'
+        'EXCEPTION TYPE: ${error.runtimeType}\n'
+        'ORIGINAL ERROR:\n$safeRaw\n\n'
+        'Note: this diagnosis is based on the error signature, not proof of the root cause.';
+  }
+
   Future<void> _continueWithGoogle() async {
     if (widget.configurationMissing || _loading) return;
 
@@ -209,6 +296,7 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
       _error = null;
     });
 
+    var stage = 'Google initialization';
     try {
       if (googleServerClientId.isEmpty) {
         throw StateError(
@@ -223,7 +311,10 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
 
       // Google Sign-In is initialized once during app startup.
       final google = GoogleSignIn.instance;
+      stage = 'Google account authentication';
       final account = await google.authenticate();
+
+      stage = 'ID token validation';
       final idToken = account.authentication.idToken;
       if (idToken == null || idToken.isEmpty) {
         throw StateError(
@@ -231,6 +322,7 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
         );
       }
 
+      stage = 'Supabase token exchange';
       await Supabase.instance.client.auth.signInWithIdToken(
         provider: OAuthProvider.google,
         idToken: idToken,
@@ -246,12 +338,8 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
       }
 
       if (mounted) {
-        final details = error
-            .toString()
-            .replaceAll(supabaseUrl, '[Supabase URL hidden]')
-            .replaceAll(supabasePublishableKey, '[key hidden]');
         setState(() {
-          _error = 'Google sign-in failed (${error.runtimeType}): $details';
+          _error = _diagnoseGoogleError(stage, error);
         });
       }
     } finally {

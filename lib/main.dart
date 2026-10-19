@@ -655,7 +655,7 @@ class _TwiceShellState extends State<TwiceShell> {
       'Search',
       'Create',
       'Activity',
-      profile['username'] == null ? 'Profile' : '@${profile['username']}',
+      'Profile',
     ][selected];
     return Scaffold(
       appBar: AppBar(
@@ -934,15 +934,30 @@ class PostCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(13, 12, 8, 10),
             child: Row(
               children: [
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: const Color(0xFFF0F2F5),
-                  backgroundImage: post.avatarUrl == null
-                      ? null
-                      : NetworkImage(post.avatarUrl!),
-                  child: post.avatarUrl == null
-                      ? const Icon(Icons.person_outline_rounded, color: muted)
-                      : null,
+                SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: ClipOval(
+                    child: (post.avatarUrl ?? '').trim().isEmpty
+                        ? const ColoredBox(
+                            color: Color(0xFFF0F2F5),
+                            child: Icon(
+                              Icons.person_outline_rounded,
+                              color: muted,
+                            ),
+                          )
+                        : Image.network(
+                            post.avatarUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const ColoredBox(
+                              color: Color(0xFFF0F2F5),
+                              child: Icon(
+                                Icons.person_outline_rounded,
+                                color: muted,
+                              ),
+                            ),
+                          ),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -1232,13 +1247,28 @@ class _CreatePageState extends State<CreatePage> {
       }
       return;
     }
-    final paths = await PhotoManager.getAssetPathList(
-      type: RequestType.common,
+    final imagePaths = await PhotoManager.getAssetPathList(
+      type: RequestType.image,
       onlyAll: true,
     );
-    if (paths.isEmpty) return;
-    final assets = await paths.first.getAssetListPaged(page: 0, size: 100);
-    if (!mounted) return;
+    final videoPaths = await PhotoManager.getAssetPathList(
+      type: RequestType.video,
+      onlyAll: true,
+    );
+
+    final List<AssetEntity> assets = [];
+    if (imagePaths.isNotEmpty) {
+      assets.addAll(
+        await imagePaths.first.getAssetListPaged(page: 0, size: 100),
+      );
+    }
+    if (videoPaths.isNotEmpty) {
+      assets.addAll(
+        await videoPaths.first.getAssetListPaged(page: 0, size: 100),
+      );
+    }
+    assets.sort((a, b) => b.createDateSecond.compareTo(a.createDateSecond));
+    if (!mounted || assets.isEmpty) return;
     final picked = await showModalBottomSheet<List<AssetEntity>>(
       context: context,
       isScrollControlled: true,
@@ -1734,7 +1764,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
             12,
             8,
             12,
-            12 + MediaQuery.viewInsetsOf(context).bottom,
+            8 +
+                MediaQuery.viewInsetsOf(context).bottom +
+                MediaQuery.paddingOf(context).bottom,
           ),
           child: Row(
             children: [
@@ -2887,15 +2919,23 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                CircleAvatar(
-                  radius: 43,
-                  backgroundColor: const Color(0xFFF0F2F5),
-                  backgroundImage: profile['avatar_url'] == null
-                      ? null
-                      : NetworkImage(profile['avatar_url'].toString()),
-                  child: profile['avatar_url'] == null
+                Container(
+                  width: 86,
+                  height: 86,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF0F2F5),
+                    shape: BoxShape.circle,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: (profile['avatar_url'] ?? '').toString().trim().isEmpty
                       ? const Icon(Icons.person_outline_rounded, size: 43)
-                      : null,
+                      : Image.network(
+                          profile['avatar_url'].toString(),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const Center(
+                            child: Icon(Icons.person_outline_rounded, size: 43),
+                          ),
+                        ),
                 ),
                 const SizedBox(width: 22),
                 Expanded(

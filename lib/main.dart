@@ -183,32 +183,139 @@ class TwiceSignInPage extends StatefulWidget {
 }
 
 class _TwiceSignInPageState extends State<TwiceSignInPage> {
+  final _emailController = TextEditingController();
+  final _codeController = TextEditingController();
   bool _loading = false;
+  bool _codeSent = false;
   String? _error;
+  String? _message;
 
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _codeController.dispose();
+    super.dispose();
+  }
 
-  Future<void> _continueWithGoogle() async {
+  String get _email => _emailController.text.trim().toLowerCase();
+
+  Future<void> _sendCode() async {
     if (widget.configurationMissing || _loading) return;
+    if (!_emailController.text.trim().contains('@')) {
+      setState(() => _error = 'Enter a valid email address.');
+      return;
+    }
 
+    FocusScope.of(context).unfocus();
     setState(() {
       _loading = true;
       _error = null;
+      _message = null;
     });
 
     try {
-      await Supabase.instance.client.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: 'twice://login-callback',
+      final localPart = _email.split('@').first;
+      final username = localPart
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9_]'), '_')
+          .replaceAll(RegExp(r'_+'), '_');
+      final safeUsername = username.isEmpty
+          ? 'twice_user'
+          : username.substring(0, username.length > 24 ? 24 : username.length);
+
+      final response =
+          await Supabase.instance.client.functions.invoke(
+        'twice-email-code',
+        body: {
+          'action': 'send_code',
+          'email': _email,
+          'username': safeUsername,
+          'display_name': localPart,
+        },
       );
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = 'Could not start Google sign-in.\n'
-              'Check that Google is enabled in Supabase Authentication '
-              'and that twice://login-callback is an allowed redirect URL.\n\n'
-              '${error.runtimeType}: $error';
-        });
+
+      final data = response.data;
+      if (response.status < 200 ||
+          response.status >= 300 ||
+          data is! Map ||
+          data['ok'] != true) {
+        throw Exception(
+          data is Map
+              ? (data['error'] ?? 'Could not send the verification code.')
+              : 'Could not send the verification code.',
+        );
       }
+
+      if (!mounted) return;
+      setState(() {
+        _codeSent = true;
+        _message = 'If this address can receive mail, a code has been sent. '
+            'Check your inbox and spam folder.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not send the code. ${e.toString()}';
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _verifyCode() async {
+    if (widget.configurationMissing || _loading) return;
+    final code = _codeController.text.trim();
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      setState(() => _error = 'Enter the six-digit code from your email.');
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _loading = true;
+      _error = null;
+      _message = null;
+    });
+
+    try {
+      final response =
+          await Supabase.instance.client.functions.invoke(
+        'twice-email-code',
+        body: {
+          'action': 'verify_code',
+          'email': _email,
+          'code': code,
+        },
+      );
+
+      final data = response.data;
+      if (response.status < 200 ||
+          response.status >= 300 ||
+          data is! Map ||
+          data['ok'] != true ||
+          data['token_hash'] is! String) {
+        throw Exception(
+          data is Map
+              ? (data['error'] ?? 'The code could not be verified.')
+              : 'The code could not be verified.',
+        );
+      }
+
+      final tokenHash = data['token_hash'] as String;
+      await Supabase.instance.client.auth.verifyOTP(
+        tokenHash: tokenHash,
+        type: OtpType.magiclink,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _message = 'Verified! Opening Twice...';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Verification failed. ${e.toString()}';
+      });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -221,9 +328,9 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
             child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -265,48 +372,110 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                     textAlign: TextAlign.center,
                     style: TextStyle(color: muted, fontSize: 15, height: 1.5),
                   ),
-                  const SizedBox(height: 42),
-                  OutlinedButton(
+                  const SizedBox(height: 34),
+                  TextField(
+                    controller: _emailController,
+                    enabled: !_loading && !_codeSent,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: const [AutofillHints.email],
+                    decoration: InputDecoration(
+                      labelText: 'Email address',
+                      hintText: 'you@example.com',
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: Color(0xFFE2E3EA)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: Color(0xFFE2E3EA)),
+                      ),
+                    ),
+                  ),
+                  if (_codeSent) ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _codeController,
+                      enabled: !_loading,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: const [AutofillHints.oneTimeCode],
+                      maxLength: 6,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(6),
+                      ],
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 25,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 10,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Six-digit email code',
+                        hintText: '000000',
+                        counterText: '',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  FilledButton(
                     onPressed: _loading || widget.configurationMissing
                         ? null
-                        : _continueWithGoogle,
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(58),
-                      backgroundColor: Colors.white,
-                      foregroundColor: ink,
-                      side: const BorderSide(color: Color(0xFFE2E3EA)),
+                        : (_codeSent ? _verifyCode : _sendCode),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(56),
+                      backgroundColor: violet,
+                      foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(17),
                       ),
                     ),
                     child: _loading
                         ? const SizedBox(
-                            width: 23,
-                            height: 23,
-                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Colors.white,
+                            ),
                           )
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'G',
-                                style: TextStyle(
-                                  fontSize: 23,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFF4285F4),
-                                ),
-                              ),
-                              SizedBox(width: 12),
-                              Text(
-                                'Continue with Google',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
+                        : Text(
+                            _codeSent ? 'Verify and continue' : 'Send email code',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                   ),
+                  if (_codeSent) ...[
+                    const SizedBox(height: 10),
+                    TextButton(
+                      onPressed: _loading
+                          ? null
+                          : () {
+                              setState(() {
+                                _codeSent = false;
+                                _codeController.clear();
+                                _error = null;
+                                _message = null;
+                              });
+                            },
+                      child: const Text('Use a different email address'),
+                    ),
+                    TextButton(
+                      onPressed: _loading ? null : _sendCode,
+                      child: const Text('Resend code'),
+                    ),
+                  ],
                   if (widget.configurationMissing) ...[
                     const SizedBox(height: 18),
                     _ErrorPanel(
@@ -318,9 +487,21 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                     const SizedBox(height: 16),
                     _ErrorPanel(message: _error!),
                   ],
-                  const SizedBox(height: 34),
+                  if (_message != null) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      _message!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF287A45),
+                        fontSize: 13,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 30),
                   const Text(
-                    'Secure sign-in powered by Google and Supabase.',
+                    'Secure email verification powered by Supabase.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: muted, fontSize: 12),
                   ),

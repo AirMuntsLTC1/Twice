@@ -1219,8 +1219,6 @@ class PostCard extends StatelessWidget {
                   PageView.builder(
                     itemCount: media.length,
                     itemBuilder: (context, index) {
-                      final url = (media[index]['resolved_url'] ?? '')
-                          .toString();
                       return _PostMediaItem(media: media[index]);
                     },
                   ),

@@ -196,6 +196,7 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
       await Supabase.instance.client.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: 'twice://login-callback',
+        queryParams: {'prompt': 'select_account'},
       );
     } catch (error) {
       if (mounted) {

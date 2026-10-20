@@ -1,0 +1,22 @@
+TWICE FIX PATCH INSTALLATION
+============================
+
+The full-project ZIP is the safest option if you want the whole project snapshot.
+This patch ZIP contains only the files changed for the media picker, comments,
+offline media cache, dependency declarations, and Supabase storage MIME migration.
+
+From Termux, with the ZIP in Downloads:
+  cd ~/Twice && python - <<'PY'
+from pathlib import Path
+import zipfile
+
+archive = Path.home() / "storage" / "downloads" / "Twice-connected-fixes-patch.zip"
+destination = Path.home()
+with zipfile.ZipFile(archive) as z:
+    z.extractall(destination)
+print("Patch files overlaid into ~/Twice")
+PY
+
+Then inspect the diff and commit/push the changes. The SQL migration is not
+automatically executed by Flutter/GitHub Actions; review it in Supabase SQL
+Editor before running it.

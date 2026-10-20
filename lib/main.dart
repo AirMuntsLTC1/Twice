@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:ffi' hide Size;
+import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +14,25 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/social_repository.dart';
 import 'data/local_cache.dart';
+
+ImageProvider<Object> _twiceImageProvider(String source) {
+  final value = source.trim();
+  if (value.startsWith('file://')) {
+    return FileImage(File.fromUri(Uri.parse(value)));
+  }
+  if (value.startsWith('/')) return FileImage(File(value));
+  return NetworkImage(value);
+}
+
+String _newTwiceUuid() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+      '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+}
 
 const ink = Color(0xFF171923);
 const muted = Color(0xFF7B8191);
@@ -1324,7 +1345,9 @@ class _StoryViewerState extends State<StoryViewer>
     }
 
     if (_isVideo) {
-      final controller = VideoPlayerController.networkUrl(Uri.parse(_url));
+      final controller = _url.startsWith('file://')
+        ? VideoPlayerController.file(File.fromUri(Uri.parse(_url)))
+        : VideoPlayerController.networkUrl(Uri.parse(_url));
       _video = controller;
       try {
         await controller.initialize();
@@ -1449,9 +1472,11 @@ class _StoryViewerState extends State<StoryViewer>
                           : const CircularProgressIndicator(
                               color: Colors.white,
                             ))
-                    : (url.startsWith('http')
-                          ? Image.network(
-                              url,
+                    : ((url.startsWith('http') ||
+                                  url.startsWith('file://') ||
+                                  url.startsWith('/'))
+                          ? Image(
+                              image: _twiceImageProvider(url),
                               fit: BoxFit.contain,
                               errorBuilder: (_, _, _) => const Icon(
                                 Icons.broken_image_outlined,
@@ -1807,7 +1832,9 @@ class _PostMediaItemState extends State<_PostMediaItem> {
       return;
     }
 
-    final controller = VideoPlayerController.networkUrl(Uri.parse(_url));
+    final controller = _url.startsWith('file://')
+        ? VideoPlayerController.file(File.fromUri(Uri.parse(_url)))
+        : VideoPlayerController.networkUrl(Uri.parse(_url));
     _controller = controller;
     controller.addListener(_onVideoValueChanged);
 
@@ -1903,8 +1930,8 @@ class _PostMediaItemState extends State<_PostMediaItem> {
         alignment: Alignment.center,
         children: [
           if (url.isNotEmpty)
-            Image.network(
-              url,
+            Image(
+              image: _twiceImageProvider(url),
               fit: cover ? BoxFit.cover : BoxFit.contain,
               width: double.infinity,
               errorBuilder: (_, _, _) => const SizedBox.shrink(),
@@ -1936,8 +1963,8 @@ class _PostMediaItemState extends State<_PostMediaItem> {
                   color: muted,
                 ),
               )
-            : Image.network(
-                url,
+            : Image(
+                image: _twiceImageProvider(url),
                 fit: BoxFit.cover,
                 width: double.infinity,
                 errorBuilder: (_, _, _) => const Center(
@@ -2218,8 +2245,8 @@ class PostCard extends StatelessWidget {
                               color: muted,
                             ),
                           )
-                        : Image.network(
-                            post.avatarUrl!,
+                        : Image(
+                            image: _twiceImageProvider(post.avatarUrl!),
                             fit: BoxFit.cover,
                             errorBuilder: (_, _, _) => const ColoredBox(
                               color: Color(0xFFF0F2F5),
@@ -2489,6 +2516,32 @@ String _timeAgo(dynamic value) {
   return '${date.day}/${date.month}/${date.year}';
 }
 
+Future<List<AssetEntity>> _loadSelectableMedia({int size = 200}) async {
+  // Query images and videos independently: some Android gallery providers
+  // omit video rows from RequestType.common when access is partially granted.
+  final permission = await PhotoManager.requestPermissionExtend();
+  if (!permission.isAuth && !permission.hasAccess) return <AssetEntity>[];
+
+  final results = <String, AssetEntity>{};
+  for (final type in <RequestType>[RequestType.image, RequestType.video]) {
+    final paths = await PhotoManager.getAssetPathList(
+      type: type,
+      onlyAll: true,
+    );
+    if (paths.isEmpty) continue;
+    final assets = await paths.first.getAssetListPaged(page: 0, size: size);
+    for (final asset in assets) {
+      if (asset.type == AssetType.image || asset.type == AssetType.video) {
+        results[asset.id] = asset;
+      }
+    }
+  }
+  final assets = results.values.toList()
+    ..sort((a, b) =>
+        (b.createDateSecond ?? 0).compareTo(a.createDateSecond ?? 0));
+  return assets;
+}
+
 class CreatePage extends StatefulWidget {
   const CreatePage({super.key, required this.onPost});
   final Future<void> Function(
@@ -2513,34 +2566,26 @@ class _CreatePageState extends State<CreatePage> {
   }
 
   Future<void> _pick() async {
-    final permission = await PhotoManager.requestPermissionExtend();
-    if (!permission.isAuth && !permission.hasAccess) {
+    List<AssetEntity> assets;
+    try {
+      assets = await _loadSelectableMedia(size: 300);
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Allow photo access to select media.')),
+          SnackBar(content: Text('Could not open media library: $error')),
         );
       }
       return;
     }
-
-    final paths = await PhotoManager.getAssetPathList(
-      type: RequestType.common,
-      onlyAll: true,
-    );
-    if (paths.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No photos or videos found.')),
-        );
-      }
+    if (!mounted) return;
+    if (assets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No accessible photos or videos. Check media permissions.'),
+        ),
+      );
       return;
     }
-
-    final assets = await paths.first.getAssetListPaged(page: 0, size: 200);
-    assets.sort(
-      (a, b) => (b.createDateSecond ?? 0).compareTo(a.createDateSecond ?? 0),
-    );
-    if (!mounted || assets.isEmpty) return;
 
     final picked = await showModalBottomSheet<List<AssetEntity>>(
       context: context,
@@ -3258,7 +3303,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
     FocusScope.of(context).unfocus();
 
     final optimistic = <String, dynamic>{
-      'id': 'local_${DateTime.now().microsecondsSinceEpoch}',
+      'id': _newTwiceUuid(),
       'post_id': widget.post.id,
       'user_id': Supabase.instance.client.auth.currentUser?.id ?? '',
       'body': text,
@@ -3278,11 +3323,24 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
     // Persist in the background; no comments refresh or feed reload.
     try {
-      await SocialRepository.instance.addComment(widget.post.id, text);
+      final synced = await SocialRepository.instance.addComment(
+        widget.post.id,
+        text,
+        commentId: optimistic['id'].toString(),
+      );
       if (!mounted) return;
       setState(() {
         optimistic.remove('_pending');
+        if (!synced) optimistic['_queued'] = true;
       });
+      if (!synced) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Saved offline. This comment will sync when you reconnect.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -3396,6 +3454,28 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text((r['body'] ?? '').toString()),
+                                  if (r['_queued'] == true)
+                                    const Padding(
+                                      padding: EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        'Saved offline · waiting to sync',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: muted,
+                                        ),
+                                      ),
+                                    ),
+                                  if (r['_failed'] == true)
+                                    const Padding(
+                                      padding: EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        'Not synced · check connection and retry',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.redAccent,
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
@@ -3618,25 +3698,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   Future<void> _choosePhoto() async {
-    final permission = await PhotoManager.requestPermissionExtend();
-    if (!permission.isAuth && !permission.hasAccess) {
+    List<AssetEntity> photos;
+    try {
+      photos = await _loadSelectableMedia(size: 150);
+      photos.removeWhere((asset) => asset.type != AssetType.image);
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Allow photo access to continue.')),
+          SnackBar(content: Text('Could not open media library: $error')),
         );
       }
       return;
     }
-    final paths = await PhotoManager.getAssetPathList(
-      type: RequestType.common,
-      onlyAll: true,
-    );
-    if (paths.isEmpty) return;
-    final assets = await paths.first.getAssetListPaged(page: 0, size: 100);
     if (!mounted) return;
-    final photos = assets
-        .where((a) => a.type == AssetType.image || a.type == AssetType.video)
-        .toList();
     final picked = await showModalBottomSheet<List<AssetEntity>>(
       context: context,
       isScrollControlled: true,
@@ -3762,8 +3836,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                                 ),
                                         )
                                       : avatar.isNotEmpty
-                                      ? Image.network(
-                                          avatar,
+                                      ? Image(
+                                          image: _twiceImageProvider(avatar),
                                           fit: BoxFit.cover,
                                           errorBuilder: (_, _, _) => const Icon(
                                             Icons.person_rounded,
@@ -4684,8 +4758,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   clipBehavior: Clip.antiAlias,
                   child: (profile['avatar_url'] ?? '').toString().trim().isEmpty
                       ? const Icon(Icons.person_outline_rounded, size: 43)
-                      : Image.network(
-                          profile['avatar_url'].toString(),
+                      : Image(
+                          image: _twiceImageProvider(profile['avatar_url'].toString()),
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => const Center(
                             child: Icon(Icons.person_outline_rounded, size: 43),

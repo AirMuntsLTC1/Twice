@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:photo_manager/photo_manager.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import 'local_cache.dart';
+import 'offline_media_cache.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -35,13 +39,58 @@ class SocialRepository {
     final path = (row['avatar_url'] ?? '').toString().trim();
     if (path.isEmpty || path.startsWith('http')) return row;
     try {
-      row['avatar_url'] = await _db.storage
-          .from('post-media')
-          .createSignedUrl(path, 3600);
+      final local = await OfflineMediaCache.instance.existingUri('post-media', path);
+      if (local != null) {
+        row['avatar_url'] = local;
+      } else {
+        final signed = await _db.storage
+            .from('post-media')
+            .createSignedUrl(path, 3600);
+        row['avatar_url'] = signed;
+        unawaited(_warmAvatarCache(row, path, signed).catchError((Object _) {}));
+      }
     } catch (_) {
       // Keep the stored path if storage cannot resolve it.
     }
     return row;
+  }
+
+  Future<void> _warmAvatarCache(
+    Map<String, dynamic> profile,
+    String objectPath,
+    String signedUrl,
+  ) async {
+    final local = await OfflineMediaCache.instance.cacheFromUrl(
+      bucket: 'post-media',
+      objectPath: objectPath,
+      signedUrl: signedUrl,
+      isVideo: false,
+    );
+    if (local == null) return;
+    final uid = _db.auth.currentUser?.id;
+    final profileId = profile['id']?.toString();
+    if (uid == null || profileId == null) return;
+    if (profileId == uid) {
+      final cachedProfile = await _cache.get(uid, 'profile');
+      if (cachedProfile is Map &&
+          cachedProfile['avatar_url']?.toString() == signedUrl) {
+        cachedProfile['avatar_url'] = local;
+        await _cache.put(uid, 'profile', cachedProfile);
+      }
+    }
+    final cachedFeed = await _cache.get(uid, 'feed');
+    if (cachedFeed is List) {
+      for (final rawPost in cachedFeed) {
+        if (rawPost is! Map) continue;
+        final author = rawPost['profiles'];
+        if (author is Map &&
+            author['id']?.toString() == profileId &&
+            author['avatar_url']?.toString() == signedUrl) {
+          author['avatar_url'] = local;
+        }
+      }
+      await _cache.put(uid, 'feed', cachedFeed);
+    }
   }
 
   Future<Map<String, dynamic>> ensureProfile() async {
@@ -211,7 +260,87 @@ class SocialRepository {
       }),
     );
     await _cache.put(userId, 'feed', resolved);
+    // Do not block first paint on media downloads. Successfully downloaded
+    // media paths are persisted into this feed cache for the next offline launch.
+    unawaited(_warmFeedMediaCache(resolved).catchError((Object _) {}));
     return resolved;
+  }
+
+  Future<void> _warmFeedMediaCache(List<Map<String, dynamic>> feedRows) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) return;
+    var warmed = 0;
+    for (final post in feedRows) {
+      final media = (post['media_resolved'] as List? ?? const []);
+      for (final raw in media) {
+        if (warmed >= 12) return; // Bound background data usage per refresh.
+        if (raw is! Map) continue;
+        final item = Map<String, dynamic>.from(raw);
+        final objectPath = (item['media_url'] ?? '').toString().trim();
+        final url = (item['resolved_url'] ?? '').toString().trim();
+        if (objectPath.isEmpty || url.isEmpty || url.startsWith('file://')) {
+          continue;
+        }
+        warmed++;
+        final type = (item['media_type'] ?? '').toString().toLowerCase();
+        final local = await OfflineMediaCache.instance.cacheFromUrl(
+          bucket: 'post-media',
+          objectPath: objectPath,
+          signedUrl: url,
+          isVideo: type == 'video',
+        );
+        if (local == null) continue;
+        item['resolved_url'] = local;
+        final thumbnailPath = (item['thumbnail_url'] ?? '').toString().trim();
+        final thumbnailUrl =
+            (item['resolved_thumbnail_url'] ?? '').toString().trim();
+        if (thumbnailPath.isNotEmpty &&
+            thumbnailUrl.isNotEmpty &&
+            !thumbnailUrl.startsWith('file://')) {
+          final localThumb = await OfflineMediaCache.instance.cacheFromUrl(
+            bucket: 'post-media',
+            objectPath: thumbnailPath,
+            signedUrl: thumbnailUrl,
+            isVideo: false,
+          );
+          if (localThumb != null) item['resolved_thumbnail_url'] = localThumb;
+        }
+        final liveMedia = (post['media_resolved'] as List? ?? const []);
+        for (var i = 0; i < liveMedia.length; i++) {
+          if (liveMedia[i] is Map &&
+              liveMedia[i]['media_url']?.toString() == objectPath) {
+            liveMedia[i]['resolved_url'] = local;
+            if (item['resolved_thumbnail_url']?.toString().startsWith('file://') ==
+                true) {
+              liveMedia[i]['resolved_thumbnail_url'] =
+                  item['resolved_thumbnail_url'];
+            }
+          }
+        }
+        final cached = await _cache.get(uid, 'feed');
+        if (cached is List) {
+          for (final cachedRaw in cached) {
+            if (cachedRaw is! Map) continue;
+            if (cachedRaw['id']?.toString() != post['id']?.toString()) {
+              continue;
+            }
+            final cachedMedia = (cachedRaw['media_resolved'] as List? ?? const []);
+            for (final cachedItem in cachedMedia) {
+              if (cachedItem is Map &&
+                  cachedItem['media_url']?.toString() == objectPath) {
+                cachedItem['resolved_url'] = local;
+                if (item['resolved_thumbnail_url']?.toString().startsWith('file://') ==
+                    true) {
+                  cachedItem['resolved_thumbnail_url'] =
+                      item['resolved_thumbnail_url'];
+                }
+              }
+            }
+          }
+          await _cache.put(uid, 'feed', cached);
+        }
+      }
+    }
   }
 
   Future<List<Map<String, dynamic>>> _resolveMedia(
@@ -221,11 +350,15 @@ class SocialRepository {
     final result = <Map<String, dynamic>>[];
     for (final raw in rows) {
       final item = Map<String, dynamic>.from(raw as Map);
-      final path = (item['media_url'] ?? '').toString();
+      final path = (item['media_url'] ?? '').toString().trim();
       try {
-        item['resolved_url'] = path.startsWith('http')
-            ? path
-            : await _db.storage.from(bucket).createSignedUrl(path, 3600);
+        final local = path.isEmpty || path.startsWith('http')
+            ? null
+            : await OfflineMediaCache.instance.existingUri(bucket, path);
+        item['resolved_url'] = local ??
+            (path.startsWith('http')
+                ? path
+                : await _db.storage.from(bucket).createSignedUrl(path, 3600));
       } catch (_) {
         item['resolved_url'] = '';
       }
@@ -233,11 +366,15 @@ class SocialRepository {
       final thumbnailPath = (item['thumbnail_url'] ?? '').toString().trim();
       if (thumbnailPath.isNotEmpty) {
         try {
-          item['resolved_thumbnail_url'] = thumbnailPath.startsWith('http')
-              ? thumbnailPath
-              : await _db.storage
-                    .from(bucket)
-                    .createSignedUrl(thumbnailPath, 3600);
+          final localThumb = thumbnailPath.startsWith('http')
+              ? null
+              : await OfflineMediaCache.instance.existingUri(bucket, thumbnailPath);
+          item['resolved_thumbnail_url'] = localThumb ??
+              (thumbnailPath.startsWith('http')
+                  ? thumbnailPath
+                  : await _db.storage
+                      .from(bucket)
+                      .createSignedUrl(thumbnailPath, 3600));
         } catch (_) {
           item['resolved_thumbnail_url'] = '';
         }
@@ -337,17 +474,28 @@ class SocialRepository {
     await _cache.put(uid, 'feed', updated);
   }
 
-  /// Retries queued likes for the currently signed-in account.
-  /// Other operation types are deliberately left untouched.
+  /// Replays queued likes and comments for the signed-in account.
   Future<void> syncPendingLikes() async {
     final uid = _db.auth.currentUser?.id;
     if (uid == null) return;
 
     final pending = await _cache.pending(uid);
     for (final item in pending) {
-      if (item['operation'] != 'set_like') continue;
+      if (item['operation'] != 'set_like' &&
+          item['operation'] != 'add_comment') {
+        continue;
+      }
       try {
         final payload = Map<String, dynamic>.from(item['payload'] as Map);
+        if (item['operation'] == 'add_comment') {
+          await _db.from('comments').upsert(
+            payload,
+            onConflict: 'id',
+            ignoreDuplicates: true,
+          ).timeout(const Duration(seconds: 15));
+          await _cache.removePending(item['id'].toString());
+          continue;
+        }
         final postId = payload['post_id']?.toString();
         if (postId == null || postId.isEmpty) {
           await _cache.removePending(item['id'].toString());
@@ -359,8 +507,9 @@ class SocialRepository {
         await _cache.removePending(item['id'].toString());
       } catch (error) {
         await _cache.markFailed(item['id'].toString(), error);
-        if (!_looksLikeNetworkFailure(error)) rethrow;
-        break;
+        if (_looksLikeNetworkFailure(error)) break;
+        // A permanent policy/schema error should not block unrelated queued
+        // operations. Keep the row for diagnostics and continue with the next.
       }
     }
   }
@@ -561,13 +710,22 @@ class SocialRepository {
   }
 
   String _mime(String ext) => switch (ext) {
+    'jpg' => 'image/jpeg',
+    'jpeg' => 'image/jpeg',
+    'jpe' => 'image/jpeg',
     'png' => 'image/png',
     'webp' => 'image/webp',
     'gif' => 'image/gif',
     'mp4' => 'video/mp4',
+    'm4v' => 'video/x-m4v',
+    'mov' => 'video/quicktime',
     'webm' => 'video/webm',
+    'mkv' => 'video/x-matroska',
+    '3gp' => 'video/3gpp',
     'heic' => 'image/heic',
-    _ => 'image/jpeg',
+    'heif' => 'image/heif',
+    'avif' => 'image/avif',
+    _ => 'application/octet-stream',
   };
 
   Future<List<Map<String, dynamic>>> search(String query) async {
@@ -765,21 +923,27 @@ class SocialRepository {
   }
 
   Future<List<Map<String, dynamic>>> comments(String postId) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) throw AuthException('Please sign in again.');
     try {
       final rows = await _db
           .from('comments')
           .select(
-            'id,post_id,user_id,parent_id,body,created_at,profiles(username,display_name,avatar_url)',
+            'id,post_id,user_id,parent_id,body,created_at,profiles!comments_user_id_fkey(id,username,display_name,avatar_url)',
           )
           .eq('post_id', postId)
-          .order('created_at');
+          .order('created_at')
+          .timeout(const Duration(seconds: 15));
       final result = (rows as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
-      await _cache.put(userId, 'comments', result, id: postId);
+      await _cache.put(uid, 'comments', result, id: postId);
       return result;
-    } catch (_) {
-      return cachedComments(postId);
+    } catch (error) {
+      if (_looksLikeNetworkFailure(error)) {
+        return cachedComments(postId);
+      }
+      rethrow;
     }
   }
 
@@ -789,13 +953,72 @@ class SocialRepository {
     return value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  Future<void> addComment(String postId, String body) async {
-    if (body.trim().isEmpty) return;
-    await _db.from('comments').insert({
+  String _newCommentId() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
+  /// Returns true when confirmed by Supabase; false when safely queued offline.
+  Future<bool> addComment(String postId, String body, {String? commentId}) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) throw AuthException('Please sign in again.');
+    final text = body.trim();
+    if (text.isEmpty) return true;
+    final id = commentId ?? _newCommentId();
+    final payload = <String, dynamic>{
+      'id': id,
       'post_id': postId,
-      'user_id': userId,
-      'body': body.trim(),
-    });
+      'user_id': uid,
+      'body': text,
+    };
+    try {
+      await _db.from('comments').insert(payload).timeout(
+        const Duration(seconds: 15),
+      );
+      final pending = await _cache.pending(uid);
+      for (final item in pending) {
+        if (item['operation'] == 'add_comment' &&
+            item['payload'] is Map &&
+            item['payload']['id'] == id) {
+          await _cache.removePending(item['id'].toString());
+        }
+      }
+      final cached = await _cache.get(uid, 'comments', id: postId);
+      final rows = cached is List
+          ? cached.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+          : <Map<String, dynamic>>[];
+      if (!rows.any((row) => row['id']?.toString() == id)) {
+        rows.add({
+          ...payload,
+          'created_at': DateTime.now().toIso8601String(),
+          'profiles': const {'display_name': 'You'},
+        });
+        await _cache.put(uid, 'comments', rows, id: postId);
+      }
+      return true;
+    } catch (error) {
+      if (!_looksLikeNetworkFailure(error)) rethrow;
+      await _cache.enqueue(uid, 'add_comment', payload);
+      final cached = await _cache.get(uid, 'comments', id: postId);
+      final rows = cached is List
+          ? cached.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+          : <Map<String, dynamic>>[];
+      if (!rows.any((row) => row['id']?.toString() == id)) {
+        rows.add({
+          ...payload,
+          'created_at': DateTime.now().toIso8601String(),
+          'profiles': const {'display_name': 'You'},
+          '_queued': true,
+        });
+        await _cache.put(uid, 'comments', rows, id: postId);
+      }
+      return false;
+    }
   }
 
   Future<List<Map<String, dynamic>>> notifications() async {

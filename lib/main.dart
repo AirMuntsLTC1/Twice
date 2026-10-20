@@ -1975,6 +1975,141 @@ class _PostMediaItemState extends State<_PostMediaItem> {
   }
 }
 
+class _PostFollowButton extends StatefulWidget {
+  const _PostFollowButton({required this.profileId, required this.onChanged});
+
+  final String profileId;
+  final VoidCallback onChanged;
+
+  @override
+  State<_PostFollowButton> createState() => _PostFollowButtonState();
+}
+
+class _PostFollowButtonState extends State<_PostFollowButton> {
+  String _label = '';
+  bool _loading = true;
+  bool _busy = false;
+  int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PostFollowButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.profileId != widget.profileId) _load();
+  }
+
+  Future<void> _load() async {
+    final generation = ++_generation;
+    if (widget.profileId.isEmpty) {
+      if (mounted)
+        setState(() {
+          _label = '';
+          _loading = false;
+        });
+      return;
+    }
+    if (mounted) setState(() => _loading = true);
+    try {
+      final label = await SocialRepository.instance.getFollowLabel(
+        widget.profileId,
+      );
+      if (mounted && generation == _generation) {
+        setState(() {
+          _label = label;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted && generation == _generation) {
+        setState(() {
+          _label = '';
+          _loading = false;
+        });
+        debugPrint('Follow state load failed: $e');
+      }
+    }
+  }
+
+  Future<void> _tap() async {
+    if (_busy || widget.profileId.isEmpty || _label.isEmpty) return;
+    final previous = _label;
+    final repo = SocialRepository.instance;
+    setState(() => _busy = true);
+
+    try {
+      if (previous == 'Following' ||
+          previous == 'Connected' ||
+          previous == 'Requested') {
+        setState(() => _label = 'Follow');
+        await repo.unfollow(widget.profileId);
+      } else {
+        final privateAccount = await repo.isPrivateAccount(widget.profileId);
+        setState(() {
+          _label = privateAccount ? 'Requested' : 'Following';
+        });
+        await repo.follow(widget.profileId, privateAccount: privateAccount);
+      }
+      await _load();
+      widget.onChanged();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _label = previous);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not update follow: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.profileId.isEmpty || _label.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final active = _label == 'Following' || _label == 'Connected';
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: SizedBox(
+        height: 32,
+        child: OutlinedButton(
+          onPressed: _loading || _busy ? null : _tap,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: active ? muted : violet,
+            side: BorderSide(color: active ? const Color(0xFFE1E3EA) : violet),
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            minimumSize: const Size(0, 32),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: _loading || _busy
+              ? const SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(strokeWidth: 1.5),
+                )
+              : Text(
+                  _label,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 class PostCard extends StatelessWidget {
   const PostCard({
     super.key,
@@ -2056,6 +2191,13 @@ class PostCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (post.author['id'] != null &&
+                    post.author['id'].toString().isNotEmpty)
+                  _PostFollowButton(
+                    key: ValueKey('post-follow-${post.author['id']}'),
+                    profileId: post.author['id'].toString(),
+                    onChanged: onCommentChanged,
+                  ),
                 PopupMenuButton<String>(
                   tooltip: 'Post options',
                   icon: const Icon(Icons.more_horiz_rounded, color: ink),

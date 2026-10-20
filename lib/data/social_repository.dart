@@ -564,6 +564,36 @@ class SocialRepository {
     return results;
   }
 
+  Future<String> getFollowLabel(String profileId) async {
+    if (profileId.isEmpty || profileId == userId) return '';
+
+    final outgoing = await _db
+        .from('follows')
+        .select('status')
+        .eq('follower_id', userId)
+        .eq('following_id', profileId)
+        .maybeSingle();
+
+    final incoming = await _db
+        .from('follows')
+        .select('status')
+        .eq('follower_id', profileId)
+        .eq('following_id', userId)
+        .maybeSingle();
+
+    final outgoingStatus = (outgoing?['status'] ?? '').toString();
+    final incomingStatus = (incoming?['status'] ?? '').toString();
+
+    if (outgoingStatus == 'pending') return 'Requested';
+    final followsMe = incomingStatus == 'accepted';
+    final iFollow = outgoingStatus == 'accepted';
+
+    if (iFollow && followsMe) return 'Connected';
+    if (iFollow) return 'Following';
+    if (followsMe) return 'Follow Back';
+    return 'Follow';
+  }
+
   Future<bool> isFollowing(String profileId) async =>
       await _db
           .from('follows')

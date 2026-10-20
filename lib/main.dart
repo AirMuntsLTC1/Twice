@@ -38,6 +38,13 @@ ImageProvider<Object> _twiceImageProvider(
 ImageProvider<Object> _twiceAvatarProvider(String source) =>
     _twiceImageProvider(source, maxDimension: 256);
 
+// A usable image source is a network URL OR a saved local copy (file:// or a
+// device path). Saved avatars become file:// after they are cached.
+bool _isImageSource(String value) {
+  final v = value.trim();
+  return v.startsWith('http') || v.startsWith('file://') || v.startsWith('/');
+}
+
 String _newTwiceUuid() {
   final random = Random.secure();
   final bytes = List<int>.generate(16, (_) => random.nextInt(256));
@@ -1625,10 +1632,10 @@ class StoryStripState extends State<StoryStrip> {
                   child: CircleAvatar(
                     radius: 29,
                     backgroundColor: const Color(0xFFF0F0F4),
-                    backgroundImage: avatar.startsWith('http')
+                    backgroundImage: _isImageSource(avatar)
                         ? _twiceAvatarProvider(avatar)
                         : null,
-                    child: avatar.startsWith('http')
+                    child: _isImageSource(avatar)
                         ? null
                         : const Icon(
                             Icons.person_rounded,
@@ -1928,10 +1935,10 @@ class _StoryViewerState extends State<StoryViewer>
                   children: [
                     CircleAvatar(
                       radius: 17,
-                      backgroundImage: avatar.startsWith('http')
+                      backgroundImage: _isImageSource(avatar)
                           ? _twiceAvatarProvider(avatar)
                           : null,
-                      child: avatar.startsWith('http')
+                      child: _isImageSource(avatar)
                           ? null
                           : const Icon(Icons.person, size: 18),
                     ),
@@ -2040,19 +2047,13 @@ class FeedPage extends StatelessWidget {
                       radius: 22,
                       backgroundColor: const Color(0xFFECE7FF),
                       backgroundImage:
-                          (profile['avatar_url'] ?? '')
-                              .toString()
-                              .trim()
-                              .startsWith('http')
+                          _isImageSource((profile['avatar_url'] ?? '').toString())
                           ? _twiceAvatarProvider(
                               (profile['avatar_url'] ?? '').toString().trim(),
                             )
                           : null,
                       child:
-                          (profile['avatar_url'] ?? '')
-                              .toString()
-                              .trim()
-                              .startsWith('http')
+                          _isImageSource((profile['avatar_url'] ?? '').toString())
                           ? null
                           : const Icon(
                               Icons.person_rounded,
@@ -3925,7 +3926,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                   .toString()
                                   .trim();
                               final hasAvatar =
-                                  avatar.startsWith('http') ||
+                                  _isImageSource(avatar) ||
                                   avatar.startsWith('file://') ||
                                   avatar.startsWith('/');
                               return CircleAvatar(

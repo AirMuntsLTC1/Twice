@@ -249,19 +249,25 @@ class SocialRepository {
         )
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1);
-    final resolved = await Future.wait(
+    final resolved = await Future.wait<Map<String, dynamic>>(
       (rows as List).map((raw) async {
         final post = Map<String, dynamic>.from(raw as Map);
         final authorRaw = post['profiles'];
-        if (authorRaw is Map) {
-          post['profiles'] = await _resolveProfileAvatar(
-            Map<String, dynamic>.from(authorRaw),
-          );
-        }
-        post['media_resolved'] = await _resolveMedia(
+
+        // Resolve the avatar and media independently to reduce feed latency.
+        final avatarFuture = authorRaw is Map
+            ? _resolveProfileAvatar(Map<String, dynamic>.from(authorRaw))
+            : Future<Map<String, dynamic>?>.value(null);
+        final mediaFuture = _resolveMedia(
           post['post_media'] as List? ?? const [],
           'post-media',
         );
+        final values = await Future.wait<dynamic>([avatarFuture, mediaFuture]);
+
+        if (values[0] is Map<String, dynamic>) {
+          post['profiles'] = values[0];
+        }
+        post['media_resolved'] = values[1] as List<Map<String, dynamic>>;
         return post;
       }),
     );
@@ -355,52 +361,62 @@ class SocialRepository {
     }
   }
 
+  /// Refreshes a storage object's URL, preferring a complete offline copy.
+  /// Returns null when the object cannot be resolved.
+  Future<String?> refreshMediaUrl(
+    String objectPath, {
+    String bucket = 'post-media',
+  }) async {
+    final path = objectPath.trim();
+    if (path.isEmpty) return null;
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+
+    try {
+      final local = await OfflineMediaCache.instance.existingUri(bucket, path);
+      if (local != null) return local;
+      return await _db.storage.from(bucket).createSignedUrl(path, 3600);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _resolveMedia(
     List rows,
     String bucket,
   ) async {
-    final result = <Map<String, dynamic>>[];
-    for (final raw in rows) {
-      final item = Map<String, dynamic>.from(raw as Map);
-      final path = (item['media_url'] ?? '').toString().trim();
-      try {
-        final local = path.isEmpty || path.startsWith('http')
-            ? null
-            : await OfflineMediaCache.instance.existingUri(bucket, path);
-        item['resolved_url'] =
-            local ??
-            (path.startsWith('http')
-                ? path
-                : await _db.storage.from(bucket).createSignedUrl(path, 3600));
-      } catch (_) {
-        item['resolved_url'] = '';
-      }
+    return Future.wait<Map<String, dynamic>>(
+      rows.map((raw) async {
+        final item = Map<String, dynamic>.from(raw as Map);
+        final path = (item['media_url'] ?? '').toString().trim();
+        final thumbnailPath = (item['thumbnail_url'] ?? '').toString().trim();
 
-      final thumbnailPath = (item['thumbnail_url'] ?? '').toString().trim();
-      if (thumbnailPath.isNotEmpty) {
-        try {
-          final localThumb = thumbnailPath.startsWith('http')
-              ? null
-              : await OfflineMediaCache.instance.existingUri(
-                  bucket,
-                  thumbnailPath,
-                );
-          item['resolved_thumbnail_url'] =
-              localThumb ??
-              (thumbnailPath.startsWith('http')
-                  ? thumbnailPath
-                  : await _db.storage
-                        .from(bucket)
-                        .createSignedUrl(thumbnailPath, 3600));
-        } catch (_) {
-          item['resolved_thumbnail_url'] = '';
-        }
-      } else {
-        item['resolved_thumbnail_url'] = '';
-      }
-      result.add(item);
+        // Resolve the main media and thumbnail concurrently.
+        final urls = await Future.wait<String>([
+          _resolveOneMediaUrl(path, bucket),
+          _resolveOneMediaUrl(thumbnailPath, bucket),
+        ]);
+        item['resolved_url'] = urls[0];
+        item['resolved_thumbnail_url'] = urls[1];
+        return item;
+      }),
+    );
+  }
+
+  Future<String> _resolveOneMediaUrl(String path, String bucket) async {
+    if (path.isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
     }
-    return result;
+
+    try {
+      final local = await OfflineMediaCache.instance.existingUri(bucket, path);
+      if (local != null) return local;
+      return await _db.storage.from(bucket).createSignedUrl(path, 3600);
+    } catch (_) {
+      return '';
+    }
   }
 
   bool _looksLikeNetworkFailure(Object error) {

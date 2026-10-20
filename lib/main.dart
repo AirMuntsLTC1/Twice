@@ -701,10 +701,18 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
                   .firstOrNull;
 
               if (match != null) {
-                freshMedia['resolved_url'] = match['resolved_url'];
-                if (match['thumbnail_url'] == freshMedia['thumbnail_url']) {
-                  freshMedia['resolved_thumbnail_url'] =
-                      match['resolved_thumbnail_url'];
+                // Preserve offline files, never reuse potentially expired
+                // signed network URLs from the previous feed snapshot.
+                final cachedMediaUrl = (match['resolved_url'] ?? '').toString();
+                if (cachedMediaUrl.startsWith('file://')) {
+                  freshMedia['resolved_url'] = cachedMediaUrl;
+                }
+
+                final cachedThumbnailUrl =
+                    (match['resolved_thumbnail_url'] ?? '').toString();
+                if (match['thumbnail_url'] == freshMedia['thumbnail_url'] &&
+                    cachedThumbnailUrl.startsWith('file://')) {
+                  freshMedia['resolved_thumbnail_url'] = cachedThumbnailUrl;
                 }
               }
 
@@ -735,7 +743,11 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
         if (old != null) {
           if (old['media_url'] == fresh['media_url']) {
             for (final key in ['resolved_url', 'resolved_thumbnail_url']) {
-              if (old.containsKey(key)) fresh[key] = old[key];
+              final cachedUrl = (old[key] ?? '').toString();
+              // Keep only local cached files; fresh network URLs must win.
+              if (cachedUrl.startsWith('file://')) {
+                fresh[key] = cachedUrl;
+              }
             }
           }
 
@@ -2007,15 +2019,19 @@ class _PostMediaItemState extends State<_PostMediaItem> {
     _initializeVideo();
   }
 
-  Future<void> _initializeVideo() async {
-    if (!_isVideo || _url.isEmpty) {
-      if (_isVideo && mounted) setState(() => _failed = true);
+  Future<void> _initializeVideo({bool allowUrlRefresh = true}) async {
+    if (!_isVideo) return;
+
+    if (_url.isEmpty) {
+      if (allowUrlRefresh && await _refreshAndRetryVideo()) return;
+      if (mounted) setState(() => _failed = true);
       return;
     }
 
-    final controller = _url.startsWith('file://')
-        ? VideoPlayerController.file(File.fromUri(Uri.parse(_url)))
-        : VideoPlayerController.networkUrl(Uri.parse(_url));
+    final source = _url;
+    final controller = source.startsWith('file://')
+        ? VideoPlayerController.file(File.fromUri(Uri.parse(source)))
+        : VideoPlayerController.networkUrl(Uri.parse(source));
     _controller = controller;
     controller.addListener(_onVideoValueChanged);
 
@@ -2034,7 +2050,46 @@ class _PostMediaItemState extends State<_PostMediaItem> {
       controller.removeListener(_onVideoValueChanged);
       await controller.dispose();
       if (identical(_controller, controller)) _controller = null;
+
+      // Retry once with a fresh signed URL or an available offline copy.
+      if (allowUrlRefresh && await _refreshAndRetryVideo()) return;
       if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  Future<bool> _refreshAndRetryVideo() async {
+    final objectPath = (widget.media['media_url'] ?? '').toString().trim();
+    if (objectPath.isEmpty ||
+        objectPath.startsWith('http://') ||
+        objectPath.startsWith('https://')) {
+      return false;
+    }
+
+    try {
+      final refreshed = await SocialRepository.instance.refreshMediaUrl(
+        objectPath,
+        bucket: 'post-media',
+      );
+      if (refreshed == null || refreshed.isEmpty || !mounted) return false;
+
+      widget.media['resolved_url'] = refreshed;
+      setState(() => _failed = false);
+      await _initializeVideo(allowUrlRefresh: false);
+
+      // The retry succeeds only if a controller initialized successfully.
+      final active = _controller;
+      final succeeded =
+          mounted &&
+          active != null &&
+          active.value.isInitialized &&
+          !active.value.hasError;
+
+      if (!succeeded && mounted) {
+        setState(() => _failed = true);
+      }
+      return succeeded;
+    } catch (_) {
+      return false;
     }
   }
 

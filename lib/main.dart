@@ -709,9 +709,21 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
 
   String _friendlyError(Object e) {
     final text = e.toString();
-    if (text.contains('SocketException') ||
-        text.contains('Failed host lookup')) {
-      return 'No network connection. Check your internet and try again.';
+    final lower = text.toLowerCase();
+    if (lower.contains('socketexception') ||
+        lower.contains('failed host lookup') ||
+        lower.contains('clientexception') ||
+        lower.contains('connection reset') ||
+        lower.contains('connection refused') ||
+        lower.contains('connection aborted') ||
+        lower.contains('connection closed') ||
+        lower.contains('connection terminated') ||
+        lower.contains('network is unreachable') ||
+        lower.contains('handshakeexception') ||
+        lower.contains('broken pipe') ||
+        lower.contains('timed out') ||
+        lower.contains('timeout')) {
+      return 'Unable to reach the server right now. Check your connection and retry.';
     }
     if (text.contains('duplicate key') || text.contains('23505')) {
       return 'That username is already taken. Edit your profile to choose another.';

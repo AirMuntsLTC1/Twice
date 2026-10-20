@@ -393,11 +393,17 @@ class SocialRepository {
         text.contains('clientexception') ||
         text.contains('connection reset') ||
         text.contains('connection refused') ||
-        text.contains('network is unreachable') ||
+        text.contains('connection aborted') ||
         text.contains('connection closed') ||
+        text.contains('connection terminated') ||
+        text.contains('network is unreachable') ||
+        text.contains('no address associated with hostname') ||
+        text.contains('handshakeexception') ||
+        text.contains('broken pipe') ||
+        text.contains('socket is not connected') ||
+        text.contains('software caused connection abort') ||
         text.contains('timed out') ||
-        text.contains('timeout') ||
-        text.contains('no address associated with hostname');
+        text.contains('timeout');
   }
 
   Future<void> _applyLikeState(String postId, bool liked) async {

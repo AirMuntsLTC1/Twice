@@ -37,9 +37,13 @@ class SocialRepository {
     Map<String, dynamic> row,
   ) async {
     final path = (row['avatar_url'] ?? '').toString().trim();
+    row['avatar_object_path'] = path.startsWith('http') ? '' : path;
     if (path.isEmpty || path.startsWith('http')) return row;
     try {
-      final local = await OfflineMediaCache.instance.existingUri('post-media', path);
+      final local = await OfflineMediaCache.instance.existingUri(
+        'post-media',
+        path,
+      );
       if (local != null) {
         row['avatar_url'] = local;
       } else {
@@ -47,7 +51,9 @@ class SocialRepository {
             .from('post-media')
             .createSignedUrl(path, 3600);
         row['avatar_url'] = signed;
-        unawaited(_warmAvatarCache(row, path, signed).catchError((Object _) {}));
+        unawaited(
+          _warmAvatarCache(row, path, signed).catchError((Object _) {}),
+        );
       }
     } catch (_) {
       // Keep the stored path if storage cannot resolve it.
@@ -292,8 +298,9 @@ class SocialRepository {
         if (local == null) continue;
         item['resolved_url'] = local;
         final thumbnailPath = (item['thumbnail_url'] ?? '').toString().trim();
-        final thumbnailUrl =
-            (item['resolved_thumbnail_url'] ?? '').toString().trim();
+        final thumbnailUrl = (item['resolved_thumbnail_url'] ?? '')
+            .toString()
+            .trim();
         if (thumbnailPath.isNotEmpty &&
             thumbnailUrl.isNotEmpty &&
             !thumbnailUrl.startsWith('file://')) {
@@ -310,7 +317,9 @@ class SocialRepository {
           if (liveMedia[i] is Map &&
               liveMedia[i]['media_url']?.toString() == objectPath) {
             liveMedia[i]['resolved_url'] = local;
-            if (item['resolved_thumbnail_url']?.toString().startsWith('file://') ==
+            if (item['resolved_thumbnail_url']?.toString().startsWith(
+                  'file://',
+                ) ==
                 true) {
               liveMedia[i]['resolved_thumbnail_url'] =
                   item['resolved_thumbnail_url'];
@@ -324,12 +333,15 @@ class SocialRepository {
             if (cachedRaw['id']?.toString() != post['id']?.toString()) {
               continue;
             }
-            final cachedMedia = (cachedRaw['media_resolved'] as List? ?? const []);
+            final cachedMedia =
+                (cachedRaw['media_resolved'] as List? ?? const []);
             for (final cachedItem in cachedMedia) {
               if (cachedItem is Map &&
                   cachedItem['media_url']?.toString() == objectPath) {
                 cachedItem['resolved_url'] = local;
-                if (item['resolved_thumbnail_url']?.toString().startsWith('file://') ==
+                if (item['resolved_thumbnail_url']?.toString().startsWith(
+                      'file://',
+                    ) ==
                     true) {
                   cachedItem['resolved_thumbnail_url'] =
                       item['resolved_thumbnail_url'];
@@ -355,7 +367,8 @@ class SocialRepository {
         final local = path.isEmpty || path.startsWith('http')
             ? null
             : await OfflineMediaCache.instance.existingUri(bucket, path);
-        item['resolved_url'] = local ??
+        item['resolved_url'] =
+            local ??
             (path.startsWith('http')
                 ? path
                 : await _db.storage.from(bucket).createSignedUrl(path, 3600));
@@ -368,13 +381,17 @@ class SocialRepository {
         try {
           final localThumb = thumbnailPath.startsWith('http')
               ? null
-              : await OfflineMediaCache.instance.existingUri(bucket, thumbnailPath);
-          item['resolved_thumbnail_url'] = localThumb ??
+              : await OfflineMediaCache.instance.existingUri(
+                  bucket,
+                  thumbnailPath,
+                );
+          item['resolved_thumbnail_url'] =
+              localThumb ??
               (thumbnailPath.startsWith('http')
                   ? thumbnailPath
                   : await _db.storage
-                      .from(bucket)
-                      .createSignedUrl(thumbnailPath, 3600));
+                        .from(bucket)
+                        .createSignedUrl(thumbnailPath, 3600));
         } catch (_) {
           item['resolved_thumbnail_url'] = '';
         }
@@ -494,11 +511,10 @@ class SocialRepository {
       try {
         final payload = Map<String, dynamic>.from(item['payload'] as Map);
         if (item['operation'] == 'add_comment') {
-          await _db.from('comments').upsert(
-            payload,
-            onConflict: 'id',
-            ignoreDuplicates: true,
-          ).timeout(const Duration(seconds: 15));
+          await _db
+              .from('comments')
+              .upsert(payload, onConflict: 'id', ignoreDuplicates: true)
+              .timeout(const Duration(seconds: 15));
           await _cache.removePending(item['id'].toString());
           continue;
         }
@@ -970,7 +986,11 @@ class SocialRepository {
   }
 
   /// Returns true when confirmed by Supabase; false when safely queued offline.
-  Future<bool> addComment(String postId, String body, {String? commentId}) async {
+  Future<bool> addComment(
+    String postId,
+    String body, {
+    String? commentId,
+  }) async {
     final uid = _db.auth.currentUser?.id;
     if (uid == null) throw AuthException('Please sign in again.');
     final text = body.trim();
@@ -983,9 +1003,10 @@ class SocialRepository {
       'body': text,
     };
     try {
-      await _db.from('comments').insert(payload).timeout(
-        const Duration(seconds: 15),
-      );
+      await _db
+          .from('comments')
+          .insert(payload)
+          .timeout(const Duration(seconds: 15));
       final pending = await _cache.pending(uid);
       for (final item in pending) {
         if (item['operation'] == 'add_comment' &&

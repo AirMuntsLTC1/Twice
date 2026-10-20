@@ -626,11 +626,140 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
 
     try {
       await repo.syncPendingLikes();
-      if (mounted) await _loadAll();
+      if (mounted) await _refreshQuietly();
     } catch (e) {
-      debugPrint('Twice resume refresh deferred: $e');
+      debugPrint('Twice background refresh deferred: $e');
     } finally {
       _refreshingOnResume = false;
+    }
+  }
+
+  Future<void> _refreshQuietly() async {
+    if (!mounted) return;
+
+    try {
+      final values = await Future.wait<dynamic>([
+        repo.myProfile(),
+        repo.feed(),
+        repo.loadStories(),
+      ]);
+      if (!mounted) return;
+
+      final freshProfile = Map<String, dynamic>.from(values[0] as Map);
+      final freshRows = values[1] as List<Map<String, dynamic>>;
+      final freshStories = values[2] as List<Map<String, dynamic>>;
+
+      void preserveAvatar(
+        Map<String, dynamic> fresh,
+        Map<String, dynamic> old,
+      ) {
+        final freshPath = fresh['avatar_object_path']?.toString() ?? '';
+        final oldPath = old['avatar_object_path']?.toString() ?? '';
+        if (freshPath.isNotEmpty && freshPath == oldPath) {
+          fresh['avatar_url'] = old['avatar_url'];
+        }
+      }
+
+      preserveAvatar(freshProfile, profile);
+
+      final existingPosts = <String, SocialPost>{
+        for (final post in posts) post.id: post,
+      };
+      final mergedPosts = <SocialPost>[];
+
+      for (final raw in freshRows) {
+        final incoming = Map<String, dynamic>.from(raw);
+        final id = (incoming['id'] ?? '').toString();
+        final existing = existingPosts[id];
+
+        if (existing != null) {
+          final oldData = existing.data;
+          final oldAuthor = oldData['profiles'];
+          final newAuthor = incoming['profiles'];
+
+          if (oldAuthor is Map && newAuthor is Map) {
+            final oldProfile = Map<String, dynamic>.from(oldAuthor);
+            final newProfile = Map<String, dynamic>.from(newAuthor);
+            preserveAvatar(newProfile, oldProfile);
+            incoming['profiles'] = newProfile;
+          }
+
+          final oldMedia = oldData['media_resolved'];
+          final newMedia = incoming['media_resolved'];
+
+          if (oldMedia is List && newMedia is List) {
+            for (final item in newMedia) {
+              if (item is! Map) continue;
+              final freshMedia = Map<String, dynamic>.from(item);
+              final match = oldMedia
+                  .whereType<Map>()
+                  .where(
+                    (old) =>
+                        old['id'] == freshMedia['id'] &&
+                        old['media_url'] == freshMedia['media_url'],
+                  )
+                  .firstOrNull;
+
+              if (match != null) {
+                freshMedia['resolved_url'] = match['resolved_url'];
+                if (match['thumbnail_url'] == freshMedia['thumbnail_url']) {
+                  freshMedia['resolved_thumbnail_url'] =
+                      match['resolved_thumbnail_url'];
+                }
+              }
+
+              final index = newMedia.indexOf(item);
+              newMedia[index] = freshMedia;
+            }
+          }
+
+          // Keep the SocialPost instance alive for this post ID.
+          existing.data
+            ..clear()
+            ..addAll(incoming);
+          mergedPosts.add(existing);
+        } else {
+          mergedPosts.add(SocialPost(incoming));
+        }
+      }
+
+      final oldStoriesById = <String, Map<String, dynamic>>{
+        for (final story in stories) (story['id'] ?? '').toString(): story,
+      };
+      final mergedStories = <Map<String, dynamic>>[];
+
+      for (final raw in freshStories) {
+        final fresh = Map<String, dynamic>.from(raw);
+        final old = oldStoriesById[(fresh['id'] ?? '').toString()];
+
+        if (old != null) {
+          if (old['media_url'] == fresh['media_url']) {
+            for (final key in ['resolved_url', 'resolved_thumbnail_url']) {
+              if (old.containsKey(key)) fresh[key] = old[key];
+            }
+          }
+
+          final oldAuthor = old['profiles'];
+          final newAuthor = fresh['profiles'];
+          if (oldAuthor is Map && newAuthor is Map) {
+            final author = Map<String, dynamic>.from(newAuthor);
+            preserveAvatar(author, Map<String, dynamic>.from(oldAuthor));
+            fresh['profiles'] = author;
+          }
+        }
+        mergedStories.add(fresh);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        profile = freshProfile;
+        posts = mergedPosts;
+        stories = mergedStories;
+        error = null;
+      });
+    } catch (e) {
+      // A failed background refresh must not blank or interrupt the feed.
+      debugPrint('Twice quiet refresh deferred: $e');
     }
   }
 
@@ -1397,8 +1526,8 @@ class _StoryViewerState extends State<StoryViewer>
 
     if (_isVideo) {
       final controller = _url.startsWith('file://')
-        ? VideoPlayerController.file(File.fromUri(Uri.parse(_url)))
-        : VideoPlayerController.networkUrl(Uri.parse(_url));
+          ? VideoPlayerController.file(File.fromUri(Uri.parse(_url)))
+          : VideoPlayerController.networkUrl(Uri.parse(_url));
       _video = controller;
       try {
         await controller.initialize();
@@ -1524,8 +1653,8 @@ class _StoryViewerState extends State<StoryViewer>
                               color: Colors.white,
                             ))
                     : ((url.startsWith('http') ||
-                                  url.startsWith('file://') ||
-                                  url.startsWith('/'))
+                              url.startsWith('file://') ||
+                              url.startsWith('/'))
                           ? Image(
                               image: _twiceImageProvider(url),
                               fit: BoxFit.contain,
@@ -1769,6 +1898,7 @@ class FeedPage extends StatelessWidget {
         else
           ...posts.map(
             (post) => PostCard(
+              key: ValueKey('post-${post.id}'),
               post: post,
               onLike: onLike,
               onCommentChanged: onCommentChanged,
@@ -1846,7 +1976,7 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
 }
 
 class _PostMediaItem extends StatefulWidget {
-  const _PostMediaItem({required this.media});
+  const _PostMediaItem({super.key, required this.media});
 
   final Map<String, dynamic> media;
 
@@ -2389,7 +2519,13 @@ class PostCard extends StatelessWidget {
                   PageView.builder(
                     itemCount: media.length,
                     itemBuilder: (context, index) {
-                      return _PostMediaItem(media: media[index]);
+                      final item = media[index];
+                      return _PostMediaItem(
+                        key: ValueKey(
+                          'media-${item['id'] ?? item['media_url']}',
+                        ),
+                        media: item,
+                      );
                     },
                   ),
                   if (media.length > 1)
@@ -2588,8 +2724,9 @@ Future<List<AssetEntity>> _loadSelectableMedia({int size = 200}) async {
     }
   }
   final assets = results.values.toList()
-    ..sort((a, b) =>
-        (b.createDateSecond ?? 0).compareTo(a.createDateSecond ?? 0));
+    ..sort(
+      (a, b) => (b.createDateSecond ?? 0).compareTo(a.createDateSecond ?? 0),
+    );
   return assets;
 }
 
@@ -2632,7 +2769,9 @@ class _CreatePageState extends State<CreatePage> {
     if (assets.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No accessible photos or videos. Check media permissions.'),
+          content: Text(
+            'No accessible photos or videos. Check media permissions.',
+          ),
         ),
       );
       return;
@@ -3387,7 +3526,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
       if (!synced) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Saved offline. This comment will sync when you reconnect.'),
+            content: Text(
+              'Saved offline. This comment will sync when you reconnect.',
+            ),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -4815,7 +4956,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: (profile['avatar_url'] ?? '').toString().trim().isEmpty
                       ? const Icon(Icons.person_outline_rounded, size: 43)
                       : Image(
-                          image: _twiceImageProvider(profile['avatar_url'].toString()),
+                          image: _twiceImageProvider(
+                            profile['avatar_url'].toString(),
+                          ),
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => const Center(
                             child: Icon(Icons.person_outline_rounded, size: 43),

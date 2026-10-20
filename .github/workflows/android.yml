@@ -93,6 +93,20 @@ jobs:
           esac
           echo "Supabase and Google configuration values are present."
 
+      - name: Verify Supabase project ref
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PROJECT_REF: jgqxvqlwnfywzoxbfkpk
+        run: |
+          ACTUAL_REF="${SUPABASE_URL#https://}"
+          ACTUAL_REF="${ACTUAL_REF%.supabase.co}"
+          if [ "$ACTUAL_REF" = "$SUPABASE_PROJECT_REF" ]; then
+            echo "Supabase project ref: MATCH"
+          else
+            echo "::error::Supabase project ref: MISMATCH"
+            exit 1
+          fi
+
       - name: Build ARM64 release APK
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

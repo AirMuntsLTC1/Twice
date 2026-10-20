@@ -1,4 +1,5 @@
 import 'package:photo_manager/photo_manager.dart';
+import 'local_cache.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Supabase data boundary for Twice. UI widgets should call this repository
@@ -8,6 +9,22 @@ class SocialRepository {
   static final SocialRepository instance = SocialRepository._();
   SupabaseClient get _db => Supabase.instance.client;
   String get userId => _db.auth.currentUser!.id;
+  LocalCache get _cache => LocalCache.instance;
+
+  Future<List<Map<String, dynamic>>> cachedFeed() async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) return [];
+    final value = await _cache.get(uid, 'feed');
+    if (value is! List) return [];
+    return value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>?> cachedMyProfile() async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) return null;
+    final value = await _cache.get(uid, 'profile');
+    return value is Map ? Map<String, dynamic>.from(value) : null;
+  }
 
   Future<Map<String, dynamic>> _resolveProfileAvatar(
     Map<String, dynamic> row,
@@ -101,7 +118,9 @@ class SocialRepository {
   Future<Map<String, dynamic>> myProfile() async {
     await ensureProfile();
     final row = await _db.from('profiles').select().eq('id', userId).single();
-    return await _resolveProfileAvatar(Map<String, dynamic>.from(row));
+    final resolved = await _resolveProfileAvatar(Map<String, dynamic>.from(row));
+    await _cache.put(userId, 'profile', resolved);
+    return resolved;
   }
 
   Future<void> updateProfile({
@@ -145,6 +164,7 @@ class SocialRepository {
     }
 
     await _db.from('profiles').update(values).eq('id', userId);
+    try { await _cache.put(userId, 'profile', await myProfile()); } catch (_) {}
   }
 
   Future<List<Map<String, dynamic>>> feed({
@@ -159,22 +179,19 @@ class SocialRepository {
         )
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1);
-    return Future.wait(
+    final resolved = await Future.wait(
       (rows as List).map((raw) async {
         final post = Map<String, dynamic>.from(raw as Map);
         final authorRaw = post['profiles'];
         if (authorRaw is Map) {
-          post['profiles'] = await _resolveProfileAvatar(
-            Map<String, dynamic>.from(authorRaw),
-          );
+          post['profiles'] = await _resolveProfileAvatar(Map<String, dynamic>.from(authorRaw));
         }
-        post['media_resolved'] = await _resolveMedia(
-          post['post_media'] as List? ?? const [],
-          'post-media',
-        );
+        post['media_resolved'] = await _resolveMedia(post['post_media'] as List? ?? const [], 'post-media');
         return post;
       }),
     );
+    await _cache.put(userId, 'feed', resolved);
+    return resolved;
   }
 
   Future<List<Map<String, dynamic>>> _resolveMedia(
@@ -197,21 +214,117 @@ class SocialRepository {
     return result;
   }
 
-  Future<void> toggleLike(String postId, bool currentlyLiked) async {
-    if (currentlyLiked) {
+  bool _looksLikeNetworkFailure(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('socketexception') ||
+        text.contains('failed host lookup') ||
+        text.contains('clientexception') ||
+        text.contains('connection reset') ||
+        text.contains('connection refused') ||
+        text.contains('network is unreachable') ||
+        text.contains('connection closed') ||
+        text.contains('timed out') ||
+        text.contains('timeout') ||
+        text.contains('no address associated with hostname');
+  }
+
+  Future<void> _applyLikeState(String postId, bool liked) async {
+    if (liked) {
+      await _db.from('post_likes').upsert(
+        {'post_id': postId, 'user_id': userId},
+        onConflict: 'post_id,user_id',
+        ignoreDuplicates: true,
+      );
+    } else {
       await _db
           .from('post_likes')
           .delete()
           .eq('post_id', postId)
           .eq('user_id', userId);
-    } else {
-      await _db
-          .from('post_likes')
-          .upsert(
-            {'post_id': postId, 'user_id': userId},
-            onConflict: 'post_id,user_id',
-            ignoreDuplicates: true,
-          );
+    }
+  }
+
+  /// Applies the requested state, queueing only likely connectivity failures.
+  /// The payload is a desired state, not a toggle, so retries are idempotent.
+  Future<void> setLikeState(String postId, bool liked) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) throw AuthException('Please sign in again.');
+
+    try {
+      await _applyLikeState(postId, liked);
+      final pending = await _cache.pending(uid);
+      for (final item in pending) {
+        if (item['operation'] == 'set_like' &&
+            item['payload'] is Map &&
+            item['payload']['post_id'] == postId) {
+          await _cache.removePending(item['id'].toString());
+        }
+      }
+    } catch (error) {
+      if (!_looksLikeNetworkFailure(error)) rethrow;
+      await _cache.enqueue(uid, 'set_like', {
+        'post_id': postId,
+        'liked': liked,
+      });
+    }
+    await _updateCachedLike(postId, liked);
+  }
+
+  /// Kept for existing callers: currentlyLiked is the state before the tap.
+  Future<void> toggleLike(String postId, bool currentlyLiked) async {
+    await setLikeState(postId, !currentlyLiked);
+  }
+
+  Future<void> _updateCachedLike(String postId, bool liked) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) return;
+    final cached = await _cache.get(uid, 'feed');
+    if (cached is! List) return;
+
+    final updated = <Map<String, dynamic>>[];
+    for (final raw in cached) {
+      if (raw is! Map) continue;
+      final post = Map<String, dynamic>.from(raw);
+      if (post['id']?.toString() == postId) {
+        final likes = List<Map<String, dynamic>>.from(
+          (post['post_likes'] as List? ?? const [])
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row)),
+        );
+        likes.removeWhere((row) => row['user_id']?.toString() == uid);
+        if (liked) likes.add({'user_id': uid});
+        post['post_likes'] = likes;
+      }
+      updated.add(post);
+    }
+    await _cache.put(uid, 'feed', updated);
+  }
+
+  /// Retries queued likes for the currently signed-in account.
+  /// Other operation types are deliberately left untouched.
+  Future<void> syncPendingLikes() async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) return;
+
+    final pending = await _cache.pending(uid);
+    for (final item in pending) {
+      if (item['operation'] != 'set_like') continue;
+      try {
+        final payload = Map<String, dynamic>.from(item['payload'] as Map);
+        final postId = payload['post_id']?.toString();
+        if (postId == null || postId.isEmpty) {
+          await _cache.removePending(item['id'].toString());
+          continue;
+        }
+        final liked = payload['liked'] == true;
+        await _applyLikeState(postId, liked);
+        await _updateCachedLike(postId, liked);
+        await _cache.removePending(item['id'].toString());
+      } catch (error) {
+        await _cache.markFailed(item['id'].toString(), error);
+        if (!_looksLikeNetworkFailure(error)) rethrow;
+        break;
+      }
     }
   }
 
@@ -459,16 +572,24 @@ class SocialRepository {
   }
 
   Future<List<Map<String, dynamic>>> comments(String postId) async {
-    final rows = await _db
-        .from('comments')
-        .select(
-          'id,post_id,user_id,parent_id,body,created_at,profiles(username,display_name,avatar_url)',
-        )
-        .eq('post_id', postId)
-        .order('created_at');
-    return (rows as List)
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
+    try {
+      final rows = await _db
+          .from('comments')
+          .select('id,post_id,user_id,parent_id,body,created_at,profiles(username,display_name,avatar_url)')
+          .eq('post_id', postId)
+          .order('created_at');
+      final result = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      await _cache.put(userId, 'comments', result, id: postId);
+      return result;
+    } catch (_) {
+      return cachedComments(postId);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> cachedComments(String postId) async {
+    final value = await _cache.get(userId, 'comments', id: postId);
+    if (value is! List) return [];
+    return value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
   Future<void> addComment(String postId, String body) async {

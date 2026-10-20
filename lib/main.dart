@@ -572,30 +572,51 @@ class _TwiceShellState extends State<TwiceShell> {
     _loadAll();
   }
 
+  Future<void> _syncPendingLikes() async {
+    try {
+      await repo.syncPendingLikes();
+    } catch (e) {
+      debugPrint('Twice pending-like sync deferred: $e');
+    }
+  }
+
   Future<void> _loadAll() async {
     if (!mounted) return;
+    _syncPendingLikes(); // Replay in background; show cached content immediately.
     setState(() {
       loading = true;
       error = null;
     });
+    // Render durable local data first. The network refresh below updates the
+    // same UI after the cache has already appeared, avoiding a blank cold start.
     try {
-      final values = await Future.wait<dynamic>([
-        repo.myProfile(),
-        repo.feed(),
-      ]);
+      final cached = await Future.wait<dynamic>([repo.cachedMyProfile(), repo.cachedFeed()]);
+      if (!mounted) return;
+      final cachedProfile = cached[0];
+      final cachedPosts = cached[1] as List<Map<String, dynamic>>;
+      if (cachedProfile is Map || cachedPosts.isNotEmpty) {
+        setState(() {
+          if (cachedProfile is Map) profile = Map<String, dynamic>.from(cachedProfile);
+          if (cachedPosts.isNotEmpty) posts = cachedPosts.map(SocialPost.new).toList();
+          loading = false;
+          error = null;
+        });
+      }
+    } catch (_) { /* A first install simply has an empty cache. */ }
+    try {
+      final values = await Future.wait<dynamic>([repo.myProfile(), repo.feed()]);
       if (!mounted) return;
       setState(() {
         profile = Map<String, dynamic>.from(values[0] as Map);
-        posts = (values[1] as List<Map<String, dynamic>>)
-            .map(SocialPost.new)
-            .toList();
+        posts = (values[1] as List<Map<String, dynamic>>).map(SocialPost.new).toList();
         loading = false;
+        error = null;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         loading = false;
-        error = _friendlyError(e);
+        error = posts.isNotEmpty || profile.isNotEmpty ? null : _friendlyError(e);
       });
     }
   }

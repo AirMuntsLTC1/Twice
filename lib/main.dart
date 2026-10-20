@@ -107,6 +107,10 @@ class TwiceApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
         fontFamily: 'Roboto',
+        textTheme: ThemeData.light().textTheme.apply(fontFamily: 'Roboto'),
+        primaryTextTheme: ThemeData.light().primaryTextTheme.apply(
+          fontFamily: 'Roboto',
+        ),
         appBarTheme: const AppBarTheme(
           backgroundColor: canvas,
           foregroundColor: ink,
@@ -685,9 +689,13 @@ class _TwiceShellState extends State<TwiceShell> {
     }
   }
 
-  Future<void> _publish(String caption, List<AssetEntity> media) async {
+  Future<void> _publish(
+    String caption,
+    List<AssetEntity> media,
+    String visibility,
+  ) async {
     try {
-      await repo.publishPost(caption, media);
+      await repo.publishPost(caption, media, visibility: visibility);
       if (!mounted) return;
       setState(() => selected = 0);
       await _loadAll();
@@ -737,82 +745,46 @@ class _TwiceShellState extends State<TwiceShell> {
       'Profile',
     ][selected];
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 25),
-        ),
-        actions: [
-          PopupMenuButton<String>(
-            tooltip: 'Create',
-            offset: const Offset(0, 48),
-            position: PopupMenuPosition.under,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            elevation: 10,
-            onSelected: (value) {
-              if (value == 'create') {
-                _openComposer();
-              } else if (value == 'story') {
-                setState(() => selected = 0);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _storyStripKey.currentState?.openCreator();
-                });
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem<String>(
-                value: 'create',
-                child: Row(
-                  children: [
-                    Icon(Icons.post_add_rounded, color: violet),
-                    SizedBox(width: 12),
-                    Text(
-                      'Create post',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+      appBar: selected == 4
+          ? null
+          : AppBar(
+              title: title == 'Twice'
+                  ? ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [
+                          Color(0xFFFF5FA2),
+                          Color(0xFFFF2D75),
+                          Color(0xFFD946EF),
+                        ],
+                      ).createShader(bounds),
+                      child: const Text(
+                        'Twice',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 25,
+                        ),
+                      ),
+                    )
+                  : Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 25,
+                      ),
                     ),
-                  ],
-                ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'story',
-                child: Row(
-                  children: [
-                    Icon(Icons.add_circle_outline_rounded, color: violet),
-                    SizedBox(width: 12),
-                    Text(
-                      'Create story',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+              actions: [
+                IconButton(
+                  tooltip: 'Messages',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MessagesPage(),
                     ),
-                  ],
+                  ),
+                  icon: const Icon(Icons.send_outlined),
                 ),
-              ),
-            ],
-            child: Container(
-              width: 40,
-              height: 40,
-              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              decoration: BoxDecoration(
-                color: violet,
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: const Icon(
-                Icons.add_rounded,
-                color: Colors.white,
-                size: 27,
-              ),
+              ],
             ),
-          ),
-          IconButton(
-            tooltip: 'Messages',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const MessagesPage()),
-            ),
-            icon: const Icon(Icons.send_outlined),
-          ),
-        ],
-      ),
       body: loading && posts.isEmpty && profile.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : error != null && profile.isEmpty
@@ -868,8 +840,8 @@ class _TwiceShellState extends State<TwiceShell> {
             label: 'Search',
           ),
           NavigationDestination(
-            icon: Icon(Icons.add_box_outlined),
-            selectedIcon: Icon(Icons.add_box_rounded),
+            icon: Icon(Icons.video_library_outlined),
+            selectedIcon: Icon(Icons.video_library_rounded),
             label: 'Create',
           ),
           NavigationDestination(
@@ -878,8 +850,8 @@ class _TwiceShellState extends State<TwiceShell> {
             label: 'Activity',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
+            icon: Icon(Icons.account_circle_outlined),
+            selectedIcon: Icon(Icons.account_circle_rounded),
             label: 'Profile',
           ),
         ],
@@ -1197,18 +1169,26 @@ class StoryStripState extends State<StoryStrip> {
                   Positioned(
                     right: 0,
                     bottom: 0,
-                    child: Container(
-                      width: 23,
-                      height: 23,
-                      decoration: BoxDecoration(
-                        color: violet,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: const Icon(
-                        Icons.add_rounded,
-                        size: 17,
-                        color: Colors.white,
+                    child: Material(
+                      color: violet,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: openCreator,
+                        child: Container(
+                          width: 25,
+                          height: 25,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: const Icon(
+                            Icons.add_rounded,
+                            size: 17,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -2226,7 +2206,12 @@ String _timeAgo(dynamic value) {
 
 class CreatePage extends StatefulWidget {
   const CreatePage({super.key, required this.onPost});
-  final Future<void> Function(String caption, List<AssetEntity> media) onPost;
+  final Future<void> Function(
+    String caption,
+    List<AssetEntity> media,
+    String visibility,
+  )
+  onPost;
   @override
   State<CreatePage> createState() => _CreatePageState();
 }
@@ -2234,6 +2219,7 @@ class CreatePage extends StatefulWidget {
 class _CreatePageState extends State<CreatePage> {
   final controller = TextEditingController();
   final selectedMedia = <AssetEntity>[];
+  String visibility = 'public';
   bool publishing = false;
   @override
   void dispose() {
@@ -2251,36 +2237,34 @@ class _CreatePageState extends State<CreatePage> {
       }
       return;
     }
-    final imagePaths = await PhotoManager.getAssetPathList(
-      type: RequestType.image,
-      onlyAll: true,
-    );
-    final videoPaths = await PhotoManager.getAssetPathList(
-      type: RequestType.video,
-      onlyAll: true,
-    );
 
-    final List<AssetEntity> assets = [];
-    if (imagePaths.isNotEmpty) {
-      assets.addAll(
-        await imagePaths.first.getAssetListPaged(page: 0, size: 100),
-      );
+    final paths = await PhotoManager.getAssetPathList(
+      type: RequestType.common,
+      onlyAll: true,
+    );
+    if (paths.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No photos or videos found.')),
+        );
+      }
+      return;
     }
-    if (videoPaths.isNotEmpty) {
-      assets.addAll(
-        await videoPaths.first.getAssetListPaged(page: 0, size: 100),
-      );
-    }
+
+    final assets = await paths.first.getAssetListPaged(page: 0, size: 200);
     assets.sort(
       (a, b) => (b.createDateSecond ?? 0).compareTo(a.createDateSecond ?? 0),
     );
     if (!mounted || assets.isEmpty) return;
+
     final picked = await showModalBottomSheet<List<AssetEntity>>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _MediaPicker(assets: assets),
+      useSafeArea: true,
+      builder: (_) => _MediaPicker(assets: assets),
     );
-    if (picked != null) {
+
+    if (picked != null && mounted) {
       setState(() {
         selectedMedia
           ..clear()
@@ -2293,7 +2277,7 @@ class _CreatePageState extends State<CreatePage> {
     if (publishing) return;
     setState(() => publishing = true);
     try {
-      await widget.onPost(controller.text, selectedMedia);
+      await widget.onPost(controller.text, selectedMedia, visibility);
       controller.clear();
       setState(() => selectedMedia.clear());
     } catch (_) {
@@ -2369,30 +2353,89 @@ class _CreatePageState extends State<CreatePage> {
                           ),
                         ),
                         const SizedBox(height: 5),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF0F2F5),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.public, size: 14),
-                              SizedBox(width: 5),
-                              Text(
-                                'Public',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
+                        PopupMenuButton<String>(
+                          initialValue: visibility,
+                          onSelected: (value) {
+                            setState(() => visibility = value);
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: 'public',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.public, size: 19),
+                                  SizedBox(width: 10),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Public'),
+                                      Text(
+                                        'Anyone can see this post',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
-                              SizedBox(width: 5),
-                              Icon(Icons.arrow_drop_down, size: 17),
-                            ],
+                            ),
+                            PopupMenuItem(
+                              value: 'private',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.lock_outline, size: 19),
+                                  SizedBox(width: 10),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Private'),
+                                      Text(
+                                        'Only you can see this post',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0F2F5),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  visibility == 'public'
+                                      ? Icons.public
+                                      : Icons.lock_outline,
+                                  size: 14,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  visibility == 'public' ? 'Public' : 'Private',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                const Icon(Icons.arrow_drop_down, size: 17),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -2550,6 +2593,19 @@ class _MediaPicker extends StatefulWidget {
 
 class _MediaPickerState extends State<_MediaPicker> {
   final Set<AssetEntity> chosen = {};
+  final Map<String, Future<Uint8List?>> _thumbnailFutures = {};
+
+  @override
+  void initState() {
+    super.initState();
+    for (final asset in widget.assets) {
+      _thumbnailFutures.putIfAbsent(
+        asset.id,
+        () => asset.thumbnailDataWithSize(const ThumbnailSize(220, 220)),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) => SizedBox(
     height: MediaQuery.sizeOf(context).height * .78,
@@ -2560,6 +2616,7 @@ class _MediaPickerState extends State<_MediaPicker> {
             'Select media',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
+          subtitle: Text('${chosen.length}/10 selected'),
           trailing: TextButton(
             onPressed: () => Navigator.pop(context, chosen.toList()),
             child: const Text('Done'),
@@ -2567,6 +2624,7 @@ class _MediaPickerState extends State<_MediaPicker> {
         ),
         Expanded(
           child: GridView.builder(
+            key: const PageStorageKey<String>('twice-media-picker-grid'),
             padding: const EdgeInsets.all(4),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 4,
@@ -2575,38 +2633,58 @@ class _MediaPickerState extends State<_MediaPicker> {
             ),
             itemCount: widget.assets.length,
             itemBuilder: (_, i) {
-              final a = widget.assets[i];
+              final asset = widget.assets[i];
+              final isChosen = chosen.contains(asset);
               return InkWell(
-                onTap: () => setState(() {
-                  if (chosen.contains(a)) {
-                    chosen.remove(a);
-                  } else if (chosen.length < 10) {
-                    chosen.add(a);
-                  }
-                }),
+                key: ValueKey<String>(asset.id),
+                onTap: () {
+                  setState(() {
+                    if (isChosen) {
+                      chosen.remove(asset);
+                    } else if (chosen.length < 10) {
+                      chosen.add(asset);
+                    }
+                  });
+                },
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
                     FutureBuilder<Uint8List?>(
-                      future: a.thumbnailDataWithSize(
-                        const ThumbnailSize(220, 220),
-                      ),
-                      builder: (_, s) => s.data == null
-                          ? const ColoredBox(color: canvas)
-                          : Image.memory(s.data!, fit: BoxFit.cover),
+                      future: _thumbnailFutures[asset.id],
+                      builder: (_, snapshot) {
+                        final bytes = snapshot.data;
+                        if (bytes == null || bytes.isEmpty) {
+                          return const ColoredBox(color: canvas);
+                        }
+                        return Image.memory(
+                          bytes,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          filterQuality: FilterQuality.low,
+                          errorBuilder: (_, _, _) =>
+                              const ColoredBox(color: canvas),
+                        );
+                      },
                     ),
-                    if (a.type == AssetType.video)
-                      const Align(
-                        alignment: Alignment.bottomRight,
+                    if (asset.type == AssetType.video)
+                      const Positioned(
+                        right: 4,
+                        bottom: 4,
                         child: Icon(
                           Icons.play_circle_fill,
                           color: Colors.white,
+                          shadows: [Shadow(blurRadius: 4)],
                         ),
                       ),
-                    if (chosen.contains(a))
-                      const Align(
-                        alignment: Alignment.topRight,
-                        child: Icon(Icons.check_circle, color: violet),
+                    if (isChosen)
+                      const Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Icon(
+                          Icons.check_circle,
+                          color: violet,
+                          shadows: [Shadow(blurRadius: 3)],
+                        ),
                       ),
                   ],
                 ),
@@ -3535,6 +3613,7 @@ class FollowListPage extends StatefulWidget {
 
 class _FollowListPageState extends State<FollowListPage> {
   List<Map<String, dynamic>> users = [];
+  final Set<String> _busyUsers = {};
   bool loading = true;
   String? error;
 
@@ -3568,6 +3647,62 @@ class _FollowListPageState extends State<FollowListPage> {
         loading = false;
       });
     }
+  }
+
+  Widget _followAction(Map<String, dynamic> user) {
+    final id = (user['id'] ?? '').toString();
+    final connected = user['is_connected'] == true;
+    final followingBack = user['is_following_back'] == true;
+    final busy = _busyUsers.contains(id);
+
+    final label = connected
+        ? 'Connected'
+        : followingBack
+        ? 'Following'
+        : user['follow_request_pending'] == true
+        ? 'Requested'
+        : 'Follow back';
+
+    return OutlinedButton(
+      onPressed: busy || id.isEmpty || connected || followingBack
+          ? null
+          : () async {
+              setState(() => _busyUsers.add(id));
+              try {
+                final repo = SocialRepository.instance;
+                final privateAccount = await repo.isPrivateAccount(id);
+                await repo.follow(id, privateAccount: privateAccount);
+                if (!mounted) return;
+                await _load();
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Could not follow user: $e')),
+                  );
+                }
+              } finally {
+                if (mounted) setState(() => _busyUsers.remove(id));
+              }
+            },
+      style: OutlinedButton.styleFrom(
+        foregroundColor: connected ? Colors.green.shade700 : violet,
+        side: BorderSide(
+          color: connected ? Colors.green.shade300 : const Color(0xFFDCD6FF),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+      ),
+      child: busy
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: violet),
+            )
+          : Text(
+              label,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+    );
   }
 
   @override
@@ -3728,6 +3863,11 @@ class _FollowListPageState extends State<FollowListPage> {
                               ],
                             ),
                           ),
+                          if (widget.followers &&
+                              user['is_current_user'] != true) ...[
+                            const SizedBox(width: 8),
+                            _followAction(user),
+                          ],
                         ],
                       ),
                     );

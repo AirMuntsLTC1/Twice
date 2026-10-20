@@ -559,8 +559,32 @@ class SocialRepository {
           .select('follower_id')
           .eq('follower_id', userId)
           .eq('following_id', profileId)
+          .eq('status', 'accepted')
           .maybeSingle() !=
       null;
+
+  Future<bool> isConnected(String profileId) async {
+    final outgoing = await isFollowing(profileId);
+    if (!outgoing) return false;
+    final incoming = await _db
+        .from('follows')
+        .select('follower_id')
+        .eq('follower_id', profileId)
+        .eq('following_id', userId)
+        .eq('status', 'accepted')
+        .maybeSingle();
+    return incoming != null;
+  }
+
+  Future<bool> isPrivateAccount(String profileId) async {
+    final row = await _db
+        .from('profiles')
+        .select('is_private')
+        .eq('id', profileId)
+        .maybeSingle();
+    return row?['is_private'] == true;
+  }
+
   Future<void> follow(String profileId, {required bool privateAccount}) async {
     if (profileId == userId) {
       throw ArgumentError('You cannot follow your own account.');
@@ -619,13 +643,34 @@ class SocialRepository {
 
     final rows = await _db
         .from('profiles')
-        .select('id,display_name,username,avatar_url')
+        .select('id,display_name,username,avatar_url,is_private')
         .inFilter('id', ids)
         .order('display_name');
 
     final profiles = (rows as List)
         .map((row) => Map<String, dynamic>.from(row as Map))
         .toList();
+
+    final currentUserId = userId;
+    final outgoingRows = await _db
+        .from('follows')
+        .select('following_id,status')
+        .eq('follower_id', currentUserId)
+        .inFilter('following_id', ids);
+    final outgoingStatus = <String, String>{};
+    for (final row in outgoingRows as List) {
+      outgoingStatus[(row['following_id'] ?? '').toString()] =
+          (row['status'] ?? '').toString();
+    }
+
+    for (final profile in profiles) {
+      final id = (profile['id'] ?? '').toString();
+      final status = outgoingStatus[id];
+      profile['is_following_back'] = status == 'accepted';
+      profile['follow_request_pending'] = status == 'pending';
+      profile['is_connected'] = id.isNotEmpty ? await isConnected(id) : false;
+      profile['is_current_user'] = id == currentUserId;
+    }
 
     return Future.wait(profiles.map(_resolveProfileAvatar));
   }

@@ -2988,7 +2988,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       controller.clear();
       loadError = null;
       busy = false;
-      sending = false;
+      sending = true;
     });
 
     // Persist in the background; no comments refresh or feed reload.

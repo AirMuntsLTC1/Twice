@@ -165,9 +165,17 @@ class SocialRepository {
 
       // Store the storage path, not an expiring signed URL.
       values['avatar_url'] = objectPath;
+      try {
+        await _db.from('profiles').update(values).eq('id', userId);
+      } catch (_) {
+        try {
+          await _db.storage.from('post-media').remove([objectPath]);
+        } catch (_) {}
+        rethrow;
+      }
+    } else {
+      await _db.from('profiles').update(values).eq('id', userId);
     }
-
-    await _db.from('profiles').update(values).eq('id', userId);
     try {
       await _cache.put(userId, 'profile', await myProfile());
     } catch (_) {}
@@ -494,6 +502,9 @@ class SocialRepository {
 
       await _db.from('stories').update({'media_url': objectPath}).eq('id', id);
     } catch (_) {
+      try {
+        await _db.storage.from('stories').remove([objectPath]);
+      } catch (_) {}
       try {
         await _db.from('stories').delete().eq('id', id);
       } catch (_) {}

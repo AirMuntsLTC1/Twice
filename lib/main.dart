@@ -3010,6 +3010,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
           behavior: SnackBarBehavior.floating,
         ),
       );
+    } finally {
+      if (mounted) setState(() => sending = false);
     }
   }
 
@@ -4660,6 +4662,7 @@ class ConversationPage extends StatefulWidget {
 class _ConversationPageState extends State<ConversationPage> {
   final controller = TextEditingController();
   late Future<List<Map<String, dynamic>>> future;
+  bool sending = false;
   @override
   void initState() {
     super.initState();
@@ -4673,8 +4676,12 @@ class _ConversationPageState extends State<ConversationPage> {
   }
 
   Future<void> _send() async {
+    final body = controller.text.trim();
+    if (body.isEmpty || sending) return;
+    setState(() => sending = true);
     try {
-      await SocialRepository.instance.sendMessage(widget.id, controller.text);
+      await SocialRepository.instance.sendMessage(widget.id, body);
+      if (!mounted) return;
       controller.clear();
       setState(() => future = SocialRepository.instance.messages(widget.id));
     } catch (e) {
@@ -4682,6 +4689,8 @@ class _ConversationPageState extends State<ConversationPage> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Message failed: $e')));
       }
+    } finally {
+      if (mounted) setState(() => sending = false);
     }
   }
 
@@ -4743,8 +4752,14 @@ class _ConversationPageState extends State<ConversationPage> {
                   ),
                 ),
                 IconButton(
-                  onPressed: _send,
-                  icon: const Icon(Icons.send, color: violet),
+                  onPressed: sending ? null : _send,
+                  icon: sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send, color: violet),
                 ),
               ],
             ),

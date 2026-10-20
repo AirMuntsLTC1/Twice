@@ -61,42 +61,20 @@ class SocialRepository {
     return row;
   }
 
+  // FBFIX: only download once. The next feed load finds the file through
+  // OfflineMediaCache.existingUri(); rewriting the whole feed JSON per avatar
+  // caused UI lag.
   Future<void> _warmAvatarCache(
     Map<String, dynamic> profile,
     String objectPath,
     String signedUrl,
   ) async {
-    final local = await OfflineMediaCache.instance.cacheFromUrl(
+    await OfflineMediaCache.instance.cacheFromUrl(
       bucket: 'post-media',
       objectPath: objectPath,
       signedUrl: signedUrl,
       isVideo: false,
     );
-    if (local == null) return;
-    final uid = _db.auth.currentUser?.id;
-    final profileId = profile['id']?.toString();
-    if (uid == null || profileId == null) return;
-    if (profileId == uid) {
-      final cachedProfile = await _cache.get(uid, 'profile');
-      if (cachedProfile is Map &&
-          cachedProfile['avatar_url']?.toString() == signedUrl) {
-        cachedProfile['avatar_url'] = local;
-        await _cache.put(uid, 'profile', cachedProfile);
-      }
-    }
-    final cachedFeed = await _cache.get(uid, 'feed');
-    if (cachedFeed is List) {
-      for (final rawPost in cachedFeed) {
-        if (rawPost is! Map) continue;
-        final author = rawPost['profiles'];
-        if (author is Map &&
-            author['id']?.toString() == profileId &&
-            author['avatar_url']?.toString() == signedUrl) {
-          author['avatar_url'] = local;
-        }
-      }
-      await _cache.put(uid, 'feed', cachedFeed);
-    }
   }
 
   Future<Map<String, dynamic>> ensureProfile() async {
@@ -278,87 +256,43 @@ class SocialRepository {
     return resolved;
   }
 
+  // FBFIX: lightweight, bounded prefetch of photos + thumbnails (3 at a time).
+  // Videos stream and are cached by the player when watched.
   Future<void> _warmFeedMediaCache(List<Map<String, dynamic>> feedRows) async {
-    final uid = _db.auth.currentUser?.id;
-    if (uid == null) return;
-    var warmed = 0;
-    for (final post in feedRows) {
-      final media = (post['media_resolved'] as List? ?? const []);
-      for (final raw in media) {
-        if (warmed >= 12) return; // Bound background data usage per refresh.
+    final jobs = <Future<void> Function()>[];
+    Future<void> add(String path, String url, bool video) async {
+      if (path.isEmpty || url.isEmpty || url.startsWith('file://')) return;
+      await OfflineMediaCache.instance.cacheFromUrl(
+        bucket: 'post-media',
+        objectPath: path,
+        signedUrl: url,
+        isVideo: video,
+      );
+    }
+
+    for (final post in feedRows.take(40)) {
+      for (final raw in (post['media_resolved'] as List? ?? const [])) {
         if (raw is! Map) continue;
-        final item = Map<String, dynamic>.from(raw);
-        final objectPath = (item['media_url'] ?? '').toString().trim();
-        final url = (item['resolved_url'] ?? '').toString().trim();
-        if (objectPath.isEmpty || url.isEmpty || url.startsWith('file://')) {
-          continue;
-        }
-        warmed++;
-        final type = (item['media_type'] ?? '').toString().toLowerCase();
-        final local = await OfflineMediaCache.instance.cacheFromUrl(
-          bucket: 'post-media',
-          objectPath: objectPath,
-          signedUrl: url,
-          isVideo: type == 'video',
-        );
-        if (local == null) continue;
-        item['resolved_url'] = local;
-        final thumbnailPath = (item['thumbnail_url'] ?? '').toString().trim();
-        final thumbnailUrl = (item['resolved_thumbnail_url'] ?? '')
-            .toString()
-            .trim();
-        if (thumbnailPath.isNotEmpty &&
-            thumbnailUrl.isNotEmpty &&
-            !thumbnailUrl.startsWith('file://')) {
-          final localThumb = await OfflineMediaCache.instance.cacheFromUrl(
-            bucket: 'post-media',
-            objectPath: thumbnailPath,
-            signedUrl: thumbnailUrl,
-            isVideo: false,
-          );
-          if (localThumb != null) item['resolved_thumbnail_url'] = localThumb;
-        }
-        final liveMedia = (post['media_resolved'] as List? ?? const []);
-        for (var i = 0; i < liveMedia.length; i++) {
-          if (liveMedia[i] is Map &&
-              liveMedia[i]['media_url']?.toString() == objectPath) {
-            liveMedia[i]['resolved_url'] = local;
-            if (item['resolved_thumbnail_url']?.toString().startsWith(
-                  'file://',
-                ) ==
-                true) {
-              liveMedia[i]['resolved_thumbnail_url'] =
-                  item['resolved_thumbnail_url'];
-            }
-          }
-        }
-        final cached = await _cache.get(uid, 'feed');
-        if (cached is List) {
-          for (final cachedRaw in cached) {
-            if (cachedRaw is! Map) continue;
-            if (cachedRaw['id']?.toString() != post['id']?.toString()) {
-              continue;
-            }
-            final cachedMedia =
-                (cachedRaw['media_resolved'] as List? ?? const []);
-            for (final cachedItem in cachedMedia) {
-              if (cachedItem is Map &&
-                  cachedItem['media_url']?.toString() == objectPath) {
-                cachedItem['resolved_url'] = local;
-                if (item['resolved_thumbnail_url']?.toString().startsWith(
-                      'file://',
-                    ) ==
-                    true) {
-                  cachedItem['resolved_thumbnail_url'] =
-                      item['resolved_thumbnail_url'];
-                }
-              }
-            }
-          }
-          await _cache.put(uid, 'feed', cached);
-        }
+        final type = (raw['media_type'] ?? '').toString().toLowerCase();
+        final path = (raw['media_url'] ?? '').toString().trim();
+        final url = (raw['resolved_url'] ?? '').toString().trim();
+        final thumbPath = (raw['thumbnail_url'] ?? '').toString().trim();
+        final thumbUrl = (raw['resolved_thumbnail_url'] ?? '').toString().trim();
+        jobs.add(() => add(thumbPath, thumbUrl, false));
+        if (type != 'video') jobs.add(() => add(path, url, false));
       }
     }
+    var next = 0;
+    Future<void> worker() async {
+      while (next < jobs.length) {
+        final job = jobs[next++];
+        try {
+          await job();
+        } catch (_) {}
+      }
+    }
+
+    await Future.wait(List.generate(3, (_) => worker()));
   }
 
   /// Refreshes a storage object's URL, preferring a complete offline copy.

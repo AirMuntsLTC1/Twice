@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -14,15 +15,28 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/social_repository.dart';
 import 'data/local_cache.dart';
+import 'data/twice_media.dart';
 
-ImageProvider<Object> _twiceImageProvider(String source) {
+ImageProvider<Object> _twiceImageProvider(
+  String source, {
+  int maxDimension = 1080,
+}) {
   final value = source.trim();
   if (value.startsWith('file://')) {
-    return FileImage(File.fromUri(Uri.parse(value)));
+    return ResizeImage.resizeIfNeeded(
+      maxDimension,
+      null,
+      FileImage(File.fromUri(Uri.parse(value))),
+    );
   }
-  if (value.startsWith('/')) return FileImage(File(value));
-  return NetworkImage(value);
+  if (value.startsWith('/')) {
+    return ResizeImage.resizeIfNeeded(maxDimension, null, FileImage(File(value)));
+  }
+  return TwiceNetworkImage(value, maxDimension: maxDimension);
 }
+
+ImageProvider<Object> _twiceAvatarProvider(String source) =>
+    _twiceImageProvider(source, maxDimension: 256);
 
 String _newTwiceUuid() {
   final random = Random.secure();
@@ -55,6 +69,8 @@ String? supabaseStartupError;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  TwiceMedia.configure();
+  unawaited(TwiceMedia.trimDiskCache());
 
   // Never let a bad/missing Supabase configuration prevent Flutter from
   // drawing the first frame indefinitely.
@@ -1423,7 +1439,7 @@ class StoryStripState extends State<StoryStrip> {
                     radius: 29,
                     backgroundColor: const Color(0xFFF0F0F4),
                     backgroundImage: avatar.startsWith('http')
-                        ? NetworkImage(avatar)
+                        ? _twiceAvatarProvider(avatar)
                         : null,
                     child: avatar.startsWith('http')
                         ? null
@@ -1726,7 +1742,7 @@ class _StoryViewerState extends State<StoryViewer>
                     CircleAvatar(
                       radius: 17,
                       backgroundImage: avatar.startsWith('http')
-                          ? NetworkImage(avatar)
+                          ? _twiceAvatarProvider(avatar)
                           : null,
                       child: avatar.startsWith('http')
                           ? null
@@ -1811,6 +1827,7 @@ class FeedPage extends StatelessWidget {
   Widget build(BuildContext context) => RefreshIndicator(
     onRefresh: onRefresh,
     child: ListView(
+      scrollCacheExtent: ScrollCacheExtent.pixels(2500),
       padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
       children: [
         StoryStrip(
@@ -1840,7 +1857,7 @@ class FeedPage extends StatelessWidget {
                               .toString()
                               .trim()
                               .startsWith('http')
-                          ? NetworkImage(
+                          ? _twiceAvatarProvider(
                               (profile['avatar_url'] ?? '').toString().trim(),
                             )
                           : null,
@@ -1998,12 +2015,15 @@ class _PostMediaItem extends StatefulWidget {
 
 class _PostMediaItemState extends State<_PostMediaItem> {
   VideoPlayerController? _controller;
+  String _sourceInUse = '';
   bool _failed = false;
   bool _userPaused = false;
   bool _showVideoControls = true;
   bool _hasVideoFrame = false;
+  bool _initializing = false;
   double _visibleFraction = 0;
   Timer? _controlsTimer;
+  Timer? _releaseTimer;
 
   bool get _isVideo =>
       (widget.media['media_type'] ?? '').toString().toLowerCase() == 'video';
@@ -2013,10 +2033,19 @@ class _PostMediaItemState extends State<_PostMediaItem> {
   String get _thumbnailUrl =>
       (widget.media['resolved_thumbnail_url'] ?? '').toString().trim();
 
-  @override
-  void initState() {
-    super.initState();
-    _initializeVideo();
+  // Facebook-style: the poster is always drawn; the video decoder only exists
+  // while the post is on (or next to) the screen, so scrolling stays smooth.
+  Future<void> _ensureController() async {
+    if (!_isVideo || _controller != null || _initializing || _failed) return;
+    _initializing = true;
+    if (mounted) setState(() {});
+    try {
+      await _initializeVideo();
+    } finally {
+      _initializing = false;
+      if (mounted) setState(() {});
+    }
+    if (mounted && _visibleFraction <= 0.05) _scheduleRelease();
   }
 
   Future<void> _initializeVideo({bool allowUrlRefresh = true}) async {
@@ -2028,11 +2057,18 @@ class _PostMediaItemState extends State<_PostMediaItem> {
       return;
     }
 
-    final source = _url;
+    var source = _url;
+    if (source.startsWith('http')) {
+      final local = await TwiceMedia.cachedFileUri(source);
+      if (local != null) source = local;
+    }
+    if (!mounted) return;
+
     final controller = source.startsWith('file://')
         ? VideoPlayerController.file(File.fromUri(Uri.parse(source)))
         : VideoPlayerController.networkUrl(Uri.parse(source));
     _controller = controller;
+    _sourceInUse = source;
     controller.addListener(_onVideoValueChanged);
 
     try {
@@ -2076,7 +2112,6 @@ class _PostMediaItemState extends State<_PostMediaItem> {
       setState(() => _failed = false);
       await _initializeVideo(allowUrlRefresh: false);
 
-      // The retry succeeds only if a controller initialized successfully.
       final active = _controller;
       final succeeded =
           mounted &&
@@ -2102,6 +2137,23 @@ class _PostMediaItemState extends State<_PostMediaItem> {
     }
   }
 
+  void _scheduleRelease() {
+    _releaseTimer?.cancel();
+    _releaseTimer = Timer(const Duration(seconds: 4), _releaseController);
+  }
+
+  void _releaseController() {
+    if (!mounted || _visibleFraction > 0.05) return;
+    final controller = _controller;
+    if (controller == null) return;
+    _controller = null;
+    _hasVideoFrame = false;
+    controller.removeListener(_onVideoValueChanged);
+    controller.pause();
+    controller.dispose();
+    setState(() {});
+  }
+
   void _showControlsTemporarily() {
     if (!mounted) return;
     setState(() => _showVideoControls = true);
@@ -2117,10 +2169,23 @@ class _PostMediaItemState extends State<_PostMediaItem> {
       if (!controller.value.isPlaying) {
         controller.play();
         _showControlsTemporarily();
+        // Save the video to disk while watching: replays are instant/offline.
+        if (_sourceInUse.startsWith('http')) {
+          unawaited(TwiceMedia.cacheVideo(_sourceInUse));
+        }
       }
     } else if (controller.value.isPlaying) {
       controller.pause();
     }
+  }
+
+  void _onVideoTap() {
+    if (_failed) {
+      setState(() => _failed = false);
+      _ensureController();
+      return;
+    }
+    _showControlsTemporarily();
   }
 
   @override
@@ -2141,14 +2206,16 @@ class _PostMediaItemState extends State<_PostMediaItem> {
       _failed = false;
       _userPaused = false;
       _hasVideoFrame = false;
-      _initializeVideo();
+      if (_visibleFraction >= 0.25) _ensureController();
     }
   }
 
   @override
   void dispose() {
     _controlsTimer?.cancel();
+    _releaseTimer?.cancel();
     final controller = _controller;
+    _controller = null;
     if (controller != null) {
       controller.removeListener(_onVideoValueChanged);
       controller.pause();
@@ -2157,32 +2224,9 @@ class _PostMediaItemState extends State<_PostMediaItem> {
     super.dispose();
   }
 
-  Widget _poster({bool cover = false}) {
-    final url = _thumbnailUrl;
-    return ColoredBox(
-      color: const Color(0xFFF4F5F7),
-      child: Stack(
-        fit: StackFit.expand,
-        alignment: Alignment.center,
-        children: [
-          if (url.isNotEmpty)
-            Image(
-              image: _twiceImageProvider(url),
-              fit: cover ? BoxFit.cover : BoxFit.contain,
-              width: double.infinity,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          const Center(
-            child: Icon(
-              Icons.play_circle_outline_rounded,
-              color: Color(0xFF65676B),
-              size: 52,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _brokenImage() => const Center(
+    child: Icon(Icons.broken_image_outlined, size: 42, color: muted),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -2192,101 +2236,121 @@ class _PostMediaItemState extends State<_PostMediaItem> {
       return ColoredBox(
         color: const Color(0xFFF4F5F7),
         child: url.isEmpty
-            ? const Center(
-                child: Icon(
-                  Icons.broken_image_outlined,
-                  size: 42,
-                  color: muted,
-                ),
-              )
+            ? _brokenImage()
             : Image(
                 image: _twiceImageProvider(url),
                 fit: BoxFit.cover,
                 width: double.infinity,
-                errorBuilder: (_, _, _) => const Center(
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    size: 42,
-                    color: muted,
-                  ),
-                ),
+                gaplessPlayback: true,
+                frameBuilder: (context, child, frame, sync) => sync
+                    ? child
+                    : AnimatedOpacity(
+                        opacity: frame == null ? 0 : 1,
+                        duration: const Duration(milliseconds: 180),
+                        child: child,
+                      ),
+                errorBuilder: (_, _, _) => _brokenImage(),
               ),
       );
     }
 
     final controller = _controller;
+    final showingVideo =
+        !_failed &&
+        controller != null &&
+        controller.value.isInitialized &&
+        _hasVideoFrame;
+
+    final active = showingVideo ? controller : null;
+
     return VisibilityDetector(
       key: ValueKey('twice-video-${widget.media['media_url'] ?? url}'),
       onVisibilityChanged: (info) {
+        if (!mounted) return;
         _visibleFraction = info.visibleFraction;
-        final active = _controller;
-        if (active != null) _syncPlayback(active);
+        if (_visibleFraction > 0.05) {
+          _releaseTimer?.cancel();
+          if (_controller == null && _visibleFraction >= 0.25) {
+            _ensureController();
+          }
+        } else {
+          _scheduleRelease();
+        }
+        final current = _controller;
+        if (current != null) _syncPlayback(current);
       },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: _showControlsTemporarily,
+        onTap: _onVideoTap,
         child: Stack(
           fit: StackFit.expand,
           alignment: Alignment.center,
           children: [
-            // Keep a real poster underneath initialization, buffering and errors.
-            _poster(),
-            if (!_failed &&
-                controller != null &&
-                controller.value.isInitialized &&
-                _hasVideoFrame)
+            // The thumbnail is ALWAYS underneath: never a blank/grey box.
+            TwiceVideoPoster(
+              videoUrl: url,
+              thumbnailUrl: _thumbnailUrl,
+              imageProviderFor: _twiceImageProvider,
+              showPlayIcon: !showingVideo && !_initializing && !_failed,
+            ),
+            if (active != null)
               FittedBox(
                 fit: BoxFit.contain,
                 child: SizedBox(
-                  width: controller.value.size.width,
-                  height: controller.value.size.height,
-                  child: VideoPlayer(controller),
+                  width: active.value.size.width,
+                  height: active.value.size.height,
+                  child: VideoPlayer(active),
                 ),
               ),
-            if (!_failed &&
-                (controller == null || !controller.value.isInitialized))
+            if (_initializing && !showingVideo && !_failed)
               const Center(
                 child: SizedBox(
-                  width: 24,
-                  height: 24,
+                  width: 26,
+                  height: 26,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Color(0xFF65676B),
+                    strokeWidth: 2.4,
+                    color: Colors.white,
                   ),
                 ),
               ),
             if (_failed)
               const Center(
-                child: Icon(
-                  Icons.refresh_rounded,
-                  color: Color(0xFF65676B),
-                  size: 42,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Color(0x99000000),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(
+                      Icons.refresh_rounded,
+                      color: Colors.white,
+                      size: 38,
+                    ),
+                  ),
                 ),
               ),
-            if (controller != null &&
-                controller.value.isInitialized &&
-                _hasVideoFrame &&
-                _showVideoControls)
+            if (active != null && _showVideoControls)
               Center(
                 child: Material(
                   color: const Color(0x99000000),
                   shape: const CircleBorder(),
                   child: IconButton(
-                    tooltip: controller.value.isPlaying
+                    tooltip: active.value.isPlaying
                         ? 'Pause video'
                         : 'Play video',
                     onPressed: () {
-                      if (controller.value.isPlaying) {
+                      if (active.value.isPlaying) {
                         _userPaused = true;
-                        controller.pause();
+                        active.pause();
                       } else {
                         _userPaused = false;
-                        _syncPlayback(controller);
+                        _syncPlayback(active);
                       }
                       _showControlsTemporarily();
                     },
                     icon: Icon(
-                      controller.value.isPlaying
+                      active.value.isPlaying
                           ? Icons.pause_rounded
                           : Icons.play_arrow_rounded,
                       color: Colors.white,
@@ -2482,7 +2546,8 @@ class PostCard extends StatelessWidget {
                             ),
                           )
                         : Image(
-                            image: _twiceImageProvider(post.avatarUrl!),
+                            image: _twiceAvatarProvider(post.avatarUrl!),
+                            gaplessPlayback: true,
                             fit: BoxFit.cover,
                             errorBuilder: (_, _, _) => const ColoredBox(
                               color: Color(0xFFF0F2F5),
@@ -3394,7 +3459,7 @@ class _UserTileState extends State<_UserTile> {
       leading: CircleAvatar(
         backgroundImage: user['avatar_url'] == null
             ? null
-            : NetworkImage(user['avatar_url'].toString()),
+            : _twiceAvatarProvider(user['avatar_url'].toString()),
         child: user['avatar_url'] == null ? const Icon(Icons.person) : null,
       ),
       title: Text(
@@ -3680,7 +3745,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                 radius: 17,
                                 backgroundColor: const Color(0xFFEDE7FF),
                                 backgroundImage: hasAvatar
-                                    ? _twiceImageProvider(avatar)
+                                    ? _twiceAvatarProvider(avatar)
                                     : null,
                                 child: hasAvatar
                                     ? null
@@ -4110,7 +4175,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                         )
                                       : avatar.isNotEmpty
                                       ? Image(
-                                          image: _twiceImageProvider(avatar),
+                                          image: _twiceAvatarProvider(avatar),
                                           fit: BoxFit.cover,
                                           errorBuilder: (_, _, _) => const Icon(
                                             Icons.person_rounded,
@@ -4460,7 +4525,7 @@ class _FollowListPageState extends State<FollowListPage> {
                             radius: 27,
                             backgroundColor: const Color(0xFFEDE9FF),
                             backgroundImage: avatar.isNotEmpty
-                                ? NetworkImage(avatar)
+                                ? _twiceAvatarProvider(avatar)
                                 : null,
                             child: avatar.isEmpty
                                 ? const Icon(
@@ -4744,7 +4809,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: CircleAvatar(
                       backgroundColor: const Color(0xFFF0F2F5),
                       backgroundImage: avatarUrl.isNotEmpty
-                          ? NetworkImage(avatarUrl)
+                          ? _twiceAvatarProvider(avatarUrl)
                           : null,
                       child: avatarUrl.isEmpty
                           ? const Icon(Icons.person_rounded, size: 38)
@@ -4792,7 +4857,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         backgroundColor: Colors.white,
                         errorCorrectionLevel: QrErrorCorrectLevel.H,
                         embeddedImage: avatarUrl.isNotEmpty
-                            ? NetworkImage(avatarUrl)
+                            ? _twiceAvatarProvider(avatarUrl)
                             : null,
                         embeddedImageStyle: const QrEmbeddedImageStyle(
                           size: Size(58, 58),

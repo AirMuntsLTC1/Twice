@@ -1242,43 +1242,74 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
                 ),
               ],
             ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selected,
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFECE7FF),
-        onDestinationSelected: (value) {
-          if (value == 2) {
-            _openComposer();
-          } else {
-            setState(() => selected = value);
-          }
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'Home',
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: const Color(0xFFEAEAEA)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.07),
+                blurRadius: 18,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.search_rounded),
-            label: 'Search',
+          clipBehavior: Clip.antiAlias,
+          child: NavigationBar(
+            height: 68,
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            selectedIndex: selected,
+            backgroundColor: Colors.white,
+            indicatorColor: const Color(0xFFECE7FF),
+            onDestinationSelected: (value) {
+              if (value == 2) {
+                _openComposer();
+              } else {
+                setState(() => selected = value);
+              }
+            },
+            destinations: [
+              const NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home_rounded),
+                label: 'Home',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.search_rounded),
+                label: 'Search',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.video_library_outlined),
+                selectedIcon: Icon(Icons.video_library_rounded),
+                label: 'Create',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.notifications_none_rounded),
+                selectedIcon: Icon(Icons.notifications_rounded),
+                label: 'Activity',
+              ),
+              NavigationDestination(
+                icon: _ProfileNavAvatar(
+                  url: (profile['avatar_url'] ?? '').toString(),
+                  fallback: (profile['display_name'] ??
+                      profile['username'] ?? 'U').toString(),
+                  selected: false,
+                ),
+                selectedIcon: _ProfileNavAvatar(
+                  url: (profile['avatar_url'] ?? '').toString(),
+                  fallback: (profile['display_name'] ??
+                      profile['username'] ?? 'U').toString(),
+                  selected: true,
+                ),
+                label: 'Profile',
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.video_library_outlined),
-            selectedIcon: Icon(Icons.video_library_rounded),
-            label: 'Create',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.notifications_none_rounded),
-            selectedIcon: Icon(Icons.notifications_rounded),
-            label: 'Activity',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.account_circle_outlined),
-            selectedIcon: Icon(Icons.account_circle_rounded),
-            label: 'Profile',
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -5660,4 +5691,65 @@ class _ConversationPageState extends State<ConversationPage> {
       ],
     ),
   );
+}
+
+
+class _ProfileNavAvatar extends StatelessWidget {
+  const _ProfileNavAvatar({
+    required this.url,
+    required this.fallback,
+    required this.selected,
+  });
+
+  final String url;
+  final String fallback;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = url.trim();
+    final initial = fallback.trim().isNotEmpty
+        ? fallback.trim().characters.first.toUpperCase()
+        : 'U';
+
+    return Container(
+      width: 29,
+      height: 29,
+      padding: EdgeInsets.all(selected ? 2 : 0),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: selected
+            ? Border.all(color: const Color(0xFF6C4AE8), width: 2)
+            : null,
+      ),
+      child: ClipOval(
+        child: imageUrl.startsWith('https://') ||
+                imageUrl.startsWith('http://')
+            ? Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                width: 29,
+                height: 29,
+                errorBuilder: (context, error, stackTrace) => _fallback(initial),
+              )
+            : _fallback(initial),
+      ),
+    );
+  }
+
+  Widget _fallback(String initial) {
+    return ColoredBox(
+      color: const Color(0xFFECE7FF),
+      child: Center(
+        child: Text(
+          initial,
+          style: const TextStyle(
+            color: Color(0xFF5135B5),
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
 }

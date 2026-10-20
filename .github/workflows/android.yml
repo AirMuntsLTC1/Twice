@@ -62,6 +62,42 @@ jobs:
       - name: Resolve Dart dependencies
         run: flutter pub get
 
+      - name: Patch legacy video_thumbnail Android build script
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import re
+
+          path = (
+              Path.home()
+              / ".pub-cache/hosted/pub.dev/video_thumbnail-0.5.6/android/build.gradle"
+          )
+          if not path.is_file():
+              raise SystemExit(f"Plugin Gradle file not found: {path}")
+
+          text = path.read_text()
+
+          # Remove the obsolete nested AGP 4.1.0 buildscript block.
+          patched, count = re.subn(
+              r"(?ms)^buildscript\s*\{.*?^\}\s*\n",
+              "",
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("Expected legacy buildscript block not found.")
+
+          # Gradle 9 no longer provides jcenter().
+          patched = re.sub(r"(?m)^\s*jcenter\(\)\s*\n", "", patched)
+
+          if "jcenter()" in patched or "com.android.library" not in patched:
+              raise SystemExit("Plugin patch validation failed.")
+
+          path.write_text(patched)
+          print("Patched video_thumbnail 0.5.6 for the CI Gradle setup.")
+          PYTHON
+
+
       - name: Cache Android NDK
         uses: actions/cache@v4
         with:

@@ -3667,16 +3667,34 @@ class _CommentsSheetState extends State<CommentsSheet> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          CircleAvatar(
-                            radius: 17,
-                            backgroundColor: const Color(0xFFEDE7FF),
-                            child: Text(
-                              name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                              style: const TextStyle(
-                                color: violet,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                          Builder(
+                            builder: (context) {
+                              final avatar = (p['avatar_url'] ?? '')
+                                  .toString()
+                                  .trim();
+                              final hasAvatar =
+                                  avatar.startsWith('http') ||
+                                  avatar.startsWith('file://') ||
+                                  avatar.startsWith('/');
+                              return CircleAvatar(
+                                radius: 17,
+                                backgroundColor: const Color(0xFFEDE7FF),
+                                backgroundImage: hasAvatar
+                                    ? _twiceImageProvider(avatar)
+                                    : null,
+                                child: hasAvatar
+                                    ? null
+                                    : Text(
+                                        name.isNotEmpty
+                                            ? name[0].toUpperCase()
+                                            : 'U',
+                                        style: const TextStyle(
+                                          color: violet,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                              );
+                            },
                           ),
                           const SizedBox(width: 10),
                           Flexible(
@@ -3699,7 +3717,15 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                       fontSize: 13,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '@${(p['username'] ?? 'user').toString().replaceFirst(RegExp(r'^@'), '')}  ·  ${_timeAgo(r['created_at'])}',
+                                    style: const TextStyle(
+                                      color: muted,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
                                   Text((r['body'] ?? '').toString()),
                                   if (r['_queued'] == true)
                                     const Padding(

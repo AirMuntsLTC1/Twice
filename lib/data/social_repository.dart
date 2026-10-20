@@ -972,9 +972,21 @@ class SocialRepository {
           .eq('post_id', postId)
           .order('created_at')
           .timeout(const Duration(seconds: 15));
-      final result = (rows as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
+      final result = <Map<String, dynamic>>[];
+      for (final raw in rows as List) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final rawProfile = row['profiles'];
+        if (rawProfile is Map) {
+          final profile = Map<String, dynamic>.from(rawProfile);
+          if (profile.isNotEmpty) {
+            row['profiles'] = await _resolveProfileAvatar(profile);
+          }
+        } else if (rawProfile is List && rawProfile.isNotEmpty) {
+          final profile = Map<String, dynamic>.from(rawProfile.first as Map);
+          row['profiles'] = await _resolveProfileAvatar(profile);
+        }
+        result.add(row);
+      }
       await _cache.put(uid, 'comments', result, id: postId);
       return result;
     } catch (error) {
@@ -1012,6 +1024,26 @@ class SocialRepository {
     final text = body.trim();
     if (text.isEmpty) return true;
     final id = commentId ?? _newCommentId();
+
+    // Use the cached profile for immediate/offline comments. If the profile
+    // has not been cached yet, fall back to available auth metadata.
+    final cachedProfile = await _cache.get(uid, 'profile');
+    final user = _db.auth.currentUser!;
+    final metadata = user.userMetadata ?? const <String, dynamic>{};
+    final authorProfile = cachedProfile is Map
+        ? Map<String, dynamic>.from(cachedProfile)
+        : <String, dynamic>{};
+    authorProfile['id'] ??= uid;
+    authorProfile['username'] ??=
+        (metadata['username'] ?? user.email?.split('@').first ?? 'user')
+            .toString();
+    authorProfile['display_name'] ??=
+        (metadata['display_name'] ??
+                metadata['name'] ??
+                metadata['full_name'] ??
+                authorProfile['username'])
+            .toString();
+
     final payload = <String, dynamic>{
       'id': id,
       'post_id': postId,
@@ -1039,7 +1071,7 @@ class SocialRepository {
         rows.add({
           ...payload,
           'created_at': DateTime.now().toIso8601String(),
-          'profiles': const {'display_name': 'You'},
+          'profiles': authorProfile,
         });
         await _cache.put(uid, 'comments', rows, id: postId);
       }
@@ -1055,7 +1087,7 @@ class SocialRepository {
         rows.add({
           ...payload,
           'created_at': DateTime.now().toIso8601String(),
-          'profiles': const {'display_name': 'You'},
+          'profiles': authorProfile,
           '_queued': true,
         });
         await _cache.put(uid, 'comments', rows, id: postId);

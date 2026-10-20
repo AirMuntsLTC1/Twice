@@ -1,5 +1,7 @@
 import 'package:photo_manager/photo_manager.dart';
+
 import 'local_cache.dart';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Supabase data boundary for Twice. UI widgets should call this repository
@@ -118,7 +120,9 @@ class SocialRepository {
   Future<Map<String, dynamic>> myProfile() async {
     await ensureProfile();
     final row = await _db.from('profiles').select().eq('id', userId).single();
-    final resolved = await _resolveProfileAvatar(Map<String, dynamic>.from(row));
+    final resolved = await _resolveProfileAvatar(
+      Map<String, dynamic>.from(row),
+    );
     await _cache.put(userId, 'profile', resolved);
     return resolved;
   }
@@ -164,7 +168,9 @@ class SocialRepository {
     }
 
     await _db.from('profiles').update(values).eq('id', userId);
-    try { await _cache.put(userId, 'profile', await myProfile()); } catch (_) {}
+    try {
+      await _cache.put(userId, 'profile', await myProfile());
+    } catch (_) {}
   }
 
   Future<List<Map<String, dynamic>>> feed({
@@ -184,9 +190,14 @@ class SocialRepository {
         final post = Map<String, dynamic>.from(raw as Map);
         final authorRaw = post['profiles'];
         if (authorRaw is Map) {
-          post['profiles'] = await _resolveProfileAvatar(Map<String, dynamic>.from(authorRaw));
+          post['profiles'] = await _resolveProfileAvatar(
+            Map<String, dynamic>.from(authorRaw),
+          );
         }
-        post['media_resolved'] = await _resolveMedia(post['post_media'] as List? ?? const [], 'post-media');
+        post['media_resolved'] = await _resolveMedia(
+          post['post_media'] as List? ?? const [],
+          'post-media',
+        );
         return post;
       }),
     );
@@ -230,11 +241,13 @@ class SocialRepository {
 
   Future<void> _applyLikeState(String postId, bool liked) async {
     if (liked) {
-      await _db.from('post_likes').upsert(
-        {'post_id': postId, 'user_id': userId},
-        onConflict: 'post_id,user_id',
-        ignoreDuplicates: true,
-      );
+      await _db
+          .from('post_likes')
+          .upsert(
+            {'post_id': postId, 'user_id': userId},
+            onConflict: 'post_id,user_id',
+            ignoreDuplicates: true,
+          );
     } else {
       await _db
           .from('post_likes')
@@ -287,9 +300,9 @@ class SocialRepository {
       final post = Map<String, dynamic>.from(raw);
       if (post['id']?.toString() == postId) {
         final likes = List<Map<String, dynamic>>.from(
-          (post['post_likes'] as List? ?? const [])
-              .whereType<Map>()
-              .map((row) => Map<String, dynamic>.from(row)),
+          (post['post_likes'] as List? ?? const []).whereType<Map>().map(
+            (row) => Map<String, dynamic>.from(row),
+          ),
         );
         likes.removeWhere((row) => row['user_id']?.toString() == uid);
         if (liked) likes.add({'user_id': uid});
@@ -400,6 +413,52 @@ class SocialRepository {
       await _db.from('posts').delete().eq('id', postId);
       rethrow;
     }
+  }
+
+  Future<List<Map<String, dynamic>>> loadStories() async {
+    final rows = await _db
+        .from('stories')
+        .select('id,user_id,media_url,media_type,caption,created_at,expires_at')
+        .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+        .order('created_at', ascending: true);
+
+    final stories = (rows as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
+
+    if (stories.isEmpty) return stories;
+
+    final ids = stories
+        .map((story) => story['user_id'].toString())
+        .toSet()
+        .toList();
+
+    final profiles = await _db
+        .from('profiles')
+        .select('id,username,display_name,avatar_url')
+        .inFilter('id', ids);
+
+    final byId = <String, Map<String, dynamic>>{};
+    for (final raw in profiles as List) {
+      final profile = await _resolveProfileAvatar(
+        Map<String, dynamic>.from(raw as Map),
+      );
+      byId[profile['id'].toString()] = profile;
+    }
+
+    for (final story in stories) {
+      story['profiles'] = byId[story['user_id'].toString()] ?? {};
+      final path = (story['media_url'] ?? '').toString();
+      try {
+        story['resolved_url'] = path.startsWith('http')
+            ? path
+            : await _db.storage.from('stories').createSignedUrl(path, 3600);
+      } catch (_) {
+        story['resolved_url'] = '';
+      }
+    }
+
+    return stories;
   }
 
   Future<void> publishStory(AssetEntity asset, String caption) async {
@@ -575,10 +634,14 @@ class SocialRepository {
     try {
       final rows = await _db
           .from('comments')
-          .select('id,post_id,user_id,parent_id,body,created_at,profiles(username,display_name,avatar_url)')
+          .select(
+            'id,post_id,user_id,parent_id,body,created_at,profiles(username,display_name,avatar_url)',
+          )
           .eq('post_id', postId)
           .order('created_at');
-      final result = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      final result = (rows as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
       await _cache.put(userId, 'comments', result, id: postId);
       return result;
     } catch (_) {

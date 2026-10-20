@@ -565,6 +565,9 @@ class _TwiceShellState extends State<TwiceShell> {
   String? error;
   Map<String, dynamic> profile = {};
   List<SocialPost> posts = [];
+  List<Map<String, dynamic>> stories = [];
+  final GlobalKey<StoryStripState> _storyStripKey =
+      GlobalKey<StoryStripState>();
 
   @override
   void initState() {
@@ -590,25 +593,41 @@ class _TwiceShellState extends State<TwiceShell> {
     // Render durable local data first. The network refresh below updates the
     // same UI after the cache has already appeared, avoiding a blank cold start.
     try {
-      final cached = await Future.wait<dynamic>([repo.cachedMyProfile(), repo.cachedFeed()]);
+      final cached = await Future.wait<dynamic>([
+        repo.cachedMyProfile(),
+        repo.cachedFeed(),
+      ]);
       if (!mounted) return;
       final cachedProfile = cached[0];
       final cachedPosts = cached[1] as List<Map<String, dynamic>>;
       if (cachedProfile is Map || cachedPosts.isNotEmpty) {
         setState(() {
-          if (cachedProfile is Map) profile = Map<String, dynamic>.from(cachedProfile);
-          if (cachedPosts.isNotEmpty) posts = cachedPosts.map(SocialPost.new).toList();
+          if (cachedProfile is Map) {
+            profile = Map<String, dynamic>.from(cachedProfile);
+          }
+          if (cachedPosts.isNotEmpty) {
+            posts = cachedPosts.map(SocialPost.new).toList();
+          }
           loading = false;
           error = null;
         });
       }
-    } catch (_) { /* A first install simply has an empty cache. */ }
+    } catch (_) {
+      /* A first install simply has an empty cache. */
+    }
     try {
-      final values = await Future.wait<dynamic>([repo.myProfile(), repo.feed()]);
+      final values = await Future.wait<dynamic>([
+        repo.myProfile(),
+        repo.feed(),
+        repo.loadStories().catchError((_) => <Map<String, dynamic>>[]),
+      ]);
       if (!mounted) return;
       setState(() {
         profile = Map<String, dynamic>.from(values[0] as Map);
-        posts = (values[1] as List<Map<String, dynamic>>).map(SocialPost.new).toList();
+        posts = (values[1] as List<Map<String, dynamic>>)
+            .map(SocialPost.new)
+            .toList();
+        stories = values[2] as List<Map<String, dynamic>>;
         loading = false;
         error = null;
       });
@@ -616,7 +635,9 @@ class _TwiceShellState extends State<TwiceShell> {
       if (!mounted) return;
       setState(() {
         loading = false;
-        error = posts.isNotEmpty || profile.isNotEmpty ? null : _friendlyError(e);
+        error = posts.isNotEmpty || profile.isNotEmpty
+            ? null
+            : _friendlyError(e);
       });
     }
   }
@@ -650,8 +671,17 @@ class _TwiceShellState extends State<TwiceShell> {
     try {
       await repo.toggleLike(post.id, wasLiked);
     } catch (e) {
-      await _loadAll();
-      if (mounted) _message('Like failed: $e');
+      if (!mounted) return;
+      setState(() {
+        final rows = List<Map<String, dynamic>>.from(
+          post.data['post_likes'] as List? ?? [],
+        );
+        final uid = Supabase.instance.client.auth.currentUser?.id;
+        rows.removeWhere((row) => row['user_id'] == uid);
+        if (wasLiked && uid != null) rows.add({'user_id': uid});
+        post.data['post_likes'] = rows;
+      });
+      _message('Like could not sync: $e');
     }
   }
 
@@ -666,6 +696,31 @@ class _TwiceShellState extends State<TwiceShell> {
       if (mounted) _message('Could not publish: $e');
       rethrow;
     }
+  }
+
+  void _openComposer() {
+    Navigator.of(context).push<void>(
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 380),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, animation, secondaryAnimation) =>
+            CreatePage(onPost: _publish),
+        transitionsBuilder: (_, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.97, end: 1).animate(curved),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
   }
 
   void _message(String message) =>
@@ -698,9 +753,12 @@ class _TwiceShellState extends State<TwiceShell> {
             elevation: 10,
             onSelected: (value) {
               if (value == 'create') {
-                setState(() => selected = 2);
+                _openComposer();
               } else if (value == 'story') {
-                _message('Story creation is not connected yet.');
+                setState(() => selected = 0);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _storyStripKey.currentState?.openCreator();
+                });
               }
             },
             itemBuilder: (context) => [
@@ -763,6 +821,9 @@ class _TwiceShellState extends State<TwiceShell> {
               index: selected,
               children: [
                 FeedPage(
+                  storyStripKey: _storyStripKey,
+                  profile: profile,
+                  stories: stories,
                   onCreateStory: (asset, caption) async {
                     await repo.publishStory(asset, caption);
                     await _loadAll();
@@ -770,10 +831,13 @@ class _TwiceShellState extends State<TwiceShell> {
                   posts: posts,
                   onLike: _like,
                   onRefresh: _loadAll,
-                  onCommentChanged: _loadAll,
+                  onOpenComposer: _openComposer,
+                  onCommentChanged: () {
+                    if (mounted) setState(() {});
+                  },
                 ),
                 const SearchPage(),
-                CreatePage(onPost: _publish),
+                const SizedBox.shrink(),
                 const ActivityPage(),
                 ProfilePage(
                   profile: profile,
@@ -786,7 +850,13 @@ class _TwiceShellState extends State<TwiceShell> {
         selectedIndex: selected,
         backgroundColor: Colors.white,
         indicatorColor: const Color(0xFFECE7FF),
-        onDestinationSelected: (value) => setState(() => selected = value),
+        onDestinationSelected: (value) {
+          if (value == 2) {
+            _openComposer();
+          } else {
+            setState(() => selected = value);
+          }
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
@@ -818,12 +888,25 @@ class _TwiceShellState extends State<TwiceShell> {
   }
 }
 
-class StoryStrip extends StatelessWidget {
-  const StoryStrip({super.key, required this.onCreateStory});
+class StoryStrip extends StatefulWidget {
+  const StoryStrip({
+    super.key,
+    required this.onCreateStory,
+    required this.profile,
+    required this.stories,
+  });
 
   final Future<void> Function(AssetEntity asset, String caption) onCreateStory;
+  final Map<String, dynamic> profile;
+  final List<Map<String, dynamic>> stories;
 
-  Future<void> _openCreator(BuildContext context) async {
+  @override
+  State<StoryStrip> createState() => StoryStripState();
+}
+
+class StoryStripState extends State<StoryStrip> {
+  Future<void> openCreator() async {
+    final context = this.context;
     final permission = await PhotoManager.requestPermissionExtend();
     if (!permission.isAuth && !permission.hasAccess) {
       if (context.mounted) {
@@ -858,6 +941,7 @@ class StoryStrip extends StatelessWidget {
     assets.sort(
       (a, b) => (b.createDateSecond ?? 0).compareTo(a.createDateSecond ?? 0),
     );
+
     if (!context.mounted) return;
     if (assets.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -871,13 +955,13 @@ class StoryStrip extends StatelessWidget {
       isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
         child: SizedBox(
-          height: MediaQuery.of(sheetContext).size.height * 0.65,
+          height: MediaQuery.of(sheetContext).size.height * .68,
           child: Column(
             children: [
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'Choose story media',
+                  'Choose one photo or video',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
               ),
@@ -931,7 +1015,7 @@ class StoryStrip extends StatelessWidget {
     );
     if (asset == null || !context.mounted) return;
 
-    final captionController = TextEditingController();
+    final controller = TextEditingController();
     final caption = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -951,19 +1035,17 @@ class StoryStrip extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: captionController,
+              controller: controller,
               maxLength: 300,
               decoration: const InputDecoration(
                 hintText: 'Write a caption (optional)',
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: () =>
-                    Navigator.pop(sheetContext, captionController.text),
+                onPressed: () => Navigator.pop(sheetContext, controller.text),
                 child: const Text('Share story'),
               ),
             ),
@@ -971,11 +1053,11 @@ class StoryStrip extends StatelessWidget {
         ),
       ),
     );
-    captionController.dispose();
+    controller.dispose();
     if (caption == null || !context.mounted) return;
 
     try {
-      await onCreateStory(asset, caption);
+      await widget.onCreateStory(asset, caption);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Story shared for 24 hours.')),
@@ -990,65 +1072,479 @@ class StoryStrip extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 104,
-    child: ListView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-      children: [
-        SizedBox(
-          width: 70,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(40),
-            onTap: () => _openCreator(context),
-            child: Column(
+  Widget build(BuildContext context) {
+    final ownId = Supabase.instance.client.auth.currentUser?.id ?? '';
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final story in widget.stories) {
+      final uid = (story['user_id'] ?? '').toString();
+      if (uid.isNotEmpty) (grouped[uid] ??= []).add(story);
+    }
+    final ownStories = grouped.remove(ownId) ?? [];
+    final otherIds = grouped.keys.toList();
+
+    return SizedBox(
+      height: 104,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+        children: [
+          _storyCircle(
+            context,
+            profile: widget.profile,
+            stories: ownStories,
+            label: 'Your story',
+            own: true,
+          ),
+          ...otherIds.map((uid) {
+            final rows = grouped[uid]!;
+            final user = Map<String, dynamic>.from(
+              rows.first['profiles'] as Map? ?? const {},
+            );
+            final label =
+                (user['display_name'] ?? user['username'] ?? 'Twice user')
+                    .toString();
+            return _storyCircle(
+              context,
+              profile: user,
+              stories: rows,
+              label: label,
+              own: false,
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _storyCircle(
+    BuildContext context, {
+    required Map<String, dynamic> profile,
+    required List<Map<String, dynamic>> stories,
+    required String label,
+    required bool own,
+  }) {
+    final avatar = (profile['avatar_url'] ?? '').toString().trim();
+    return SizedBox(
+      width: 76,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(42),
+        onTap: () {
+          if (stories.isEmpty) {
+            if (own) openCreator();
+            return;
+          }
+          Navigator.of(context).push(
+            PageRouteBuilder<void>(
+              opaque: true,
+              transitionDuration: const Duration(milliseconds: 360),
+              pageBuilder: (_, animation, _) =>
+                  StoryViewer(stories: stories, initialProfile: profile),
+              transitionsBuilder: (_, animation, _, child) => FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: .88, end: 1).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
+                  child: child,
+                ),
+              ),
+            ),
+          );
+        },
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
               children: [
                 Container(
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFFD9D5E5),
-                      width: 1.7,
+                    gradient: stories.isNotEmpty
+                        ? const LinearGradient(
+                            colors: [
+                              Color(0xFFF9CE34),
+                              Color(0xFFEE2A7B),
+                              Color(0xFF6228D7),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          )
+                        : null,
+                    border: stories.isEmpty
+                        ? Border.all(color: const Color(0xFFD9D5E5), width: 1.7)
+                        : null,
+                  ),
+                  child: CircleAvatar(
+                    radius: 29,
+                    backgroundColor: const Color(0xFFF0F0F4),
+                    backgroundImage: avatar.startsWith('http')
+                        ? NetworkImage(avatar)
+                        : null,
+                    child: avatar.startsWith('http')
+                        ? null
+                        : const Icon(
+                            Icons.person_rounded,
+                            color: muted,
+                            size: 30,
+                          ),
+                  ),
+                ),
+                if (own)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 23,
+                      height: 23,
+                      decoration: BoxDecoration(
+                        color: violet,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.add_rounded,
+                        size: 17,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
-                  child: const CircleAvatar(
-                    radius: 29,
-                    backgroundColor: Color(0xFFF0F0F4),
-                    child: Icon(Icons.add_rounded, size: 29, color: ink),
-                  ),
-                ),
-                const SizedBox(height: 5),
-                const Text(
-                  'Your story',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: ink),
-                ),
               ],
             ),
+            const SizedBox(height: 5),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: ink),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class StoryViewer extends StatefulWidget {
+  const StoryViewer({
+    super.key,
+    required this.stories,
+    required this.initialProfile,
+  });
+
+  final List<Map<String, dynamic>> stories;
+  final Map<String, dynamic> initialProfile;
+
+  @override
+  State<StoryViewer> createState() => _StoryViewerState();
+}
+
+class _StoryViewerState extends State<StoryViewer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _progress;
+  VideoPlayerController? _video;
+  int _index = 0;
+  bool _paused = false;
+  bool _videoReady = false;
+
+  Map<String, dynamic> get _story => widget.stories[_index];
+  String get _url => (_story['resolved_url'] ?? '').toString();
+  bool get _isVideo => _story['media_type'] == 'video';
+  @override
+  void initState() {
+    super.initState();
+    _progress =
+        AnimationController(vsync: this, duration: const Duration(seconds: 5))
+          ..addStatusListener((status) {
+            if (status == AnimationStatus.completed && mounted) _next();
+          });
+    _loadCurrent();
+  }
+
+  Future<void> _loadCurrent() async {
+    _progress.stop();
+    _progress.value = 0;
+    final previous = _video;
+    _video = null;
+    _videoReady = false;
+    if (previous != null) {
+      await previous.pause();
+      await previous.dispose();
+    }
+    if (!mounted) return;
+
+    if (_url.isEmpty) {
+      _progress.duration = const Duration(seconds: 5);
+      _progress.forward();
+      setState(() {});
+      return;
+    }
+
+    if (_isVideo) {
+      final controller = VideoPlayerController.networkUrl(Uri.parse(_url));
+      _video = controller;
+      try {
+        await controller.initialize();
+        if (!mounted || _video != controller) return;
+        _videoReady = true;
+        _progress.duration = controller.value.duration;
+        controller.addListener(_onVideoTick);
+        if (!_paused) await controller.play();
+      } catch (_) {
+        _videoReady = false;
+      }
+    }
+    if (!mounted) return;
+    if (!_isVideo || !_videoReady) {
+      _progress.duration = const Duration(seconds: 5);
+    }
+    if (!_paused) _progress.forward();
+    setState(() {});
+  }
+
+  void _onVideoTick() {
+    final controller = _video;
+    if (controller == null || !controller.value.isInitialized) return;
+    if (controller.value.position >= controller.value.duration &&
+        controller.value.duration > Duration.zero) {
+      _next();
+    }
+  }
+
+  Future<void> _pause() async {
+    if (_paused) return;
+    _paused = true;
+    _progress.stop();
+    await _video?.pause();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _resume() async {
+    if (!_paused) return;
+    _paused = false;
+    if (_videoReady) await _video?.play();
+    _progress.forward();
+    if (mounted) setState(() {});
+  }
+
+  void _next() {
+    if (_index + 1 >= widget.stories.length) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _index++);
+    _loadCurrent();
+  }
+
+  void _previous() {
+    if (_progress.value > .12) {
+      _progress.value = 0;
+      if (_videoReady) {
+        _video?.seekTo(Duration.zero);
+        if (!_paused) _video?.play();
+      } else if (!_paused) {
+        _progress.forward();
+      }
+      return;
+    }
+    if (_index > 0) {
+      setState(() => _index--);
+      _loadCurrent();
+    } else {
+      _progress.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _progress.dispose();
+    _video?.removeListener(_onVideoTick);
+    _video?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = Map<String, dynamic>.from(
+      _story['profiles'] as Map? ?? widget.initialProfile,
+    );
+    final avatar = (user['avatar_url'] ?? '').toString();
+    final url = _url;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPressStart: (_) => _pause(),
+          onLongPressEnd: (_) => _resume(),
+          onTapUp: (details) {
+            final width = MediaQuery.of(context).size.width;
+            if (details.localPosition.dx < width * .35) {
+              _previous();
+            } else if (details.localPosition.dx > width * .65) {
+              _next();
+            } else if (_paused) {
+              _resume();
+            }
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Center(
+                child: _isVideo
+                    ? (_videoReady && _video != null
+                          ? AspectRatio(
+                              aspectRatio: _video!.value.aspectRatio > 0
+                                  ? _video!.value.aspectRatio
+                                  : 9 / 16,
+                              child: VideoPlayer(_video!),
+                            )
+                          : const CircularProgressIndicator(
+                              color: Colors.white,
+                            ))
+                    : (url.startsWith('http')
+                          ? Image.network(
+                              url,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, _, _) => const Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.white,
+                                size: 52,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.broken_image_outlined,
+                              color: Colors.white,
+                              size: 52,
+                            )),
+              ),
+              Positioned(
+                top: 8,
+                left: 10,
+                right: 10,
+                child: Row(
+                  children: List.generate(widget.stories.length, (i) {
+                    return Expanded(
+                      child: Container(
+                        height: 3,
+                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: FractionallySizedBox(
+                            widthFactor: i < _index
+                                ? 1
+                                : i == _index
+                                ? _progress.value
+                                : 0,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+              Positioned(
+                top: 22,
+                left: 12,
+                right: 8,
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 17,
+                      backgroundImage: avatar.startsWith('http')
+                          ? NetworkImage(avatar)
+                          : null,
+                      child: avatar.startsWith('http')
+                          ? null
+                          : const Icon(Icons.person, size: 18),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        (user['display_name'] ??
+                                user['username'] ??
+                                'Twice user')
+                            .toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              if ((_story['caption'] ?? '').toString().trim().isNotEmpty)
+                Positioned(
+                  left: 24,
+                  right: 24,
+                  bottom: 32,
+                  child: Text(
+                    _story['caption'].toString(),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      shadows: [Shadow(blurRadius: 8, color: Colors.black)],
+                    ),
+                  ),
+                ),
+              if (_paused)
+                const Center(
+                  child: Icon(
+                    Icons.pause_circle_filled,
+                    color: Colors.white70,
+                    size: 60,
+                  ),
+                ),
+            ],
           ),
         ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
 class FeedPage extends StatelessWidget {
   const FeedPage({
     super.key,
+    required this.storyStripKey,
+    required this.profile,
+    required this.stories,
     required this.onCreateStory,
     required this.posts,
     required this.onLike,
     required this.onRefresh,
     required this.onCommentChanged,
+    required this.onOpenComposer,
   });
 
+  final GlobalKey<StoryStripState> storyStripKey;
+  final Map<String, dynamic> profile;
+  final List<Map<String, dynamic>> stories;
   final Future<void> Function(AssetEntity asset, String caption) onCreateStory;
   final List<SocialPost> posts;
   final ValueChanged<SocialPost> onLike;
   final Future<void> Function() onRefresh;
   final VoidCallback onCommentChanged;
+  final VoidCallback onOpenComposer;
 
   @override
   Widget build(BuildContext context) => RefreshIndicator(
@@ -1056,8 +1552,66 @@ class FeedPage extends StatelessWidget {
     child: ListView(
       padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
       children: [
-        StoryStrip(onCreateStory: onCreateStory),
+        StoryStrip(
+          key: storyStripKey,
+          onCreateStory: onCreateStory,
+          profile: profile,
+          stories: stories,
+        ),
         const SizedBox(height: 5),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+          child: Material(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(17),
+            child: InkWell(
+              onTap: onOpenComposer,
+              borderRadius: BorderRadius.circular(17),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundColor: const Color(0xFFECE7FF),
+                      child: const Icon(
+                        Icons.person_rounded,
+                        color: violet,
+                        size: 27,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF2F3F5),
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        child: const Text(
+                          "What's on your mind?",
+                          style: TextStyle(
+                            color: Color(0xFF65676B),
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Icon(
+                      Icons.photo_library_outlined,
+                      color: Color(0xFF45BD62),
+                      size: 25,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
         if (posts.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 70),
@@ -1565,35 +2119,50 @@ class PostCard extends StatelessWidget {
                     const Spacer(),
                     IconButton(
                       tooltip: post.saved ? 'Remove saved post' : 'Save post',
-                      onPressed: () async {
+                      onPressed: () {
                         final wasSaved = post.saved;
-                        try {
-                          await SocialRepository.instance.toggleSaved(
-                            post.id,
-                            wasSaved,
-                          );
-                          onCommentChanged();
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  wasSaved
-                                      ? 'Post removed from saved'
-                                      : 'Post saved',
-                                ),
-                                duration: const Duration(seconds: 2),
-                              ),
-                            );
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Could not save post: $e'),
-                              ),
-                            );
-                          }
+                        final uid =
+                            Supabase.instance.client.auth.currentUser?.id;
+                        if (uid == null) return;
+
+                        final rows = List<Map<String, dynamic>>.from(
+                          (post.data['saved_posts'] as List? ?? const [])
+                              .whereType<Map>()
+                              .map((row) => Map<String, dynamic>.from(row)),
+                        );
+
+                        // Update the bookmark immediately.
+                        if (wasSaved) {
+                          rows.removeWhere((row) => row['user_id'] == uid);
+                        } else {
+                          rows.add({'user_id': uid});
                         }
+                        post.data['saved_posts'] = rows;
+                        onCommentChanged();
+
+                        // Persist asynchronously; do not reload the feed.
+                        SocialRepository.instance
+                            .toggleSaved(post.id, wasSaved)
+                            .catchError((Object e) {
+                              if (!context.mounted) return;
+                              // Roll back only this bookmark state.
+                              final current = List<Map<String, dynamic>>.from(
+                                (post.data['saved_posts'] as List? ?? const [])
+                                    .whereType<Map>()
+                                    .map(
+                                      (row) => Map<String, dynamic>.from(row),
+                                    ),
+                              );
+                              current.removeWhere(
+                                (row) => row['user_id'] == uid,
+                              );
+                              if (wasSaved) current.add({'user_id': uid});
+                              post.data['saved_posts'] = current;
+                              onCommentChanged();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Save failed: $e')),
+                              );
+                            });
                       },
                       icon: Icon(
                         post.saved
@@ -1734,74 +2303,241 @@ class _CreatePageState extends State<CreatePage> {
   }
 
   @override
-  Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.all(16),
-    children: [
-      const Text(
-        'Create a post',
-        style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.white,
+    appBar: AppBar(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      leading: IconButton(
+        tooltip: 'Close',
+        onPressed: () => Navigator.of(context).maybePop(),
+        icon: const Icon(Icons.close, color: Colors.black, size: 28),
       ),
-      const SizedBox(height: 16),
-      TextField(
-        controller: controller,
-        minLines: 4,
-        maxLines: 10,
-        maxLength: 5000,
-        decoration: InputDecoration(
-          hintText: "What's happening?",
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide.none,
+      title: const Text(
+        'Create post',
+        style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800),
+      ),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: Center(
+            child: FilledButton(
+              onPressed: publishing ? null : _publish,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF1877F2),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9),
+                ),
+              ),
+              child: Text(publishing ? 'Posting…' : 'Post'),
+            ),
           ),
         ),
-      ),
-      OutlinedButton.icon(
-        onPressed: _pick,
-        icon: const Icon(Icons.photo_library_outlined),
-        label: Text(
-          selectedMedia.isEmpty
-              ? 'Add photos or videos'
-              : '${selectedMedia.length} media selected',
-        ),
-      ),
-      if (selectedMedia.isNotEmpty)
-        SizedBox(
-          height: 95,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: selectedMedia
-                .map(
-                  (asset) => Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: FutureBuilder<Uint8List?>(
-                      future: asset.thumbnailDataWithSize(
-                        const ThumbnailSize(180, 180),
+      ],
+    ),
+    body: SafeArea(
+      child: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 20),
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 25,
+                      backgroundColor: const Color(0xFFE8F0FE),
+                      child: const Icon(
+                        Icons.person,
+                        color: Color(0xFF1877F2),
+                        size: 29,
                       ),
-                      builder: (_, snapshot) => snapshot.data == null
-                          ? const SizedBox(
-                              width: 80,
-                              child: Center(child: CircularProgressIndicator()),
-                            )
-                          : Image.memory(
-                              snapshot.data!,
-                              width: 80,
-                              height: 80,
-                              fit: BoxFit.cover,
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Your profile',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0F2F5),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.public, size: 14),
+                              SizedBox(width: 5),
+                              Text(
+                                'Public',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              SizedBox(width: 5),
+                              Icon(Icons.arrow_drop_down, size: 17),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  minLines: 5,
+                  maxLines: null,
+                  maxLength: 5000,
+                  textCapitalization: TextCapitalization.sentences,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 23,
+                    height: 1.35,
+                  ),
+                  decoration: const InputDecoration(
+                    hintText: "What's on your mind?",
+                    hintStyle: TextStyle(
+                      color: Color(0xFF8A8D91),
+                      fontSize: 23,
+                    ),
+                    border: InputBorder.none,
+                    counterStyle: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                if (selectedMedia.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: selectedMedia.map((asset) {
+                      return Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: FutureBuilder<Uint8List?>(
+                              future: asset.thumbnailDataWithSize(
+                                const ThumbnailSize(360, 360),
+                              ),
+                              builder: (_, snapshot) {
+                                if (snapshot.data == null) {
+                                  return Container(
+                                    width: 108,
+                                    height: 108,
+                                    color: const Color(0xFFF0F2F5),
+                                    child: const Center(
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return Image.memory(
+                                  snapshot.data!,
+                                  width: 108,
+                                  height: 108,
+                                  fit: BoxFit.cover,
+                                );
+                              },
                             ),
+                          ),
+                          if (asset.type == AssetType.video)
+                            const Positioned(
+                              left: 8,
+                              bottom: 8,
+                              child: Icon(
+                                Icons.play_circle_fill,
+                                color: Colors.white,
+                                size: 25,
+                              ),
+                            ),
+                          Positioned(
+                            right: 4,
+                            top: 4,
+                            child: InkWell(
+                              onTap: () =>
+                                  setState(() => selectedMedia.remove(asset)),
+                              child: const CircleAvatar(
+                                radius: 13,
+                                backgroundColor: Colors.black54,
+                                child: Icon(
+                                  Icons.close,
+                                  color: Colors.white,
+                                  size: 17,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: const Color(0xFFE0E0E0)),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Add to your post',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                )
-                .toList(),
+                  IconButton(
+                    tooltip: 'Add photos or videos',
+                    onPressed: _pick,
+                    icon: const Icon(
+                      Icons.photo_library_outlined,
+                      color: Color(0xFF45BD62),
+                      size: 27,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Add more media',
+                    onPressed: _pick,
+                    icon: const Icon(
+                      Icons.video_library_outlined,
+                      color: Color(0xFF1877F2),
+                      size: 27,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-      const SizedBox(height: 12),
-      FilledButton(
-        onPressed: publishing ? null : _publish,
-        child: Text(publishing ? 'Publishing…' : 'Publish post'),
+        ],
       ),
-    ],
+    ),
   );
 }
 
@@ -2156,27 +2892,46 @@ class _CommentsSheetState extends State<CommentsSheet> {
     final text = controller.text.trim();
     if (text.isEmpty) return;
 
-    setState(() => sending = true);
+    FocusScope.of(context).unfocus();
+
+    final optimistic = <String, dynamic>{
+      'id': 'local_${DateTime.now().microsecondsSinceEpoch}',
+      'post_id': widget.post.id,
+      'user_id': Supabase.instance.client.auth.currentUser?.id ?? '',
+      'body': text,
+      'created_at': DateTime.now().toIso8601String(),
+      'profiles': <String, dynamic>{'display_name': 'You'},
+      '_pending': true,
+    };
+
+    // Render immediately and clear the composer before network work begins.
+    setState(() {
+      rows = [...rows, optimistic];
+      controller.clear();
+      loadError = null;
+      busy = false;
+      sending = false;
+    });
+
+    // Persist in the background; no comments refresh or feed reload.
     try {
       await SocialRepository.instance.addComment(widget.post.id, text);
       if (!mounted) return;
-      controller.clear();
-      FocusScope.of(context).unfocus();
-      await _load();
-      if (mounted && loadError != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Comment sent, but refresh failed: $loadError'),
-          ),
-        );
-      }
+      setState(() {
+        optimistic.remove('_pending');
+      });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Comment failed: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => sending = false);
+      if (!mounted) return;
+      setState(() {
+        optimistic['_failed'] = true;
+        optimistic.remove('_pending');
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Comment is visible but could not sync: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -2230,51 +2985,132 @@ class _CommentsSheetState extends State<CommentsSheet> {
               : rows.isEmpty
               ? const Center(child: Text('No comments yet'))
               : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                   itemCount: rows.length,
                   itemBuilder: (_, i) {
                     final r = rows[i];
                     final p = r['profiles'] as Map? ?? {};
-                    return ListTile(
-                      title: Text(
-                        (p['display_name'] ?? p['username'] ?? 'User')
-                            .toString(),
+                    final name = (p['display_name'] ?? p['username'] ?? 'User')
+                        .toString();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 17,
+                            backgroundColor: const Color(0xFFEDE7FF),
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                              style: const TextStyle(
+                                color: violet,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF3F3F6),
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text((r['body'] ?? '').toString()),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      subtitle: Text((r['body'] ?? '').toString()),
                     );
                   },
                 ),
         ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            12,
-            8,
-            12,
-            8 +
-                MediaQuery.viewInsetsOf(context).bottom +
-                MediaQuery.paddingOf(context).bottom,
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  decoration: const InputDecoration(
-                    hintText: 'Write a comment…',
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              14,
+              8,
+              14,
+              10 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F3F6),
+                      borderRadius: BorderRadius.circular(26),
+                      border: Border.all(color: const Color(0xFFE5E3EC)),
+                    ),
+                    child: TextField(
+                      controller: controller,
+                      minLines: 1,
+                      maxLines: 4,
+                      textCapitalization: TextCapitalization.sentences,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _send(),
+                      decoration: const InputDecoration(
+                        hintText: 'Write a comment…',
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              IconButton(
-                onPressed: sending ? null : _send,
-                tooltip: 'Send comment',
-                icon: sending
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.send, color: violet),
-              ),
-            ],
+                const SizedBox(width: 8),
+                Material(
+                  color: violet,
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: sending ? null : _send,
+                    child: SizedBox(
+                      width: 46,
+                      height: 46,
+                      child: Center(
+                        child: sending
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.send_rounded,
+                                color: Colors.white,
+                                size: 21,
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],

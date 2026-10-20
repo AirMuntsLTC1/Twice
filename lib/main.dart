@@ -11,6 +11,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/social_repository.dart';
+import 'data/local_cache.dart';
 
 const ink = Color(0xFF171923);
 const muted = Color(0xFF7B8191);
@@ -877,6 +878,50 @@ class StoryStrip extends StatefulWidget {
 }
 
 class StoryStripState extends State<StoryStrip> {
+  final Set<String> _viewedStoryIds = <String>{};
+  bool _viewedStoriesLoaded = false;
+
+  String get _storyViewsCacheKey =>
+      Supabase.instance.client.auth.currentUser?.id ?? '';
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreViewedStories();
+  }
+
+  Future<void> _restoreViewedStories() async {
+    final uid = _storyViewsCacheKey;
+    if (uid.isEmpty) {
+      if (mounted) setState(() => _viewedStoriesLoaded = true);
+      return;
+    }
+    try {
+      final saved = await LocalCache.instance.get(uid, 'viewed_stories');
+      if (saved is List) {
+        _viewedStoryIds.addAll(
+          saved.map((value) => value.toString()).where((id) => id.isNotEmpty),
+        );
+      }
+    } catch (e) {
+      debugPrint('Could not restore viewed stories: $e');
+    }
+    if (mounted) setState(() => _viewedStoriesLoaded = true);
+  }
+
+  void _markStoryViewed(String storyId) {
+    if (storyId.isEmpty || !_viewedStoryIds.add(storyId)) return;
+    if (mounted) setState(() {});
+    final uid = _storyViewsCacheKey;
+    if (uid.isNotEmpty) {
+      LocalCache.instance
+          .put(uid, 'viewed_stories', _viewedStoryIds.toList())
+          .catchError((Object e) {
+            debugPrint('Could not save viewed stories: $e');
+          });
+    }
+  }
+
   Future<void> openCreator() async {
     final context = this.context;
     final permission = await PhotoManager.requestPermissionExtend();
@@ -1096,6 +1141,11 @@ class StoryStripState extends State<StoryStrip> {
     required bool own,
   }) {
     final avatar = (profile['avatar_url'] ?? '').toString().trim();
+    final allViewed =
+        stories.isNotEmpty &&
+        stories.every(
+          (story) => _viewedStoryIds.contains((story['id'] ?? '').toString()),
+        );
     return SizedBox(
       width: 76,
       child: InkWell(
@@ -1109,8 +1159,13 @@ class StoryStripState extends State<StoryStrip> {
             PageRouteBuilder<void>(
               opaque: true,
               transitionDuration: const Duration(milliseconds: 360),
-              pageBuilder: (_, animation, _) =>
-                  StoryViewer(stories: stories, initialProfile: profile),
+              pageBuilder: (_, animation, _) => StoryViewer(
+                stories: stories,
+                initialProfile: profile,
+                onStoryViewed: (storyId) {
+                  if (!own && mounted) _markStoryViewed(storyId);
+                },
+              ),
               transitionsBuilder: (_, animation, _, child) => FadeTransition(
                 opacity: animation,
                 child: ScaleTransition(
@@ -1135,7 +1190,8 @@ class StoryStripState extends State<StoryStrip> {
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: stories.isNotEmpty
+                    gradient:
+                        stories.isNotEmpty && !allViewed && _viewedStoriesLoaded
                         ? const LinearGradient(
                             colors: [
                               Color(0xFFF9CE34),
@@ -1146,8 +1202,8 @@ class StoryStripState extends State<StoryStrip> {
                             end: Alignment.bottomRight,
                           )
                         : null,
-                    border: stories.isEmpty
-                        ? Border.all(color: const Color(0xFFD9D5E5), width: 1.7)
+                    border: stories.isEmpty || allViewed
+                        ? Border.all(color: const Color(0xFFB8BBC4), width: 1.7)
                         : null,
                   ),
                   child: CircleAvatar(
@@ -1213,10 +1269,12 @@ class StoryViewer extends StatefulWidget {
     super.key,
     required this.stories,
     required this.initialProfile,
+    required this.onStoryViewed,
   });
 
   final List<Map<String, dynamic>> stories;
   final Map<String, dynamic> initialProfile;
+  final ValueChanged<String> onStoryViewed;
 
   @override
   State<StoryViewer> createState() => _StoryViewerState();
@@ -1239,7 +1297,9 @@ class _StoryViewerState extends State<StoryViewer>
     _progress =
         AnimationController(vsync: this, duration: const Duration(seconds: 5))
           ..addStatusListener((status) {
-            if (status == AnimationStatus.completed && mounted) _next();
+            if (status == AnimationStatus.completed && mounted) {
+              _next(completed: true);
+            }
           });
     _loadCurrent();
   }
@@ -1290,7 +1350,7 @@ class _StoryViewerState extends State<StoryViewer>
     if (controller == null || !controller.value.isInitialized) return;
     if (controller.value.position >= controller.value.duration &&
         controller.value.duration > Duration.zero) {
-      _next();
+      _next(completed: true);
     }
   }
 
@@ -1310,7 +1370,11 @@ class _StoryViewerState extends State<StoryViewer>
     if (mounted) setState(() {});
   }
 
-  void _next() {
+  void _next({bool completed = false}) {
+    if (completed) {
+      final storyId = (_story['id'] ?? '').toString();
+      if (storyId.isNotEmpty) widget.onStoryViewed(storyId);
+    }
     if (_index + 1 >= widget.stories.length) {
       Navigator.of(context).pop();
       return;
@@ -1554,11 +1618,26 @@ class FeedPage extends StatelessWidget {
                     CircleAvatar(
                       radius: 22,
                       backgroundColor: const Color(0xFFECE7FF),
-                      child: const Icon(
-                        Icons.person_rounded,
-                        color: violet,
-                        size: 27,
-                      ),
+                      backgroundImage:
+                          (profile['avatar_url'] ?? '')
+                              .toString()
+                              .trim()
+                              .startsWith('http')
+                          ? NetworkImage(
+                              (profile['avatar_url'] ?? '').toString().trim(),
+                            )
+                          : null,
+                      child:
+                          (profile['avatar_url'] ?? '')
+                              .toString()
+                              .trim()
+                              .startsWith('http')
+                          ? null
+                          : const Icon(
+                              Icons.person_rounded,
+                              color: violet,
+                              size: 27,
+                            ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(

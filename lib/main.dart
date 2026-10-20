@@ -67,13 +67,12 @@ bool get supabaseConfigured =>
 bool supabaseReady = false;
 String? supabaseStartupError;
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  TwiceMedia.configure();
-  unawaited(TwiceMedia.trimDiskCache());
+// BOOTFIX: the first frame is drawn immediately. Supabase starts in the
+// background and the gate swaps from the splash to the app when it is ready.
+final ValueNotifier<bool> supabaseBootFinished = ValueNotifier<bool>(false);
 
-  // Never let a bad/missing Supabase configuration prevent Flutter from
-  // drawing the first frame indefinitely.
+Future<void> _bootSupabase() async {
+  final watch = Stopwatch()..start();
   if (!supabaseConfigured) {
     final missing = <String>[
       if (!supabaseUrl.startsWith('https://')) 'SUPABASE_URL',
@@ -87,10 +86,9 @@ Future<void> main() async {
       await Supabase.initialize(
         url: supabaseUrl,
         publishableKey: supabasePublishableKey,
-      ).timeout(const Duration(seconds: 12));
+      );
       supabaseReady = true;
     } catch (error, stackTrace) {
-      // Keep startup alive; the auth gate will show the configuration screen.
       debugPrint('Twice Supabase startup failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       supabaseReady = false;
@@ -102,8 +100,18 @@ Future<void> main() async {
           'Supabase initialization failed (${error.runtimeType}): $details';
     }
   }
+  debugPrint(
+    'TWICE_BOOT supabase ready=$supabaseReady in ${watch.elapsedMilliseconds}ms',
+  );
+  supabaseBootFinished.value = true;
+}
 
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  TwiceMedia.configure();
   runApp(const TwiceApp());
+  unawaited(_bootSupabase());
+  unawaited(TwiceMedia.trimDiskCache());
 }
 
 class NativeCore {
@@ -166,19 +174,183 @@ class TwiceAuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!supabaseReady) {
-      return TwiceSignInPage(
-        configurationMissing: true,
-        startupError: supabaseStartupError,
-      );
-    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: supabaseBootFinished,
+      builder: (context, finished, _) {
+        if (!finished) return const _TwiceSplash();
+        if (!supabaseReady) {
+          return TwiceSignInPage(
+            configurationMissing: true,
+            startupError: supabaseStartupError,
+          );
+        }
+        return StreamBuilder<AuthState>(
+          stream: Supabase.instance.client.auth.onAuthStateChange,
+          builder: (context, snapshot) {
+            final session = Supabase.instance.client.auth.currentSession;
+            if (session != null) return const TwiceShell();
+            return const TwiceSignInPage();
+          },
+        );
+      },
+    );
+  }
+}
 
-    return StreamBuilder<AuthState>(
-      stream: Supabase.instance.client.auth.onAuthStateChange,
-      builder: (context, snapshot) {
-        final session = Supabase.instance.client.auth.currentSession;
-        if (session != null) return const TwiceShell();
-        return const TwiceSignInPage();
+class _TwiceSplash extends StatefulWidget {
+  const _TwiceSplash();
+
+  @override
+  State<_TwiceSplash> createState() => _TwiceSplashState();
+}
+
+class _TwiceSplashState extends State<_TwiceSplash> {
+  bool _slow = false;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _slow = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: canvas,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                colors: [Color(0xFFFF5FA2), Color(0xFFFF2D75), Color(0xFFD946EF)],
+              ).createShader(bounds),
+              child: const Text(
+                'Twice',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 46,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            AnimatedOpacity(
+              opacity: _slow ? 1 : 0,
+              duration: const Duration(milliseconds: 300),
+              child: const Text(
+                'Still connecting… check your internet.',
+                style: TextStyle(color: muted, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Facebook-style placeholder shown instead of a spinner on a cold start
+/// with no cached feed.
+class _FeedSkeleton extends StatefulWidget {
+  const _FeedSkeleton();
+
+  @override
+  State<_FeedSkeleton> createState() => _FeedSkeletonState();
+}
+
+class _FeedSkeletonState extends State<_FeedSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1000),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        final tone = Color.lerp(
+          const Color(0xFFE6E8EC),
+          const Color(0xFFF3F4F6),
+          _pulse.value,
+        )!;
+        Widget box(double w, double h, {double r = 8}) => Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            color: tone,
+            borderRadius: BorderRadius.circular(r),
+          ),
+        );
+        return ListView(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+          children: [
+            SizedBox(
+              height: 96,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                itemCount: 6,
+                separatorBuilder: (context, index) => const SizedBox(width: 12),
+                itemBuilder: (context, index) => Column(
+                  children: [
+                    box(64, 64, r: 32),
+                    const SizedBox(height: 8),
+                    box(46, 10),
+                  ],
+                ),
+              ),
+            ),
+            for (var i = 0; i < 3; i++)
+              Container(
+                margin: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+                color: Colors.white,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(13),
+                      child: Row(
+                        children: [
+                          box(44, 44, r: 22),
+                          const SizedBox(width: 10),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              box(130, 12),
+                              const SizedBox(height: 7),
+                              box(90, 10),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(height: 260, color: tone),
+                    const SizedBox(height: 14),
+                  ],
+                ),
+              ),
+          ],
+        );
       },
     );
   }
@@ -812,8 +984,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
       loading = true;
       error = null;
     });
-    // Render durable local data first. The network refresh below updates the
-    // same UI after the cache has already appeared, avoiding a blank cold start.
+    // Render durable local data first (a few ms), like Facebook's cold start.
     try {
       final cached = await Future.wait<dynamic>([
         repo.cachedMyProfile(),
@@ -837,31 +1008,47 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
     } catch (_) {
       /* A first install simply has an empty cache. */
     }
-    try {
-      final values = await Future.wait<dynamic>([
-        repo.myProfile(),
-        repo.feed(),
-        repo.loadStories().catchError((_) => <Map<String, dynamic>>[]),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        profile = Map<String, dynamic>.from(values[0] as Map);
-        posts = (values[1] as List<Map<String, dynamic>>)
-            .map(SocialPost.new)
-            .toList();
-        stories = values[2] as List<Map<String, dynamic>>;
-        loading = false;
-        error = null;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        error = posts.isNotEmpty || profile.isNotEmpty
-            ? null
-            : _friendlyError(e);
-      });
+
+    // BOOTFIX: profile, feed and stories load independently and each one
+    // paints the moment it arrives, instead of waiting for the slowest.
+    var anySuccess = false;
+    Object? firstError;
+    Future<void> run<T>(Future<T> work, void Function(T value) apply) async {
+      try {
+        final value = await work.timeout(const Duration(seconds: 40));
+        if (!mounted) return;
+        setState(() {
+          apply(value);
+          if (profile.isNotEmpty) loading = false;
+          error = null;
+        });
+        anySuccess = true;
+      } catch (e) {
+        firstError ??= e;
+      }
     }
+
+    await Future.wait<void>([
+      run<Map<String, dynamic>>(
+        repo.myProfile(),
+        (value) => profile = Map<String, dynamic>.from(value),
+      ),
+      run<List<Map<String, dynamic>>>(
+        repo.feed(),
+        (value) => posts = value.map(SocialPost.new).toList(),
+      ),
+      run<List<Map<String, dynamic>>>(
+        repo.loadStories(),
+        (value) => stories = value,
+      ),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      loading = false;
+      error = anySuccess || posts.isNotEmpty || profile.isNotEmpty
+          ? null
+          : _friendlyError(firstError ?? 'Unable to load.');
+    });
   }
 
   String _friendlyError(Object e) {
@@ -1015,8 +1202,8 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
                 ),
               ],
             ),
-      body: loading && posts.isEmpty && profile.isEmpty
-          ? const Center(child: CircularProgressIndicator())
+      body: loading && profile.isEmpty
+          ? const _FeedSkeleton()
           : error != null && profile.isEmpty
           ? _ErrorPanel(message: error!)
           : IndexedStack(

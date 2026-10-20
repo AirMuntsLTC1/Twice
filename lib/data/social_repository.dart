@@ -77,7 +77,73 @@ class SocialRepository {
     );
   }
 
-  Future<Map<String, dynamic>> ensureProfile() async {
+  // BOOTFIX: the profile only needs to be verified once per session. It used
+  // to run 3+ times on every launch, each time costing network round trips.
+  String? _ensuredFor;
+  Future<Map<String, dynamic>>? _ensuring;
+
+  Future<Map<String, dynamic>> ensureProfile() {
+    final uid = _db.auth.currentUser?.id;
+    final running = _ensuring;
+    if (running != null && _ensuredFor == uid) return running;
+    _ensuredFor = uid;
+    final work = _ensureProfileImpl();
+    _ensuring = work;
+    work.then<void>((_) {}, onError: (Object _) {
+      if (identical(_ensuring, work)) _ensuring = null;
+    });
+    return work;
+  }
+
+  /// One local-cache check per path, then ONE batched signing request per
+  /// 100 paths (instead of one HTTP request per image).
+  Future<Map<String, String>> _resolvePaths(
+    String bucket,
+    Iterable<String> paths, {
+    bool strict = false,
+  }) async {
+    final unique = paths.where((p) => p.isNotEmpty).toSet().toList();
+    final result = <String, String>{};
+    final missing = <String>[];
+    await Future.wait<void>(
+      unique.map((path) async {
+        final local = await OfflineMediaCache.instance.existingUri(
+          bucket,
+          path,
+        );
+        if (local != null) {
+          result[path] = local;
+        } else {
+          missing.add(path);
+        }
+      }),
+    );
+    for (var i = 0; i < missing.length; i += 100) {
+      final chunk = missing.sublist(i, min(i + 100, missing.length));
+      try {
+        final signed = await _db.storage
+            .from(bucket)
+            // ignore: deprecated_member_use
+            .createSignedUrls(chunk, 3600)
+            .timeout(const Duration(seconds: 15));
+        for (final item in signed) {
+          final url = item.signedUrl;
+          if (url.contains('token=')) result[item.path.toString()] = url;
+        }
+      } catch (e) {
+        if (strict) rethrow;
+      }
+    }
+    return result;
+  }
+
+  static bool _isStoragePath(String value) =>
+      value.isNotEmpty &&
+      value != 'pending' &&
+      !value.startsWith('http://') &&
+      !value.startsWith('https://');
+
+  Future<Map<String, dynamic>> _ensureProfileImpl() async {
     final user = _db.auth.currentUser;
     if (user == null) throw AuthException('Please sign in again.');
     final existing = await _db
@@ -226,34 +292,73 @@ class SocialRepository {
           'id,user_id,caption,visibility,comments_enabled,created_at,profiles!posts_user_id_fkey(id,username,display_name,avatar_url),post_media(id,media_url,thumbnail_url,media_type,position),post_likes(user_id),saved_posts(user_id)',
         )
         .order('created_at', ascending: false)
-        .range(offset, offset + limit - 1);
-    final resolved = await Future.wait<Map<String, dynamic>>(
-      (rows as List).map((raw) async {
-        final post = Map<String, dynamic>.from(raw as Map);
-        final authorRaw = post['profiles'];
+        .range(offset, offset + limit - 1)
+        .timeout(const Duration(seconds: 25));
 
-        // Resolve the avatar and media independently to reduce feed latency.
-        final avatarFuture = authorRaw is Map
-            ? _resolveProfileAvatar(Map<String, dynamic>.from(authorRaw))
-            : Future<Map<String, dynamic>?>.value(null);
-        final mediaFuture = _resolveMedia(
-          post['post_media'] as List? ?? const [],
-          'post-media',
-        );
-        final values = await Future.wait<dynamic>([avatarFuture, mediaFuture]);
+    final posts = (rows as List)
+        .map((raw) => Map<String, dynamic>.from(raw as Map))
+        .toList();
 
-        if (values[0] is Map<String, dynamic>) {
-          post['profiles'] = values[0];
+    // BOOTFIX: collect every storage path once (authors repeat across posts),
+    // then sign them all with a single batched request.
+    final needed = <String>{};
+    for (final post in posts) {
+      final author = post['profiles'];
+      if (author is Map) {
+        final path = (author['avatar_url'] ?? '').toString().trim();
+        if (_isStoragePath(path)) needed.add(path);
+      }
+      for (final media in (post['post_media'] as List? ?? const [])) {
+        if (media is! Map) continue;
+        for (final key in const ['media_url', 'thumbnail_url']) {
+          final path = (media[key] ?? '').toString().trim();
+          if (_isStoragePath(path)) needed.add(path);
         }
-        post['media_resolved'] = values[1] as List<Map<String, dynamic>>;
-        return post;
-      }),
+      }
+    }
+    // strict: if signing fails the caller keeps showing the cached feed.
+    final urls = await _resolvePaths('post-media', needed, strict: true);
+
+    String resolve(String path) {
+      if (path.isEmpty) return '';
+      if (!_isStoragePath(path)) return path;
+      return urls[path] ?? '';
+    }
+
+    for (final post in posts) {
+      final authorRaw = post['profiles'];
+      if (authorRaw is Map) {
+        final author = Map<String, dynamic>.from(authorRaw);
+        final path = (author['avatar_url'] ?? '').toString().trim();
+        author['avatar_object_path'] = _isStoragePath(path) ? path : '';
+        author['avatar_url'] = resolve(path);
+        post['profiles'] = author;
+      }
+      post['media_resolved'] = (post['post_media'] as List? ?? const [])
+          .whereType<Map>()
+          .map((raw) {
+            final item = Map<String, dynamic>.from(raw);
+            item['resolved_url'] = resolve(
+              (item['media_url'] ?? '').toString().trim(),
+            );
+            item['resolved_thumbnail_url'] = resolve(
+              (item['thumbnail_url'] ?? '').toString().trim(),
+            );
+            return item;
+          })
+          .toList();
+    }
+
+    await _cache.put(userId, 'feed', posts);
+    // Prefetch only after the screen is already drawn, so it never competes
+    // with the first paint for bandwidth.
+    unawaited(
+      Future<void>.delayed(
+        const Duration(seconds: 4),
+        () => _warmFeedMediaCache(posts),
+      ).catchError((Object _) {}),
     );
-    await _cache.put(userId, 'feed', resolved);
-    // Do not block first paint on media downloads. Successfully downloaded
-    // media paths are persisted into this feed cache for the next offline launch.
-    unawaited(_warmFeedMediaCache(resolved).catchError((Object _) {}));
-    return resolved;
+    return posts;
   }
 
   // FBFIX: lightweight, bounded prefetch of photos + thumbnails (3 at a time).
@@ -313,43 +418,6 @@ class SocialRepository {
       return await _db.storage.from(bucket).createSignedUrl(path, 3600);
     } catch (_) {
       return null;
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _resolveMedia(
-    List rows,
-    String bucket,
-  ) async {
-    return Future.wait<Map<String, dynamic>>(
-      rows.map((raw) async {
-        final item = Map<String, dynamic>.from(raw as Map);
-        final path = (item['media_url'] ?? '').toString().trim();
-        final thumbnailPath = (item['thumbnail_url'] ?? '').toString().trim();
-
-        // Resolve the main media and thumbnail concurrently.
-        final urls = await Future.wait<String>([
-          _resolveOneMediaUrl(path, bucket),
-          _resolveOneMediaUrl(thumbnailPath, bucket),
-        ]);
-        item['resolved_url'] = urls[0];
-        item['resolved_thumbnail_url'] = urls[1];
-        return item;
-      }),
-    );
-  }
-
-  Future<String> _resolveOneMediaUrl(String path, String bucket) async {
-    if (path.isEmpty) return '';
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      return path;
-    }
-
-    try {
-      final local = await OfflineMediaCache.instance.existingUri(bucket, path);
-      if (local != null) return local;
-      return await _db.storage.from(bucket).createSignedUrl(path, 3600);
-    } catch (_) {
-      return '';
     }
   }
 
@@ -615,24 +683,35 @@ class SocialRepository {
         .select('id,username,display_name,avatar_url')
         .inFilter('id', ids);
 
+    // BOOTFIX: resolve all avatars and story media with batched requests
+    // (this used to be one sequential HTTP request per story).
+    final profileRows = (profiles as List)
+        .map((raw) => Map<String, dynamic>.from(raw as Map))
+        .toList();
+    final avatarUrls = await _resolvePaths('post-media', [
+      for (final row in profileRows)
+        if (_isStoragePath((row['avatar_url'] ?? '').toString().trim()))
+          (row['avatar_url'] ?? '').toString().trim(),
+    ]);
     final byId = <String, Map<String, dynamic>>{};
-    for (final raw in profiles as List) {
-      final profile = await _resolveProfileAvatar(
-        Map<String, dynamic>.from(raw as Map),
-      );
-      byId[profile['id'].toString()] = profile;
+    for (final row in profileRows) {
+      final path = (row['avatar_url'] ?? '').toString().trim();
+      row['avatar_object_path'] = _isStoragePath(path) ? path : '';
+      row['avatar_url'] = _isStoragePath(path) ? (avatarUrls[path] ?? '') : path;
+      byId[row['id'].toString()] = row;
     }
 
+    final storyUrls = await _resolvePaths('stories', [
+      for (final story in stories)
+        if (_isStoragePath((story['media_url'] ?? '').toString()))
+          (story['media_url'] ?? '').toString(),
+    ]);
     for (final story in stories) {
       story['profiles'] = byId[story['user_id'].toString()] ?? {};
       final path = (story['media_url'] ?? '').toString();
-      try {
-        story['resolved_url'] = path.startsWith('http')
-            ? path
-            : await _db.storage.from('stories').createSignedUrl(path, 3600);
-      } catch (_) {
-        story['resolved_url'] = '';
-      }
+      story['resolved_url'] = _isStoragePath(path)
+          ? (storyUrls[path] ?? '')
+          : (path == 'pending' ? '' : path);
     }
 
     return stories;

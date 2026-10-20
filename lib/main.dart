@@ -177,7 +177,7 @@ class TwiceAuthGate extends StatelessWidget {
     return ValueListenableBuilder<bool>(
       valueListenable: supabaseBootFinished,
       builder: (context, finished, _) {
-        if (!finished) return const _TwiceSplash();
+        if (!finished && supabaseConfigured) return const _TwiceSplash();
         if (!supabaseReady) {
           return TwiceSignInPage(
             configurationMissing: true,

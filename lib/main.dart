@@ -2006,11 +2006,12 @@ class _PostFollowButtonState extends State<_PostFollowButton> {
   Future<void> _load() async {
     final generation = ++_generation;
     if (widget.profileId.isEmpty) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _label = '';
           _loading = false;
         });
+      }
       return;
     }
     if (mounted) setState(() => _loading = true);
@@ -2194,7 +2195,6 @@ class PostCard extends StatelessWidget {
                 if (post.author['id'] != null &&
                     post.author['id'].toString().isNotEmpty)
                   _PostFollowButton(
-                    key: ValueKey('post-follow-${post.author['id']}'),
                     profileId: post.author['id'].toString(),
                     onChanged: onCommentChanged,
                   ),

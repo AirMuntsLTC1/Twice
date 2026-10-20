@@ -1783,6 +1783,7 @@ class _PostMediaItemState extends State<_PostMediaItem> {
   bool _failed = false;
   bool _userPaused = false;
   bool _showVideoControls = true;
+  bool _hasVideoFrame = false;
   double _visibleFraction = 0;
   Timer? _controlsTimer;
 
@@ -1790,6 +1791,9 @@ class _PostMediaItemState extends State<_PostMediaItem> {
       (widget.media['media_type'] ?? '').toString().toLowerCase() == 'video';
 
   String get _url => (widget.media['resolved_url'] ?? '').toString().trim();
+
+  String get _thumbnailUrl =>
+      (widget.media['resolved_thumbnail_url'] ?? '').toString().trim();
 
   @override
   void initState() {
@@ -1805,23 +1809,33 @@ class _PostMediaItemState extends State<_PostMediaItem> {
 
     final controller = VideoPlayerController.networkUrl(Uri.parse(_url));
     _controller = controller;
+    controller.addListener(_onVideoValueChanged);
+
     try {
       await controller.initialize();
       await controller.setLooping(true);
       await controller.setVolume(1);
-      if (!mounted) {
+      if (!mounted || !identical(_controller, controller)) {
+        controller.removeListener(_onVideoValueChanged);
         await controller.dispose();
         return;
       }
       setState(() {});
       _syncPlayback(controller);
-      if (controller.value.isPlaying) {
-        _showControlsTemporarily();
-      }
     } catch (_) {
+      controller.removeListener(_onVideoValueChanged);
       await controller.dispose();
       if (identical(_controller, controller)) _controller = null;
       if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  void _onVideoValueChanged() {
+    final controller = _controller;
+    if (!mounted || controller == null || _hasVideoFrame) return;
+    if (controller.value.isInitialized &&
+        controller.value.position > Duration.zero) {
+      setState(() => _hasVideoFrame = true);
     }
   }
 
@@ -1841,22 +1855,29 @@ class _PostMediaItemState extends State<_PostMediaItem> {
         controller.play();
         _showControlsTemporarily();
       }
-    } else {
-      if (controller.value.isPlaying) controller.pause();
+    } else if (controller.value.isPlaying) {
+      controller.pause();
     }
   }
 
   @override
   void didUpdateWidget(covariant _PostMediaItem oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.media['resolved_url'] != widget.media['resolved_url'] ||
+
+    // Signed URLs may refresh while the underlying media object stays the same.
+    // Keep the existing player in that case to avoid feed-scroll flicker.
+    final oldPath = oldWidget.media['media_url'];
+    final newPath = widget.media['media_url'];
+    if (oldPath != newPath ||
         oldWidget.media['media_type'] != widget.media['media_type']) {
       final old = _controller;
       _controller = null;
+      old?.removeListener(_onVideoValueChanged);
+      old?.pause();
+      old?.dispose();
       _failed = false;
       _userPaused = false;
-      _visibleFraction = 0;
-      old?.dispose();
+      _hasVideoFrame = false;
       _initializeVideo();
     }
   }
@@ -1864,9 +1885,40 @@ class _PostMediaItemState extends State<_PostMediaItem> {
   @override
   void dispose() {
     _controlsTimer?.cancel();
-    _controller?.pause();
-    _controller?.dispose();
+    final controller = _controller;
+    if (controller != null) {
+      controller.removeListener(_onVideoValueChanged);
+      controller.pause();
+      controller.dispose();
+    }
     super.dispose();
+  }
+
+  Widget _poster({bool cover = false}) {
+    final url = _thumbnailUrl;
+    return ColoredBox(
+      color: const Color(0xFFF4F5F7),
+      child: Stack(
+        fit: StackFit.expand,
+        alignment: Alignment.center,
+        children: [
+          if (url.isNotEmpty)
+            Image.network(
+              url,
+              fit: cover ? BoxFit.cover : BoxFit.contain,
+              width: double.infinity,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+          const Center(
+            child: Icon(
+              Icons.play_circle_outline_rounded,
+              color: Color(0xFF65676B),
+              size: 52,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1900,36 +1952,26 @@ class _PostMediaItemState extends State<_PostMediaItem> {
     }
 
     final controller = _controller;
-    if (_failed) {
-      return const ColoredBox(
-        color: Colors.black,
-        child: Center(
-          child: Icon(Icons.error_outline, color: Colors.white, size: 42),
-        ),
-      );
-    }
-    if (controller == null || !controller.value.isInitialized) {
-      return const ColoredBox(
-        color: Colors.black,
-        child: Center(child: CircularProgressIndicator(color: Colors.white)),
-      );
-    }
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _showControlsTemporarily,
-      child: VisibilityDetector(
-        key: ValueKey('twice-video-$url'),
-        onVisibilityChanged: (info) {
-          _visibleFraction = info.visibleFraction;
-          _syncPlayback(controller);
-        },
-        child: ColoredBox(
-          color: Colors.black,
-          child: Stack(
-            fit: StackFit.expand,
-            alignment: Alignment.center,
-            children: [
+    return VisibilityDetector(
+      key: ValueKey('twice-video-${widget.media['media_url'] ?? url}'),
+      onVisibilityChanged: (info) {
+        _visibleFraction = info.visibleFraction;
+        final active = _controller;
+        if (active != null) _syncPlayback(active);
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _showControlsTemporarily,
+        child: Stack(
+          fit: StackFit.expand,
+          alignment: Alignment.center,
+          children: [
+            // Keep a real poster underneath initialization, buffering and errors.
+            _poster(),
+            if (!_failed &&
+                controller != null &&
+                controller.value.isInitialized &&
+                _hasVideoFrame)
               FittedBox(
                 fit: BoxFit.contain,
                 child: SizedBox(
@@ -1938,37 +1980,59 @@ class _PostMediaItemState extends State<_PostMediaItem> {
                   child: VideoPlayer(controller),
                 ),
               ),
-              if (_showVideoControls)
-                Center(
-                  child: Material(
-                    color: const Color(0x99000000),
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      tooltip: controller.value.isPlaying
-                          ? 'Pause video'
-                          : 'Play video',
-                      onPressed: () {
-                        if (controller.value.isPlaying) {
-                          _userPaused = true;
-                          controller.pause();
-                        } else {
-                          _userPaused = false;
-                          _syncPlayback(controller);
-                        }
-                        _showControlsTemporarily();
-                      },
-                      icon: Icon(
-                        controller.value.isPlaying
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        color: Colors.white,
-                        size: 42,
-                      ),
+            if (!_failed &&
+                (controller == null || !controller.value.isInitialized))
+              const Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF65676B),
+                  ),
+                ),
+              ),
+            if (_failed)
+              const Center(
+                child: Icon(
+                  Icons.refresh_rounded,
+                  color: Color(0xFF65676B),
+                  size: 42,
+                ),
+              ),
+            if (controller != null &&
+                controller.value.isInitialized &&
+                _hasVideoFrame &&
+                _showVideoControls)
+              Center(
+                child: Material(
+                  color: const Color(0x99000000),
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    tooltip: controller.value.isPlaying
+                        ? 'Pause video'
+                        : 'Play video',
+                    onPressed: () {
+                      if (controller.value.isPlaying) {
+                        _userPaused = true;
+                        controller.pause();
+                      } else {
+                        _userPaused = false;
+                        _syncPlayback(controller);
+                      }
+                      _showControlsTemporarily();
+                    },
+                    icon: Icon(
+                      controller.value.isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 42,
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );

@@ -1,4 +1,5 @@
 import 'package:photo_manager/photo_manager.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
 import 'local_cache.dart';
 
@@ -189,7 +190,7 @@ class SocialRepository {
     final rows = await _db
         .from('posts')
         .select(
-          'id,user_id,caption,visibility,comments_enabled,created_at,profiles!posts_user_id_fkey(id,username,display_name,avatar_url),post_media(id,media_url,media_type,position),post_likes(user_id),saved_posts(user_id)',
+          'id,user_id,caption,visibility,comments_enabled,created_at,profiles!posts_user_id_fkey(id,username,display_name,avatar_url),post_media(id,media_url,thumbnail_url,media_type,position),post_likes(user_id),saved_posts(user_id)',
         )
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1);
@@ -227,6 +228,21 @@ class SocialRepository {
             : await _db.storage.from(bucket).createSignedUrl(path, 3600);
       } catch (_) {
         item['resolved_url'] = '';
+      }
+
+      final thumbnailPath = (item['thumbnail_url'] ?? '').toString().trim();
+      if (thumbnailPath.isNotEmpty) {
+        try {
+          item['resolved_thumbnail_url'] = thumbnailPath.startsWith('http')
+              ? thumbnailPath
+              : await _db.storage
+                    .from(bucket)
+                    .createSignedUrl(thumbnailPath, 3600);
+        } catch (_) {
+          item['resolved_thumbnail_url'] = '';
+        }
+      } else {
+        item['resolved_thumbnail_url'] = '';
       }
       result.add(item);
     }
@@ -402,9 +418,41 @@ class SocialRepository {
               fileOptions: FileOptions(contentType: _mime(ext), upsert: false),
             );
         uploadedPaths.add(objectPath);
+
+        String? thumbnailPath;
+        if (type == 'video') {
+          try {
+            final bytes = await VideoThumbnail.thumbnailData(
+              video: file.path,
+              imageFormat: ImageFormat.JPEG,
+              maxWidth: 720,
+              quality: 78,
+            );
+            if (bytes != null && bytes.isNotEmpty) {
+              final candidate =
+                  '$userId/$postId/${DateTime.now().microsecondsSinceEpoch}_${position}_thumb.jpg';
+              await _db.storage
+                  .from('post-media')
+                  .uploadBinary(
+                    candidate,
+                    bytes,
+                    fileOptions: const FileOptions(
+                      contentType: 'image/jpeg',
+                      upsert: false,
+                    ),
+                  );
+              uploadedPaths.add(candidate);
+              thumbnailPath = candidate;
+            }
+          } catch (_) {
+            // Thumbnail extraction is optional; preserve the video upload.
+          }
+        }
+
         await _db.from('post_media').insert({
           'post_id': postId,
           'media_url': objectPath,
+          'thumbnail_url': thumbnailPath,
           'media_type': type,
           'position': position,
         });

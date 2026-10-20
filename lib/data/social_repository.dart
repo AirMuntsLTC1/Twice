@@ -350,11 +350,30 @@ class SocialRepository {
           .maybeSingle() !=
       null;
   Future<void> follow(String profileId, {required bool privateAccount}) async {
-    await _db.from('follows').upsert({
-      'follower_id': userId,
-      'following_id': profileId,
-      'status': privateAccount ? 'pending' : 'accepted',
-    }, onConflict: 'follower_id,following_id');
+    if (profileId == userId) {
+      throw ArgumentError('You cannot follow your own account.');
+    }
+
+    final existing = await _db
+        .from('follows')
+        .select('follower_id')
+        .eq('follower_id', userId)
+        .eq('following_id', profileId)
+        .maybeSingle();
+
+    if (existing != null) return;
+
+    try {
+      await _db.from('follows').insert({
+        'follower_id': userId,
+        'following_id': profileId,
+        'status': privateAccount ? 'pending' : 'accepted',
+      });
+    } on PostgrestException catch (e) {
+      // A concurrent tap may have created the same relationship already.
+      if (e.code == '23505') return;
+      rethrow;
+    }
   }
 
   Future<void> unfollow(String profileId) async {

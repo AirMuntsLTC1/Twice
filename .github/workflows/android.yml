@@ -90,11 +90,29 @@ jobs:
           # Gradle 9 no longer provides jcenter().
           patched = re.sub(r"(?m)^\s*jcenter\(\)\s*\n", "", patched)
 
+          # AndroidX dependencies require compileSdk 34 or newer.
+          patched, sdk_count = re.subn(
+              r"(?m)^(\s*compileSdkVersion\s+)33\s*$",
+              r"\g<1>36",
+              patched,
+          )
+          if sdk_count == 0:
+              patched, sdk_count = re.subn(
+                  r"(?m)^(\s*compileSdk\s+)33\s*$",
+                  r"\g<1>36",
+                  patched,
+              )
+          if sdk_count != 1:
+              raise SystemExit(
+                  "Expected exactly one compileSdk 33 declaration in "
+                  "video_thumbnail; found none or multiple. No plugin file changed."
+              )
+
           if "jcenter()" in patched or "com.android.library" not in patched:
               raise SystemExit("Plugin patch validation failed.")
 
           path.write_text(patched)
-          print("Patched video_thumbnail 0.5.6 for the CI Gradle setup.")
+          print("Patched video_thumbnail for Gradle compatibility and compileSdk 36.")
           PYTHON
 
 

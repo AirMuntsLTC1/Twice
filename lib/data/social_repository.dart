@@ -1130,13 +1130,30 @@ class SocialRepository {
   }
 
   Future<String> createConversation(String otherUserId) async {
-    if (otherUserId == userId) {
+    final session = _db.auth.currentSession;
+    if (session == null) {
+      throw AuthException('Your session has expired. Please sign in again.');
+    }
+
+    // Validate the active access token with Supabase before writing.
+    final verified = await _db.auth.getUser();
+    final uid = verified.user.id;
+
+    if (uid != session.user.id) {
+      throw AuthException(
+        'Authentication identity mismatch. Please sign out and sign in again.',
+      );
+    }
+
+    if (otherUserId == uid) {
       throw const FormatException('You cannot message yourself.');
     }
+
     final existing = await _db
         .from('conversation_members')
         .select('conversation_id')
-        .eq('user_id', userId);
+        .eq('user_id', uid);
+
     for (final row in (existing as List)) {
       final id = row['conversation_id'].toString();
       final other = await _db
@@ -1147,16 +1164,20 @@ class SocialRepository {
           .maybeSingle();
       if (other != null) return id;
     }
+
     final created = await _db
         .from('conversations')
-        .insert({'created_by': userId, 'is_group': false})
+        .insert({'created_by': uid, 'is_group': false})
         .select('id')
         .single();
+
     final id = created['id'].toString();
+
     await _db.from('conversation_members').insert([
-      {'conversation_id': id, 'user_id': userId},
+      {'conversation_id': id, 'user_id': uid},
       {'conversation_id': id, 'user_id': otherUserId},
     ]);
+
     return id;
   }
 

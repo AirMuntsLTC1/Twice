@@ -4671,7 +4671,12 @@ class _ProfilePageState extends State<ProfilePage> {
         padding: const EdgeInsets.only(bottom: 28),
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+            padding: EdgeInsets.fromLTRB(
+              18,
+              MediaQuery.of(context).padding.top + 8,
+              18,
+              12,
+            ),
             child: Row(
               children: [
                 Expanded(

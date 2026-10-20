@@ -1,0 +1,13 @@
+TWICE OFFLINE-FIRST CACHE PATCH
+
+This patch adds a persistent SQLite cache for feed/profile/comments, an account-scoped outbox table for future offline mutations, and cache-first feed startup with remote refresh. It does not claim every action is fully offline yet: media file downloads, replaying queued operations, offline post/story uploads, and conflict resolution still require implementation and testing.
+
+UPDATE IN TERMUX
+1. Back up the current project.
+2. Extract this ZIP to a temporary folder first.
+3. Copy lib/data/local_cache.dart into lib/data/.
+4. Replace lib/main.dart, lib/data/social_repository.dart and pubspec.yaml only after reviewing your own uncommitted changes.
+5. Run flutter pub get in the GitHub Actions workflow (not in Termux if Flutter is unavailable).
+6. Review GitHub Actions results before installing the APK.
+
+Supabase migrations/policies are unchanged. Never disable RLS to make offline actions work.

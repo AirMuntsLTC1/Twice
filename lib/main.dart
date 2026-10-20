@@ -584,7 +584,7 @@ class TwiceShell extends StatefulWidget {
   State<TwiceShell> createState() => _TwiceShellState();
 }
 
-class _TwiceShellState extends State<TwiceShell> {
+class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
   final repo = SocialRepository.instance;
   int selected = 0;
   bool loading = true;
@@ -595,10 +595,49 @@ class _TwiceShellState extends State<TwiceShell> {
   final GlobalKey<StoryStripState> _storyStripKey =
       GlobalKey<StoryStripState>();
 
+  DateTime? _lastResumeRefresh;
+  bool _refreshingOnResume = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAll();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+
+    final now = DateTime.now();
+    final previous = _lastResumeRefresh;
+    if (previous != null &&
+        now.difference(previous) < const Duration(seconds: 15)) {
+      return;
+    }
+
+    _lastResumeRefresh = now;
+    _refreshAfterResume();
+  }
+
+  Future<void> _refreshAfterResume() async {
+    if (_refreshingOnResume || !mounted) return;
+    _refreshingOnResume = true;
+
+    try {
+      await repo.syncPendingLikes();
+      if (mounted) await _loadAll();
+    } catch (e) {
+      debugPrint('Twice resume refresh deferred: $e');
+    } finally {
+      _refreshingOnResume = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _syncPendingLikes() async {

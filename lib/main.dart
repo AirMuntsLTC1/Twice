@@ -667,10 +667,63 @@ class _TwiceShellState extends State<TwiceShell> {
           style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 25),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loadAll,
-            icon: const Icon(Icons.refresh_rounded),
+          PopupMenuButton<String>(
+            tooltip: 'Create',
+            offset: const Offset(0, 48),
+            position: PopupMenuPosition.under,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            elevation: 10,
+            onSelected: (value) {
+              if (value == 'create') {
+                setState(() => selected = 2);
+              } else if (value == 'story') {
+                _message('Story creation is not connected yet.');
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(
+                value: 'create',
+                child: Row(
+                  children: [
+                    Icon(Icons.post_add_rounded, color: violet),
+                    SizedBox(width: 12),
+                    Text(
+                      'Create post',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'story',
+                child: Row(
+                  children: [
+                    Icon(Icons.add_circle_outline_rounded, color: violet),
+                    SizedBox(width: 12),
+                    Text(
+                      'Create story',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            child: Container(
+              width: 40,
+              height: 40,
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: violet,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Icon(
+                Icons.add_rounded,
+                color: Colors.white,
+                size: 27,
+              ),
+            ),
           ),
           IconButton(
             tooltip: 'Messages',
@@ -689,6 +742,10 @@ class _TwiceShellState extends State<TwiceShell> {
               index: selected,
               children: [
                 FeedPage(
+                  onCreateStory: (asset, caption) async {
+                    await repo.publishStory(asset, caption);
+                    await _loadAll();
+                  },
                   posts: posts,
                   onLike: _like,
                   onRefresh: _loadAll,
@@ -741,18 +798,188 @@ class _TwiceShellState extends State<TwiceShell> {
 }
 
 class StoryStrip extends StatelessWidget {
-  const StoryStrip({super.key});
+  const StoryStrip({super.key, required this.onCreateStory});
+
+  final Future<void> Function(AssetEntity asset, String caption) onCreateStory;
+
+  Future<void> _openCreator(BuildContext context) async {
+    final permission = await PhotoManager.requestPermissionExtend();
+    if (!permission.isAuth && !permission.hasAccess) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Allow photo access to create a story.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final imagePaths = await PhotoManager.getAssetPathList(
+      type: RequestType.image,
+      onlyAll: true,
+    );
+    final videoPaths = await PhotoManager.getAssetPathList(
+      type: RequestType.video,
+      onlyAll: true,
+    );
+    final assets = <AssetEntity>[];
+    if (imagePaths.isNotEmpty) {
+      assets.addAll(
+        await imagePaths.first.getAssetListPaged(page: 0, size: 100),
+      );
+    }
+    if (videoPaths.isNotEmpty) {
+      assets.addAll(
+        await videoPaths.first.getAssetListPaged(page: 0, size: 100),
+      );
+    }
+    assets.sort(
+      (a, b) => (b.createDateSecond ?? 0).compareTo(a.createDateSecond ?? 0),
+    );
+    if (!context.mounted) return;
+    if (assets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No photos or videos found.')),
+      );
+      return;
+    }
+
+    final asset = await showModalBottomSheet<AssetEntity>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.65,
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Choose story media',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+              ),
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.all(8),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
+                  ),
+                  itemCount: assets.length,
+                  itemBuilder: (context, index) {
+                    final item = assets[index];
+                    return FutureBuilder<Uint8List?>(
+                      future: item.thumbnailDataWithSize(
+                        const ThumbnailSize(240, 240),
+                      ),
+                      builder: (context, snapshot) => InkWell(
+                        onTap: () => Navigator.pop(sheetContext, item),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (snapshot.data != null)
+                              Image.memory(snapshot.data!, fit: BoxFit.cover)
+                            else
+                              const ColoredBox(
+                                color: Color(0xFFF0F0F4),
+                                child: Icon(Icons.image_outlined),
+                              ),
+                            if (item.type == AssetType.video)
+                              const Positioned(
+                                right: 6,
+                                bottom: 6,
+                                child: Icon(
+                                  Icons.play_circle_fill,
+                                  color: Colors.white,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (asset == null || !context.mounted) return;
+
+    final captionController = TextEditingController();
+    final caption = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          20,
+          16,
+          MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Create story',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: captionController,
+              maxLength: 300,
+              decoration: const InputDecoration(
+                hintText: 'Write a caption (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () =>
+                    Navigator.pop(sheetContext, captionController.text),
+                child: const Text('Share story'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    captionController.dispose();
+    if (caption == null || !context.mounted) return;
+
+    try {
+      await onCreateStory(asset, caption);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Story shared for 24 hours.')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not share story: $e')));
+      }
+    }
+  }
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 104,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-        children: [
-          SizedBox(
-            width: 70,
+  Widget build(BuildContext context) => SizedBox(
+    height: 104,
+    child: ListView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+      children: [
+        SizedBox(
+          width: 70,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(40),
+            onTap: () => _openCreator(context),
             child: Column(
               children: [
                 Container(
@@ -780,21 +1007,23 @@ class StoryStrip extends StatelessWidget {
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
 }
 
 class FeedPage extends StatelessWidget {
   const FeedPage({
     super.key,
+    required this.onCreateStory,
     required this.posts,
     required this.onLike,
     required this.onRefresh,
     required this.onCommentChanged,
   });
 
+  final Future<void> Function(AssetEntity asset, String caption) onCreateStory;
   final List<SocialPost> posts;
   final ValueChanged<SocialPost> onLike;
   final Future<void> Function() onRefresh;
@@ -806,7 +1035,7 @@ class FeedPage extends StatelessWidget {
     child: ListView(
       padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
       children: [
-        const StoryStrip(),
+        StoryStrip(onCreateStory: onCreateStory),
         const SizedBox(height: 5),
         if (posts.isEmpty)
           const Padding(
@@ -952,6 +1181,9 @@ class _PostMediaItemState extends State<_PostMediaItem> {
       }
       setState(() {});
       _syncPlayback(controller);
+      if (controller.value.isPlaying) {
+        _showControlsTemporarily();
+      }
     } catch (_) {
       await controller.dispose();
       if (identical(_controller, controller)) _controller = null;
@@ -971,7 +1203,10 @@ class _PostMediaItemState extends State<_PostMediaItem> {
   void _syncPlayback(VideoPlayerController controller) {
     if (!mounted || !controller.value.isInitialized) return;
     if (_visibleFraction >= 0.6 && !_userPaused) {
-      if (!controller.value.isPlaying) controller.play();
+      if (!controller.value.isPlaying) {
+        controller.play();
+        _showControlsTemporarily();
+      }
     } else {
       if (controller.value.isPlaying) controller.pause();
     }
@@ -1866,32 +2101,61 @@ class _CommentsSheetState extends State<CommentsSheet> {
     super.dispose();
   }
 
+  String? loadError;
+  bool sending = false;
+
   Future<void> _load() async {
+    if (mounted) {
+      setState(() {
+        busy = true;
+        loadError = null;
+      });
+    }
     try {
       final data = await SocialRepository.instance.comments(widget.post.id);
       if (mounted) {
         setState(() {
           rows = data;
           busy = false;
+          loadError = null;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() {
+          busy = false;
+          loadError = e.toString();
+        });
+      }
     }
   }
 
   Future<void> _send() async {
+    if (sending) return;
     final text = controller.text.trim();
     if (text.isEmpty) return;
+
+    setState(() => sending = true);
     try {
       await SocialRepository.instance.addComment(widget.post.id, text);
+      if (!mounted) return;
       controller.clear();
+      FocusScope.of(context).unfocus();
       await _load();
+      if (mounted && loadError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Comment sent, but refresh failed: $loadError'),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Comment failed: $e')));
       }
+    } finally {
+      if (mounted) setState(() => sending = false);
     }
   }
 
@@ -1923,6 +2187,25 @@ class _CommentsSheetState extends State<CommentsSheet> {
         Expanded(
           child: busy
               ? const Center(child: CircularProgressIndicator())
+              : loadError != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Could not load comments'),
+                        const SizedBox(height: 8),
+                        Text(loadError!, textAlign: TextAlign.center),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: _load,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
               : rows.isEmpty
               ? const Center(child: Text('No comments yet'))
               : ListView.builder(
@@ -1960,8 +2243,15 @@ class _CommentsSheetState extends State<CommentsSheet> {
                 ),
               ),
               IconButton(
-                onPressed: _send,
-                icon: const Icon(Icons.send, color: violet),
+                onPressed: sending ? null : _send,
+                tooltip: 'Send comment',
+                icon: sending
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send, color: violet),
               ),
             ],
           ),

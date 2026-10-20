@@ -289,6 +289,46 @@ class SocialRepository {
     }
   }
 
+  Future<void> publishStory(AssetEntity asset, String caption) async {
+    final file = await asset.file;
+    if (file == null) {
+      throw Exception('Could not read the selected story media.');
+    }
+
+    final ext = file.path.split('.').last.toLowerCase();
+    final storyId = await _db
+        .from('stories')
+        .insert({
+          'user_id': userId,
+          'media_url': 'pending',
+          'media_type': asset.type == AssetType.video ? 'video' : 'image',
+          'caption': caption.trim(),
+        })
+        .select('id')
+        .single();
+
+    final id = storyId['id'].toString();
+    final objectPath =
+        '$userId/$id/${DateTime.now().microsecondsSinceEpoch}.$ext';
+
+    try {
+      await _db.storage
+          .from('stories')
+          .upload(
+            objectPath,
+            file,
+            fileOptions: FileOptions(contentType: _mime(ext), upsert: false),
+          );
+
+      await _db.from('stories').update({'media_url': objectPath}).eq('id', id);
+    } catch (_) {
+      try {
+        await _db.from('stories').delete().eq('id', id);
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
   String _mime(String ext) => switch (ext) {
     'png' => 'image/png',
     'webp' => 'image/webp',

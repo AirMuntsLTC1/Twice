@@ -1137,7 +1137,13 @@ class SocialRepository {
 
     // Validate the active access token with Supabase before writing.
     final verified = await _db.auth.getUser();
-    final uid = verified.user.id;
+    final verifiedUser = verified.user;
+    if (verifiedUser == null) {
+      throw AuthException(
+        'Could not verify your account. Please sign in again.',
+      );
+    }
+    final uid = verifiedUser.id;
 
     if (uid != session.user.id) {
       throw AuthException(

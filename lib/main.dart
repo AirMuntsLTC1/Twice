@@ -5645,30 +5645,32 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      _searchField(),
-      _tabs(),
-      if (loading && (people.isNotEmpty || posts.isNotEmpty))
-        const SizedBox(
-          height: 2,
-          child: LinearProgressIndicator(
-            color: violet,
-            backgroundColor: Colors.transparent,
-          ),
-        )
-      else
-        const SizedBox(height: 2),
-      Expanded(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          child: KeyedSubtree(
-            key: ValueKey('${tab.name}-${query.isEmpty}'),
-            child: tab == _SearchTab.people ? _peopleBody() : _postsBody(),
+  Widget build(BuildContext context) => SafeArea(
+    child: Column(
+      children: [
+        _searchField(),
+        _tabs(),
+        if (loading && (people.isNotEmpty || posts.isNotEmpty))
+          const SizedBox(
+            height: 2,
+            child: LinearProgressIndicator(
+              color: violet,
+              backgroundColor: Colors.transparent,
+            ),
+          )
+        else
+          const SizedBox(height: 2),
+        Expanded(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: KeyedSubtree(
+              key: ValueKey('${tab.name}-${query.isEmpty}'),
+              child: tab == _SearchTab.people ? _peopleBody() : _postsBody(),
+            ),
           ),
         ),
-      ),
-    ],
+      ],
+    ),
   );
 }
 

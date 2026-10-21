@@ -4579,10 +4579,16 @@ class _CreatePageState extends State<CreatePage> {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Add more media',
-                    onPressed: _pick,
+                    tooltip: 'Music',
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Music selection is not available yet.'),
+                        ),
+                      );
+                    },
                     icon: const Icon(
-                      Icons.video_library_outlined,
+                      Icons.music_note_rounded,
                       color: Color(0xFF0095F6),
                       size: 27,
                     ),

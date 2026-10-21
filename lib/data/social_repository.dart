@@ -2292,7 +2292,12 @@ Future<void> sendMediaMessage({
         fileOptions: FileOptions(
           contentType: mediaType == 'video'
               ? 'video/mp4'
-              : 'image/jpeg',
+              : switch (ext) {
+                  '.gif' => 'image/gif',
+                  '.png' => 'image/png',
+                  '.webp' => 'image/webp',
+                  _ => 'image/jpeg',
+                },
           upsert: false,
         ),
       );

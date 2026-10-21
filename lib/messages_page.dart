@@ -1,8 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
@@ -645,6 +650,60 @@ class _ConversationPageState extends State<ConversationPage> {
     }
   }
 
+
+  Future<void> _captureFromCamera() async {
+    if (_sending) return;
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 92,
+      );
+      if (picked == null || !mounted) return;
+      setState(() => _sending = true);
+      await SocialRepository.instance.sendMediaMessage(
+        conversationId: widget.conversationId,
+        file: File(picked.path),
+        mediaType: 'image',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _openGifPicker() async {
+    if (_sending) return;
+    final gif = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _igSurface,
+      builder: (_) => const _TwiceGifPicker(),
+    );
+    if (gif == null || !mounted) return;
+    setState(() => _sending = true);
+    try {
+      final file = await _TwiceGifCache.instance.downloadGif(gif);
+      await SocialRepository.instance.sendMediaMessage(
+        conversationId: widget.conversationId,
+        file: file,
+        mediaType: 'image',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not send GIF: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   Future<void> _pickAndSendMedia({required bool video}) async {
     final permitted = await PhotoManager.requestPermissionExtend();
     if (!permitted.isAuth && !permitted.hasAccess) {
@@ -1014,7 +1073,7 @@ class _ConversationPageState extends State<ConversationPage> {
           children: [
             IconButton(
               icon: const Icon(Icons.camera_alt, color: _igBlue),
-              onPressed: _sending ? null : () => _pickAndSendMedia(video: false),
+              onPressed: _sending ? null : _captureFromCamera,
             ),
             Expanded(
               child: Container(
@@ -1050,9 +1109,9 @@ class _ConversationPageState extends State<ConversationPage> {
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.videocam_outlined, color: _igMuted, size: 22),
-                      onPressed:
-                          _sending ? null : () => _pickAndSendMedia(video: true),
+                      tooltip: 'GIF',
+                      icon: const Icon(Icons.gif_box_outlined, color: _igMuted, size: 24),
+                      onPressed: _sending ? null : _openGifPicker,
                       visualDensity: VisualDensity.compact,
                     ),
                   ],
@@ -1072,6 +1131,246 @@ class _ConversationPageState extends State<ConversationPage> {
                     )
                   : const Icon(Icons.send_rounded, color: _igBlue),
               onPressed: _sending ? null : _sendText,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+// =============================================================================
+// GIPHY picker + persistent offline-first cache
+// =============================================================================
+
+const _giphyApiKey = 'RTUwFs8WOiFqRq0K9UBkWS0OlUy3tVza';
+
+class _TwiceGifCache {
+  _TwiceGifCache._();
+  static final instance = _TwiceGifCache._();
+
+  Future<Directory> _dir() async {
+    final root = await getApplicationSupportDirectory();
+    final dir = Directory(p.join(root.path, 'twice_gif_cache'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
+  String _name(String value, String ext) {
+    final encoded = base64Url.encode(utf8.encode(value)).replaceAll('=', '');
+    return '${encoded.substring(0, encoded.length > 120 ? 120 : encoded.length)}.$ext';
+  }
+
+  Future<File?> cachedPreview(String url) async {
+    try {
+      final f = File(p.join((await _dir()).path, _name(url, 'preview.gif')));
+      return await f.exists() && await f.length() > 0 ? f : null;
+    } catch (_) { return null; }
+  }
+
+  Future<void> cachePreview(String url) async {
+    try {
+      if (await cachedPreview(url) != null) return;
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200 || response.bodyBytes.isEmpty) return;
+      final f = File(p.join((await _dir()).path, _name(url, 'preview.gif')));
+      await f.writeAsBytes(response.bodyBytes, flush: true);
+    } catch (_) {}
+  }
+
+  Future<File> downloadGif(Map<String, dynamic> gif) async {
+    final images = gif['images'] as Map? ?? const {};
+    final original = images['original'] as Map? ?? const {};
+    final url = (original['url'] ?? '').toString();
+    if (url.isEmpty) throw StateError('GIF URL is missing.');
+    final target = File(p.join((await _dir()).path, _name(url, 'gif')));
+    if (await target.exists() && await target.length() > 0) return target;
+    try {
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 25));
+      if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
+        throw HttpException('GIPHY returned ${response.statusCode}');
+      }
+      await target.writeAsBytes(response.bodyBytes, flush: true);
+      return target;
+    } catch (_) {
+      // If offline, send the already-cached animated preview for this GIF.
+      final previewUrl = (images['fixed_width'] as Map?)?['url']?.toString()
+          ?? (images['preview_gif'] as Map?)?['url']?.toString();
+      if (previewUrl != null) {
+        final cached = await cachedPreview(previewUrl);
+        if (cached != null) return cached;
+      }
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> cachedResults() async {
+    try {
+      final f = File(p.join((await _dir()).path, 'results.json'));
+      if (!await f.exists()) return [];
+      final decoded = jsonDecode(await f.readAsString());
+      return decoded is List
+          ? decoded.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+          : [];
+    } catch (_) { return []; }
+  }
+
+  Future<void> saveResults(List<Map<String, dynamic>> rows) async {
+    try {
+      final f = File(p.join((await _dir()).path, 'results.json'));
+      await f.writeAsString(jsonEncode(rows), flush: true);
+    } catch (_) {}
+  }
+}
+
+class _TwiceGifPicker extends StatefulWidget {
+  const _TwiceGifPicker();
+  @override
+  State<_TwiceGifPicker> createState() => _TwiceGifPickerState();
+}
+
+class _TwiceGifPickerState extends State<_TwiceGifPicker> {
+  final _search = TextEditingController();
+  List<Map<String, dynamic>> _gifs = [];
+  bool _loading = true;
+  String? _error;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOfflineFirst();
+    _search.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _search.removeListener(_onSearchChanged);
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      _fetch(_search.text.trim());
+    });
+  }
+
+  Future<void> _loadOfflineFirst() async {
+    final cached = await _TwiceGifCache.instance.cachedResults();
+    if (mounted && cached.isNotEmpty) {
+      setState(() { _gifs = cached; _loading = false; });
+    }
+    await _fetch('');
+  }
+
+  Future<void> _fetch(String query) async {
+    if (!mounted) return;
+    setState(() { _loading = _gifs.isEmpty; _error = null; });
+    try {
+      final endpoint = query.isEmpty ? 'trending' : 'search';
+      final uri = Uri.https('api.giphy.com', '/v1/gifs/$endpoint', {
+        'api_key': _giphyApiKey,
+        'limit': '40',
+        'rating': 'pg-13',
+        if (query.isNotEmpty) 'q': query,
+      });
+      final response = await http.get(uri).timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) throw HttpException('GIPHY ${response.statusCode}');
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = (decoded['data'] as List? ?? const [])
+          .whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      if (!mounted) return;
+      setState(() { _gifs = data; _loading = false; });
+      if (query.isEmpty) await _TwiceGifCache.instance.saveResults(data);
+      for (final gif in data.take(18)) {
+        final images = gif['images'] as Map? ?? const {};
+        final preview = (images['fixed_width'] as Map?)?['url']?.toString()
+            ?? (images['preview_gif'] as Map?)?['url']?.toString();
+        if (preview != null && preview.isNotEmpty) {
+          unawaited(_TwiceGifCache.instance.cachePreview(preview));
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _error = 'Offline: showing cached GIFs'; });
+    }
+  }
+
+  String? _previewUrl(Map<String, dynamic> gif) {
+    final images = gif['images'] as Map? ?? const {};
+    return (images['fixed_width'] as Map?)?['url']?.toString()
+        ?? (images['preview_gif'] as Map?)?['url']?.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .82,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              child: Row(children: [
+                const Text('GIFs', style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w700)),
+                const Spacer(),
+                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.white)),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+              child: TextField(
+                controller: _search,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Search for GIFs',
+                  hintStyle: const TextStyle(color: _igMuted),
+                  prefixIcon: const Icon(Icons.search, color: _igMuted),
+                  filled: true, fillColor: const Color(0xFF242424),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+            if (_error != null)
+              Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(_error!, style: const TextStyle(color: _igMuted, fontSize: 12))),
+            Expanded(
+              child: _loading && _gifs.isEmpty
+                  ? const Center(child: CircularProgressIndicator(color: _igBlue))
+                  : _gifs.isEmpty
+                      ? const Center(child: Text('No GIFs found', style: TextStyle(color: _igMuted)))
+                      : GridView.builder(
+                          padding: const EdgeInsets.all(8),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 6, crossAxisSpacing: 6, childAspectRatio: 1.15),
+                          itemCount: _gifs.length,
+                          itemBuilder: (_, index) {
+                            final gif = _gifs[index];
+                            final preview = _previewUrl(gif);
+                            return GestureDetector(
+                              onTap: () => Navigator.pop(context, gif),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: preview == null
+                                    ? Container(color: _igElevated)
+                                    : FutureBuilder<File?>(
+                                        future: _TwiceGifCache.instance.cachedPreview(preview),
+                                        builder: (_, snap) {
+                                          if (snap.data != null) return Image.file(snap.data!, fit: BoxFit.cover, gaplessPlayback: true);
+                                          return Image.network(preview, fit: BoxFit.cover, gaplessPlayback: true,
+                                            errorBuilder: (_, _, _) => Container(color: _igElevated));
+                                        },
+                                      ),
+                              ),
+                            );
+                          },
+                        ),
+            ),
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('Powered by GIPHY', style: TextStyle(color: _igMuted, fontSize: 11)),
             ),
           ],
         ),

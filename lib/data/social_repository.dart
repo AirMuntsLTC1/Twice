@@ -930,6 +930,399 @@ class SocialRepository {
     return results;
   }
 
+  // ───────────────────────── Search & public profiles ─────────────────────────
+
+  static const String _profileColumns =
+      'id,username,display_name,bio,avatar_url,is_private';
+  static const String _postColumns =
+      'id,user_id,caption,visibility,comments_enabled,created_at,'
+      'profiles!posts_user_id_fkey(id,username,display_name,avatar_url),'
+      'post_media(id,media_url,thumbnail_url,media_type,position),'
+      'post_likes(user_id),saved_posts(user_id),comments(count)';
+
+  String _likeSafe(String query) {
+    var q = query.trim();
+    if (q.startsWith('@')) q = q.substring(1);
+    return q
+        .replaceAll('%', r'\%')
+        .replaceAll('_', r'\_')
+        .replaceAll(',', ' ')
+        .replaceAll('(', ' ')
+        .replaceAll(')', ' ')
+        .trim();
+  }
+
+  /// Adds follower / following counts, the viewer's follow state and a usable
+  /// avatar URL (local cache first, then one batched signing request).
+  Future<List<Map<String, dynamic>>> _decorateProfiles(
+    List<Map<String, dynamic>> profiles,
+  ) async {
+    if (profiles.isEmpty) return profiles;
+    final me = userId;
+    final ids = profiles.map((p) => p['id'].toString()).toList();
+
+    final values = await Future.wait<List<dynamic>>([
+      _db
+          .from('follows')
+          .select('follower_id,following_id')
+          .inFilter('following_id', ids)
+          .eq('status', 'accepted'),
+      _db
+          .from('follows')
+          .select('follower_id,following_id')
+          .inFilter('follower_id', ids)
+          .eq('status', 'accepted'),
+      _db
+          .from('follows')
+          .select('following_id,status')
+          .eq('follower_id', me)
+          .inFilter('following_id', ids),
+      _db
+          .from('follows')
+          .select('follower_id')
+          .eq('following_id', me)
+          .eq('status', 'accepted')
+          .inFilter('follower_id', ids),
+    ]).timeout(const Duration(seconds: 20));
+
+    final followers = <String, int>{};
+    for (final row in values[0]) {
+      final id = (row as Map)['following_id'].toString();
+      followers[id] = (followers[id] ?? 0) + 1;
+    }
+    final following = <String, int>{};
+    for (final row in values[1]) {
+      final id = (row as Map)['follower_id'].toString();
+      following[id] = (following[id] ?? 0) + 1;
+    }
+    final outgoing = <String, String>{};
+    for (final row in values[2]) {
+      final map = row as Map;
+      outgoing[map['following_id'].toString()] = (map['status'] ?? '')
+          .toString();
+    }
+    final followsMe = <String>{
+      for (final row in values[3]) (row as Map)['follower_id'].toString(),
+    };
+
+    final paths = <String>{};
+    for (final p in profiles) {
+      final raw = (p['avatar_url'] ?? '').toString().trim();
+      if (_isStoragePath(raw)) paths.add(raw);
+    }
+    final urls = await _resolvePaths('post-media', paths);
+
+    for (final p in profiles) {
+      final id = p['id'].toString();
+      final raw = (p['avatar_url'] ?? '').toString().trim();
+      final storage = _isStoragePath(raw);
+      p['avatar_raw'] = raw;
+      p['avatar_object_path'] = storage ? raw : '';
+      p['avatar_url'] = storage ? (urls[raw] ?? '') : raw;
+      p['followers_count'] = followers[id] ?? 0;
+      p['following_count'] = following[id] ?? 0;
+      final status = outgoing[id] ?? '';
+      p['follow_label'] = id == me
+          ? ''
+          : status == 'pending'
+          ? 'Requested'
+          : status == 'accepted'
+          ? 'Following'
+          : followsMe.contains(id)
+          ? 'Follow Back'
+          : 'Follow';
+    }
+    return profiles;
+  }
+
+  List<Map<String, dynamic>> _asMapList(dynamic value) => value is List
+      ? value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+      : <Map<String, dynamic>>[];
+
+  /// People search by name or @username. Best matches first.
+  Future<List<Map<String, dynamic>>> searchPeople(
+    String query, {
+    int limit = 30,
+  }) async {
+    final safe = _likeSafe(query);
+    if (safe.isEmpty) return [];
+    final lower = safe.toLowerCase();
+    try {
+      final responses = await Future.wait<List<dynamic>>([
+        _db
+            .from('profiles')
+            .select(_profileColumns)
+            .ilike('username', '%$safe%')
+            .limit(limit),
+        _db
+            .from('profiles')
+            .select(_profileColumns)
+            .ilike('display_name', '%$safe%')
+            .limit(limit),
+      ]).timeout(const Duration(seconds: 20));
+      final byId = <String, Map<String, dynamic>>{};
+      for (final list in responses) {
+        for (final row in list) {
+          final map = Map<String, dynamic>.from(row as Map);
+          byId[map['id'].toString()] = map;
+        }
+      }
+      int rank(Map<String, dynamic> p) {
+        final u = (p['username'] ?? '').toString().toLowerCase();
+        final n = (p['display_name'] ?? '').toString().toLowerCase();
+        if (u == lower || n == lower) return 0;
+        if (u.startsWith(lower)) return 1;
+        if (n.startsWith(lower)) return 2;
+        return 3;
+      }
+
+      final sorted = byId.values.toList()
+        ..sort((a, b) {
+          final r = rank(a).compareTo(rank(b));
+          if (r != 0) return r;
+          return (a['username'] ?? '').toString().compareTo(
+            (b['username'] ?? '').toString(),
+          );
+        });
+      final out = await _decorateProfiles(sorted.take(limit).toList());
+      unawaited(
+        _cache
+            .put(userId, 'search_people', out, id: lower)
+            .catchError((Object _) {}),
+      );
+      return out;
+    } catch (e) {
+      if (_looksLikeNetworkFailure(e)) {
+        final cached = _asMapList(
+          await _cache.get(userId, 'search_people', id: lower),
+        );
+        if (cached.isNotEmpty) return cached;
+      }
+      rethrow;
+    }
+  }
+
+  /// People the viewer may want to follow (newest accounts first).
+  Future<List<Map<String, dynamic>>> suggestedPeople({int limit = 20}) async {
+    try {
+      final rows = await _db
+          .from('profiles')
+          .select(_profileColumns)
+          .neq('id', userId)
+          .order('created_at', ascending: false)
+          .limit(60)
+          .timeout(const Duration(seconds: 20));
+      final profiles = _asMapList(rows);
+      final decorated = await _decorateProfiles(profiles);
+      final out = decorated
+          .where(
+            (p) =>
+                p['follow_label'] != 'Following' &&
+                p['follow_label'] != 'Requested',
+          )
+          .take(limit)
+          .toList();
+      unawaited(
+        _cache
+            .put(userId, 'search_suggested', out)
+            .catchError((Object _) {}),
+      );
+      return out;
+    } catch (e) {
+      if (_looksLikeNetworkFailure(e)) {
+        return _asMapList(await _cache.get(userId, 'search_suggested'));
+      }
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _rawRecents() async =>
+      _asMapList(await _cache.get(userId, 'search_recent'));
+
+  /// Recently opened profiles, resolved to a usable (cached) avatar.
+  Future<List<Map<String, dynamic>>> recentSearchProfiles() async {
+    final list = await _rawRecents();
+    final paths = <String>{
+      for (final p in list)
+        if (_isStoragePath((p['avatar_raw'] ?? '').toString().trim()))
+          (p['avatar_raw'] ?? '').toString().trim(),
+    };
+    final urls = paths.isEmpty
+        ? <String, String>{}
+        : await _resolvePaths('post-media', paths);
+    for (final p in list) {
+      final raw = (p['avatar_raw'] ?? '').toString().trim();
+      p['avatar_url'] = _isStoragePath(raw) ? (urls[raw] ?? '') : raw;
+    }
+    return list;
+  }
+
+  Future<void> addRecentSearchProfile(Map<String, dynamic> profile) async {
+    final id = (profile['id'] ?? '').toString();
+    if (id.isEmpty) return;
+    final list = await _rawRecents();
+    list.removeWhere((p) => p['id'].toString() == id);
+    list.insert(0, {
+      'id': id,
+      'username': profile['username'],
+      'display_name': profile['display_name'],
+      'avatar_raw': (profile['avatar_raw'] ?? profile['avatar_object_path'] ?? '')
+          .toString(),
+      'is_private': profile['is_private'] == true,
+    });
+    await _cache.put(userId, 'search_recent', list.take(12).toList());
+  }
+
+  Future<void> removeRecentSearchProfile(String id) async {
+    final list = await _rawRecents();
+    list.removeWhere((p) => p['id'].toString() == id);
+    await _cache.put(userId, 'search_recent', list);
+  }
+
+  Future<void> clearRecentSearchProfiles() async =>
+      _cache.put(userId, 'search_recent', <Map<String, dynamic>>[]);
+
+  /// Signs media for a batch of post rows and shapes them like feed() rows.
+  Future<List<Map<String, dynamic>>> _hydratePosts(
+    List<Map<String, dynamic>> posts,
+  ) async {
+    final needed = <String>{};
+    for (final post in posts) {
+      final author = post['profiles'];
+      if (author is Map) {
+        final path = (author['avatar_url'] ?? '').toString().trim();
+        if (_isStoragePath(path)) needed.add(path);
+      }
+      for (final media in (post['post_media'] as List? ?? const [])) {
+        if (media is! Map) continue;
+        for (final key in const ['media_url', 'thumbnail_url']) {
+          final path = (media[key] ?? '').toString().trim();
+          if (_isStoragePath(path)) needed.add(path);
+        }
+      }
+    }
+    final urls = await _resolvePaths('post-media', needed);
+    String resolve(String path) {
+      if (path.isEmpty) return '';
+      if (!_isStoragePath(path)) return path;
+      return urls[path] ?? '';
+    }
+
+    for (final post in posts) {
+      final authorRaw = post['profiles'];
+      if (authorRaw is Map) {
+        final author = Map<String, dynamic>.from(authorRaw);
+        final path = (author['avatar_url'] ?? '').toString().trim();
+        author['avatar_object_path'] = _isStoragePath(path) ? path : '';
+        author['avatar_url'] = resolve(path);
+        post['profiles'] = author;
+      }
+      final media = (post['post_media'] as List? ?? const [])
+          .whereType<Map>()
+          .map((raw) => Map<String, dynamic>.from(raw))
+          .toList()
+        ..sort(
+          (a, b) => (int.tryParse('${a['position']}') ?? 0).compareTo(
+            int.tryParse('${b['position']}') ?? 0,
+          ),
+        );
+      post['media_resolved'] = media.map((item) {
+        item['resolved_url'] = resolve(
+          (item['media_url'] ?? '').toString().trim(),
+        );
+        item['resolved_thumbnail_url'] = resolve(
+          (item['thumbnail_url'] ?? '').toString().trim(),
+        );
+        return item;
+      }).toList();
+    }
+    return posts;
+  }
+
+  static bool _postHasMedia(Map<String, dynamic> post, {required bool video}) {
+    for (final m in (post['post_media'] as List? ?? const [])) {
+      if (m is! Map) continue;
+      final t = (m['media_type'] ?? '').toString().toLowerCase();
+      if (video ? t == 'video' : (t == 'image' || t == 'gif')) return true;
+    }
+    return false;
+  }
+
+  /// Posts matching [query] (caption). With an empty query this is the explore
+  /// feed. [kind] is 'all', 'photos' or 'videos'.
+  Future<List<Map<String, dynamic>>> searchPosts(
+    String query, {
+    String kind = 'all',
+    int limit = 40,
+  }) async {
+    final safe = _likeSafe(query);
+    var request = _db.from('posts').select(_postColumns);
+    if (safe.isNotEmpty) request = request.ilike('caption', '%$safe%');
+    final rows = await request
+        .order('created_at', ascending: false)
+        .limit(kind == 'all' ? limit : 120)
+        .timeout(const Duration(seconds: 25));
+    var posts = _asMapList(rows);
+    if (kind == 'photos') {
+      posts = posts.where((p) => _postHasMedia(p, video: false)).toList();
+    } else if (kind == 'videos') {
+      posts = posts.where((p) => _postHasMedia(p, video: true)).toList();
+    }
+    return _hydratePosts(posts.take(limit).toList());
+  }
+
+  /// Fresh profile row (avatar resolved) for any user.
+  Future<Map<String, dynamic>?> profileById(String id) async {
+    final row = await _db
+        .from('profiles')
+        .select(_profileColumns)
+        .eq('id', id)
+        .maybeSingle()
+        .timeout(const Duration(seconds: 15));
+    if (row == null) return null;
+    final profile = Map<String, dynamic>.from(row);
+    final raw = (profile['avatar_url'] ?? '').toString().trim();
+    profile['avatar_raw'] = raw;
+    return _resolveProfileAvatar(profile);
+  }
+
+  /// Followers, following and post counts that the viewer is allowed to see.
+  Future<Map<String, int>> profileStats(String id) async {
+    final values = await Future.wait<List<dynamic>>([
+      _db
+          .from('follows')
+          .select('follower_id')
+          .eq('following_id', id)
+          .eq('status', 'accepted'),
+      _db
+          .from('follows')
+          .select('following_id')
+          .eq('follower_id', id)
+          .eq('status', 'accepted'),
+      _db.from('posts').select('id').eq('user_id', id),
+    ]).timeout(const Duration(seconds: 20));
+    return {
+      'followers': values[0].length,
+      'following': values[1].length,
+      'posts': values[2].length,
+    };
+  }
+
+  /// Every post of [profileId] the viewer is allowed to see (RLS enforced).
+  Future<List<Map<String, dynamic>>> userPosts(
+    String profileId, {
+    int limit = 120,
+  }) async {
+    final rows = await _db
+        .from('posts')
+        .select(_postColumns)
+        .eq('user_id', profileId)
+        .order('created_at', ascending: false)
+        .limit(limit)
+        .timeout(const Duration(seconds: 25));
+    return _hydratePosts(_asMapList(rows));
+  }
+
   Future<String> getFollowLabel(String profileId) async {
     if (profileId.isEmpty || profileId == userId) return '';
 

@@ -1921,6 +1921,20 @@ class _StoryViewerState extends State<StoryViewer>
     if (position >= limit && mounted) _next(completed: true);
   }
 
+  Future<void> _openOwnerProfile() async {
+    if (_ownerId.isEmpty) return;
+    await _pause();
+    if (!mounted) return;
+    await _openUserProfile(
+      context,
+      userId: _ownerId,
+      profile: Map<String, dynamic>.from(
+        _story['profiles'] as Map? ?? widget.initialProfile,
+      ),
+    );
+    if (mounted && !_holdForInput && !_sheetOpen) _resume();
+  }
+
   Future<void> _pause() async {
     if (_paused) return;
     _paused = true;
@@ -2246,25 +2260,32 @@ class _StoryViewerState extends State<StoryViewer>
                     right: 8,
                     child: Row(
                       children: [
-                        CircleAvatar(
-                          radius: 17,
-                          backgroundImage: _isImageSource(avatar)
-                              ? _twiceAvatarProvider(avatar)
-                              : null,
-                          child: _isImageSource(avatar)
-                              ? null
-                              : const Icon(Icons.person, size: 18),
+                        GestureDetector(
+                          onTap: _openOwnerProfile,
+                          child: CircleAvatar(
+                            radius: 17,
+                            backgroundImage: _isImageSource(avatar)
+                                ? _twiceAvatarProvider(avatar)
+                                : null,
+                            child: _isImageSource(avatar)
+                                ? null
+                                : const Icon(Icons.person, size: 18),
+                          ),
                         ),
                         const SizedBox(width: 9),
                         Expanded(
-                          child: Text(
-                            (user['display_name'] ??
-                                    user['username'] ??
-                                    'Twice user')
-                                .toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _openOwnerProfile,
+                            child: Text(
+                              (user['display_name'] ??
+                                      user['username'] ??
+                                      'Twice user')
+                                  .toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),
@@ -2514,6 +2535,11 @@ class _StoryViewersSheetState extends State<_StoryViewersSheet> {
                                   'Twice user')
                               .toString();
                       return ListTile(
+                        onTap: () => _openUserProfile(
+                          context,
+                          userId: (profile['id'] ?? '').toString(),
+                          profile: profile,
+                        ),
                         leading: CircleAvatar(
                           backgroundImage: _isImageSource(avatar)
                               ? _twiceAvatarProvider(avatar)
@@ -3293,8 +3319,10 @@ class PostCard extends StatelessWidget {
     required this.post,
     required this.onLike,
     required this.onCommentChanged,
+    this.authorTappable = true,
   });
 
+  final bool authorTappable;
   final SocialPost post;
   final ValueChanged<SocialPost> onLike;
   final VoidCallback onCommentChanged;
@@ -3318,6 +3346,18 @@ class PostCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(13, 12, 8, 10),
             child: Row(
               children: [
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: authorTappable
+                        ? () => _openUserProfile(
+                            context,
+                            userId: (post.author['id'] ?? '').toString(),
+                            profile: post.author,
+                          )
+                        : null,
+                    child: Row(
+                      children: [
                 SizedBox(
                   width: 44,
                   height: 44,
@@ -3367,6 +3407,10 @@ class PostCard extends StatelessWidget {
                         style: const TextStyle(fontSize: 11, color: muted),
                       ),
                     ],
+                  ),
+                ),
+                      ],
+                    ),
                   ),
                 ),
                 if (post.author['id'] != null &&
@@ -4147,6 +4191,479 @@ class _MediaPickerState extends State<_MediaPicker> {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  SEARCH + PUBLIC PROFILES
+// ═══════════════════════════════════════════════════════════════════════════
+
+int _asInt(dynamic v) =>
+    v is int ? v : (v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0);
+
+String _compactCount(int n) {
+  String trim(double v) {
+    final s = v >= 10 ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+    return s.endsWith('.0') ? s.substring(0, s.length - 2) : s;
+  }
+
+  if (n >= 1000000) return '${trim(n / 1000000)}M';
+  if (n >= 1000) return '${trim(n / 1000)}K';
+  return '$n';
+}
+
+String _searchError(Object e) {
+  final t = e.toString().toLowerCase();
+  if (t.contains('socket') ||
+      t.contains('host lookup') ||
+      t.contains('timeout') ||
+      t.contains('clientexception') ||
+      t.contains('connection')) {
+    return 'Check your connection and try again.';
+  }
+  return 'Something went wrong. Please try again.';
+}
+
+/// Opens any user's profile. Used everywhere a name, @username or profile
+/// picture is shown.
+Future<void> _openUserProfile(
+  BuildContext context, {
+  required String userId,
+  Map<String, dynamic>? profile,
+}) async {
+  final id = userId.trim();
+  if (id.isEmpty || id == 'null') return;
+  await Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => UserProfilePage(userId: id, initialProfile: profile),
+    ),
+  );
+}
+
+class _UserAvatar extends StatelessWidget {
+  const _UserAvatar({required this.url, required this.name, this.size = 54});
+  final String url;
+  final String name;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final src = url.trim();
+    final has = _isImageSource(src);
+    final letter = name.trim().isEmpty ? '' : name.trim()[0].toUpperCase();
+    Widget fallback() => DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFEAE4FF), Color(0xFFD2C6FF)],
+        ),
+      ),
+      child: Center(
+        child: letter.isEmpty
+            ? Icon(Icons.person_rounded, color: violet, size: size * 0.5)
+            : Text(
+                letter,
+                style: TextStyle(
+                  color: violet,
+                  fontWeight: FontWeight.w900,
+                  fontSize: size * 0.4,
+                ),
+              ),
+      ),
+    );
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipOval(
+        child: has
+            ? Image(
+                image: _twiceAvatarProvider(src),
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (_, _, _) => fallback(),
+              )
+            : fallback(),
+      ),
+    );
+  }
+}
+
+class _Pulse extends StatefulWidget {
+  const _Pulse({required this.child});
+  final Widget child;
+  @override
+  State<_Pulse> createState() => _PulseState();
+}
+
+class _PulseState extends State<_Pulse> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+    opacity: Tween<double>(begin: 0.45, end: 1).animate(_c),
+    child: widget.child,
+  );
+}
+
+class _SkeletonPeople extends StatelessWidget {
+  const _SkeletonPeople();
+  @override
+  Widget build(BuildContext context) {
+    Widget bar(double w, double h) => Container(
+      width: w,
+      height: h,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9E7F3),
+        borderRadius: BorderRadius.circular(8),
+      ),
+    );
+    return _Pulse(
+      child: ListView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+        itemCount: 7,
+        itemBuilder: (_, _) => Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE9E7F3),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    bar(120, 13),
+                    const SizedBox(height: 8),
+                    bar(80, 11),
+                    const SizedBox(height: 8),
+                    bar(150, 10),
+                  ],
+                ),
+              ),
+              bar(78, 32),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonGrid extends StatelessWidget {
+  const _SkeletonGrid({this.columns = 3, this.aspect = 1});
+  final int columns;
+  final double aspect;
+  @override
+  Widget build(BuildContext context) => _Pulse(
+    child: GridView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        mainAxisSpacing: 4,
+        crossAxisSpacing: 4,
+        childAspectRatio: aspect,
+      ),
+      itemCount: columns * 4,
+      itemBuilder: (_, _) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFFE9E7F3),
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+    ),
+  );
+}
+
+class _SearchEmpty extends StatelessWidget {
+  const _SearchEmpty({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.actionLabel,
+    this.onAction,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 78,
+            height: 78,
+            decoration: const BoxDecoration(
+              color: Color(0xFFEDE9FF),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 36, color: violet),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+              color: ink,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: muted, height: 1.4),
+          ),
+          if (actionLabel != null) ...[
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: onAction,
+              style: FilledButton.styleFrom(
+                backgroundColor: violet,
+                shape: const StadiumBorder(),
+              ),
+              child: Text(actionLabel!),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.title, {this.trailing, this.onTrailing});
+  final String title;
+  final String? trailing;
+  final VoidCallback? onTrailing;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(18, 14, 14, 6),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: ink,
+            ),
+          ),
+        ),
+        if (trailing != null)
+          TextButton(
+            onPressed: onTrailing,
+            style: TextButton.styleFrom(
+              foregroundColor: violet,
+              visualDensity: VisualDensity.compact,
+            ),
+            child: Text(
+              trailing!,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+/// Square thumbnail of a post (photo, video poster or caption card).
+class _PostThumb extends StatelessWidget {
+  const _PostThumb({required this.post});
+  final SocialPost post;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = post.media;
+    final first = media.isEmpty ? null : media.first;
+    final isVideo =
+        first != null &&
+        (first['media_type'] ?? '').toString().toLowerCase() == 'video';
+    var src = '';
+    if (first != null) {
+      final thumb = (first['resolved_thumbnail_url'] ?? '').toString();
+      final full = (first['resolved_url'] ?? '').toString();
+      if (_isImageSource(thumb)) {
+        src = thumb;
+      } else if (!isVideo && _isImageSource(full)) {
+        src = full;
+      }
+    }
+    final placeholder = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isVideo
+              ? const [Color(0xFF2A2740), Color(0xFF14131F)]
+              : const [Color(0xFFEDE9FF), Color(0xFFD9D0FF)],
+        ),
+      ),
+      child: media.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.all(10),
+              child: Center(
+                child: Text(
+                  post.caption.isEmpty ? 'Post' : post.caption,
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: ink,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            )
+          : null,
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (src.isNotEmpty)
+          Image(
+            image: _twiceImageProvider(src, maxDimension: 480),
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            errorBuilder: (_, _, _) => placeholder,
+          )
+        else
+          placeholder,
+        if (isVideo)
+          const Positioned(
+            top: 7,
+            right: 7,
+            child: Icon(
+              Icons.play_circle_fill_rounded,
+              color: Colors.white,
+              size: 22,
+              shadows: [Shadow(blurRadius: 6, color: Colors.black54)],
+            ),
+          )
+        else if (media.length > 1)
+          const Positioned(
+            top: 7,
+            right: 7,
+            child: Icon(
+              Icons.collections_rounded,
+              color: Colors.white,
+              size: 19,
+              shadows: [Shadow(blurRadius: 6, color: Colors.black54)],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _MediaGridTile extends StatelessWidget {
+  const _MediaGridTile({
+    required this.post,
+    required this.onTap,
+    this.showAuthor = false,
+  });
+  final SocialPost post;
+  final VoidCallback onTap;
+  final bool showAuthor;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _PostThumb(post: post),
+          if (showAuthor)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(8, 18, 8, 8),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x00000000), Color(0xB3000000)],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    _UserAvatar(
+                      url: post.avatarUrl ?? '',
+                      name: post.name,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        post.handle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const Icon(
+                      Icons.favorite_rounded,
+                      color: Colors.white,
+                      size: 12,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      _compactCount(post.likes),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+enum _SearchTab { people, posts, videos, photos }
+
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
   @override
@@ -4155,210 +4672,1656 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   final controller = TextEditingController();
-  List<Map<String, dynamic>> results = [];
-  bool busy = false;
+  final focus = FocusNode();
+  Timer? _debounce;
+  int _requestId = 0;
+
+  _SearchTab tab = _SearchTab.people;
+  List<Map<String, dynamic>> people = [];
+  List<Map<String, dynamic>> recents = [];
+  List<Map<String, dynamic>> suggested = [];
+  List<SocialPost> posts = [];
+  bool loading = true;
   String? error;
+
+  String get query => controller.text.trim();
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
   @override
   void dispose() {
+    _debounce?.cancel();
     controller.dispose();
+    focus.dispose();
     super.dispose();
   }
 
-  Future<void> _search(String q) async {
-    if (q.trim().isEmpty) {
-      setState(() {
-        results = [];
-        error = null;
-      });
-      return;
+  void _onChanged(String _) {
+    setState(() {});
+    _debounce?.cancel();
+    if (query.isEmpty) {
+      _run();
+    } else {
+      _debounce = Timer(const Duration(milliseconds: 350), _run);
     }
+  }
+
+  void _selectTab(_SearchTab next) {
+    if (next == tab) return;
     setState(() {
-      busy = true;
+      tab = next;
+      posts = [];
       error = null;
     });
-    try {
-      final data = await SocialRepository.instance.search(q);
-      if (mounted) setState(() => results = data);
-    } catch (e) {
-      if (mounted) setState(() => error = e.toString());
-    } finally {
-      if (mounted) setState(() => busy = false);
+    _run();
+  }
+
+  Future<void> _run({bool silent = false}) async {
+    final id = ++_requestId;
+    final q = query;
+    final current = tab;
+    final repo = SocialRepository.instance;
+    if (!silent && mounted) {
+      setState(() {
+        loading = true;
+        error = null;
+      });
     }
+    try {
+      if (current == _SearchTab.people) {
+        if (q.isEmpty) {
+          final results = await Future.wait<List<Map<String, dynamic>>>([
+            repo.recentSearchProfiles(),
+            repo.suggestedPeople(),
+          ]);
+          if (!mounted || id != _requestId) return;
+          setState(() {
+            recents = results[0];
+            suggested = results[1];
+            loading = false;
+          });
+        } else {
+          final found = await repo.searchPeople(q);
+          if (!mounted || id != _requestId) return;
+          setState(() {
+            people = found;
+            loading = false;
+          });
+        }
+      } else {
+        final kind = current == _SearchTab.videos
+            ? 'videos'
+            : current == _SearchTab.photos
+            ? 'photos'
+            : 'all';
+        final rows = await repo.searchPosts(q, kind: kind);
+        if (!mounted || id != _requestId) return;
+        setState(() {
+          posts = rows.map(SocialPost.new).toList();
+          loading = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted || id != _requestId) return;
+      setState(() {
+        error = _searchError(e);
+        loading = false;
+      });
+    }
+  }
+
+  Future<void> _openProfile(Map<String, dynamic> user) async {
+    unawaited(
+      SocialRepository.instance
+          .addRecentSearchProfile(user)
+          .catchError((Object _) {}),
+    );
+    await _openUserProfile(
+      context,
+      userId: (user['id'] ?? '').toString(),
+      profile: user,
+    );
+    if (mounted) _run(silent: true);
+  }
+
+  Future<void> _openPost(SocialPost post) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => PostDetailPage(post: post)),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Widget _searchField() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+    child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFECEAF5)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F4B3AA8),
+            blurRadius: 16,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: controller,
+        focusNode: focus,
+        onChanged: _onChanged,
+        onSubmitted: (_) {
+          _debounce?.cancel();
+          _run();
+        },
+        textInputAction: TextInputAction.search,
+        autocorrect: false,
+        cursorColor: violet,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: ink,
+        ),
+        decoration: InputDecoration(
+          hintText: switch (tab) {
+            _SearchTab.people => 'Search people by name or @username',
+            _SearchTab.posts => 'Search posts',
+            _SearchTab.videos => 'Search videos',
+            _SearchTab.photos => 'Search photos',
+          },
+          hintStyle: const TextStyle(
+            color: muted,
+            fontSize: 15.5,
+            fontWeight: FontWeight.w500,
+          ),
+          filled: false,
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 15),
+          prefixIcon: const Icon(Icons.search_rounded, color: muted, size: 24),
+          suffixIcon: controller.text.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear',
+                  onPressed: () {
+                    controller.clear();
+                    _onChanged('');
+                  },
+                  icon: const Icon(Icons.cancel_rounded, color: muted),
+                ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _tabs() {
+    Widget chip(_SearchTab value, String label) {
+      final active = tab == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => _selectTab(value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? violet : Colors.white,
+              borderRadius: BorderRadius.circular(19),
+              border: Border.all(
+                color: active ? violet : const Color(0xFFE6E4F0),
+              ),
+              boxShadow: active
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x337257F5),
+                        blurRadius: 10,
+                        offset: Offset(0, 4),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: active ? Colors.white : ink,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          chip(_SearchTab.people, 'People'),
+          const SizedBox(width: 7),
+          chip(_SearchTab.posts, 'Posts'),
+          const SizedBox(width: 7),
+          chip(_SearchTab.videos, 'Videos'),
+          const SizedBox(width: 7),
+          chip(_SearchTab.photos, 'Photos'),
+        ],
+      ),
+    );
+  }
+
+  Widget _errorPanel() => _SearchEmpty(
+    icon: Icons.cloud_off_rounded,
+    title: 'Could not load results',
+    subtitle: error ?? '',
+    actionLabel: 'Try again',
+    onAction: _run,
+  );
+
+  Widget _peopleBody() {
+    final q = query;
+    if (error != null && (q.isEmpty ? suggested.isEmpty : people.isEmpty)) {
+      return _errorPanel();
+    }
+    if (q.isEmpty) {
+      if (loading && recents.isEmpty && suggested.isEmpty) {
+        return const _SkeletonPeople();
+      }
+      if (recents.isEmpty && suggested.isEmpty) {
+        return const _SearchEmpty(
+          icon: Icons.people_alt_rounded,
+          title: 'Find people on Twice',
+          subtitle: 'Search by name or @username to follow friends.',
+        );
+      }
+      return ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          if (recents.isNotEmpty) ...[
+            _SectionHeader(
+              'Recent',
+              trailing: 'Clear all',
+              onTrailing: () async {
+                setState(() => recents = []);
+                await SocialRepository.instance.clearRecentSearchProfiles();
+              },
+            ),
+            for (final user in recents)
+              _RecentTile(
+                key: ValueKey('recent-${user['id']}'),
+                user: user,
+                onOpen: () => _openProfile(user),
+                onRemove: () async {
+                  setState(() => recents.remove(user));
+                  await SocialRepository.instance.removeRecentSearchProfile(
+                    user['id'].toString(),
+                  );
+                },
+              ),
+          ],
+          if (suggested.isNotEmpty) ...[
+            const _SectionHeader('Suggested for you'),
+            for (final user in suggested)
+              _PersonTile(
+                key: ValueKey('suggested-${user['id']}'),
+                user: user,
+                onOpen: () => _openProfile(user),
+              ),
+          ],
+        ],
+      );
+    }
+    if (loading && people.isEmpty) return const _SkeletonPeople();
+    if (people.isEmpty) {
+      return _SearchEmpty(
+        icon: Icons.person_search_rounded,
+        title: 'No people found',
+        subtitle: 'We couldn’t find anyone matching “$q”.\nCheck the spelling or try another name.',
+      );
+    }
+    return ListView.builder(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.only(bottom: 24, top: 2),
+      itemCount: people.length,
+      itemBuilder: (_, i) => _PersonTile(
+        key: ValueKey('person-${people[i]['id']}'),
+        user: people[i],
+        onOpen: () => _openProfile(people[i]),
+      ),
+    );
+  }
+
+  Widget _postsBody() {
+    final q = query;
+    if (error != null && posts.isEmpty) return _errorPanel();
+    final isVideos = tab == _SearchTab.videos;
+    final isPhotos = tab == _SearchTab.photos;
+    if (loading && posts.isEmpty) {
+      return isVideos
+          ? const _SkeletonGrid(columns: 2, aspect: 0.72)
+          : isPhotos
+          ? const _SkeletonGrid()
+          : q.isEmpty
+          ? const _SkeletonGrid()
+          : const _SkeletonPeople();
+    }
+    final label = isVideos ? 'videos' : isPhotos ? 'photos' : 'posts';
+    if (posts.isEmpty) {
+      return _SearchEmpty(
+        icon: isVideos
+            ? Icons.play_circle_outline_rounded
+            : isPhotos
+            ? Icons.photo_library_outlined
+            : Icons.article_outlined,
+        title: q.isEmpty ? 'No $label yet' : 'No $label found',
+        subtitle: q.isEmpty
+            ? 'New $label from the community will show up here.'
+            : 'Nothing matches “$q”. Try different words.',
+      );
+    }
+
+    // Posts tab with a query → rich result cards.
+    if (tab == _SearchTab.posts && q.isNotEmpty) {
+      return ListView.builder(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(14, 2, 14, 24),
+        itemCount: posts.length,
+        itemBuilder: (_, i) =>
+            _PostResultTile(post: posts[i], onTap: () => _openPost(posts[i])),
+      );
+    }
+
+    // Grids: explore (posts, empty query), videos and photos.
+    final items = tab == _SearchTab.posts
+        ? posts.where((p) => p.media.isNotEmpty).toList()
+        : posts;
+    final cols = isVideos ? 2 : 3;
+    final title = q.isEmpty
+        ? (isVideos
+              ? 'Trending videos'
+              : isPhotos
+              ? 'Latest photos'
+              : 'Explore')
+        : 'Results for “$q”';
+    return CustomScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      slivers: [
+        SliverToBoxAdapter(child: _SectionHeader(title)),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 2, 12, 24),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 4,
+              childAspectRatio: isVideos ? 0.72 : 1,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (_, i) => _MediaGridTile(
+                post: items[i],
+                showAuthor: isVideos,
+                onTap: () => _openPost(items[i]),
+              ),
+              childCount: items.length,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      Padding(
-        padding: const EdgeInsets.all(16),
-        child: TextField(
-          controller: controller,
-          onChanged: _search,
-          decoration: InputDecoration(
-            hintText: 'Search people by name or @username',
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: IconButton(
-              onPressed: () {
-                controller.clear();
-                _search('');
-              },
-              icon: const Icon(Icons.close),
-            ),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: BorderSide.none,
-            ),
+      _searchField(),
+      _tabs(),
+      if (loading && (people.isNotEmpty || posts.isNotEmpty))
+        const SizedBox(
+          height: 2,
+          child: LinearProgressIndicator(
+            color: violet,
+            backgroundColor: Colors.transparent,
+          ),
+        )
+      else
+        const SizedBox(height: 2),
+      Expanded(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: KeyedSubtree(
+            key: ValueKey('${tab.name}-${query.isEmpty}'),
+            child: tab == _SearchTab.people ? _peopleBody() : _postsBody(),
           ),
         ),
-      ),
-      if (busy) const LinearProgressIndicator(),
-      if (error != null)
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(error!, style: const TextStyle(color: Colors.red)),
-        ),
-      Expanded(
-        child: results.isEmpty
-            ? Center(
-                child: Text(
-                  controller.text.isEmpty
-                      ? 'Search for real Twice users'
-                      : 'No users found',
-                  style: const TextStyle(color: muted),
-                ),
-              )
-            : ListView.builder(
-                itemCount: results.length,
-                itemBuilder: (_, i) => _UserTile(user: results[i]),
-              ),
       ),
     ],
   );
 }
 
-class _UserTile extends StatefulWidget {
-  const _UserTile({required this.user});
+class _RecentTile extends StatelessWidget {
+  const _RecentTile({
+    super.key,
+    required this.user,
+    required this.onOpen,
+    required this.onRemove,
+  });
   final Map<String, dynamic> user;
-  @override
-  State<_UserTile> createState() => _UserTileState();
-}
+  final VoidCallback onOpen;
+  final VoidCallback onRemove;
 
-class _UserTileState extends State<_UserTile> {
-  bool following = false, busy = false;
   @override
   Widget build(BuildContext context) {
-    final user = widget.user;
-    if (user['result_type'] == 'post') {
-      final author = user['profiles'] as Map? ?? {};
-      return ListTile(
-        leading: const CircleAvatar(child: Icon(Icons.article_outlined)),
-        title: Text(
-          (user['caption'] ?? 'Media post').toString(),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+    final username = (user['username'] ?? '').toString();
+    final name = (user['display_name'] ?? '').toString().trim();
+    return InkWell(
+      onTap: onOpen,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 7, 6, 7),
+        child: Row(
+          children: [
+            _UserAvatar(
+              url: (user['avatar_url'] ?? '').toString(),
+              name: name.isEmpty ? username : name,
+              size: 46,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name.isEmpty ? username : name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14.5,
+                      color: ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '@$username',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: muted, fontSize: 12.5),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Remove',
+              onPressed: onRemove,
+              icon: const Icon(Icons.close_rounded, color: muted, size: 20),
+            ),
+          ],
         ),
-        subtitle: Text(
-          '${author['display_name'] ?? author['username'] ?? 'Twice user'} · @${author['username'] ?? 'user'}',
+      ),
+    );
+  }
+}
+
+class _PersonTile extends StatefulWidget {
+  const _PersonTile({super.key, required this.user, required this.onOpen});
+  final Map<String, dynamic> user;
+  final Future<void> Function() onOpen;
+  @override
+  State<_PersonTile> createState() => _PersonTileState();
+}
+
+class _PersonTileState extends State<_PersonTile> {
+  bool busy = false;
+
+  String get label => (widget.user['follow_label'] ?? '').toString();
+
+  Future<void> _toggle() async {
+    if (busy) return;
+    final user = widget.user;
+    final id = (user['id'] ?? '').toString();
+    final previous = label;
+    final repo = SocialRepository.instance;
+    setState(() => busy = true);
+    try {
+      if (previous == 'Following' || previous == 'Requested') {
+        await repo.unfollow(id);
+        user['follow_label'] = 'Follow';
+        if (previous == 'Following') {
+          user['followers_count'] = max(0, _asInt(user['followers_count']) - 1);
+        }
+      } else {
+        final priv = user['is_private'] == true;
+        await repo.follow(id, privateAccount: priv);
+        user['follow_label'] = priv ? 'Requested' : 'Following';
+        if (!priv) {
+          user['followers_count'] = _asInt(user['followers_count']) + 1;
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Follow action failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Widget _followButton() {
+    final current = label;
+    if (current.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEDE9FF),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Text(
+          'You',
+          style: TextStyle(
+            color: violet,
+            fontWeight: FontWeight.w800,
+            fontSize: 12.5,
+          ),
         ),
       );
     }
-    final isSelf = user['id'] == Supabase.instance.client.auth.currentUser?.id;
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundImage: user['avatar_url'] == null
-            ? null
-            : _twiceAvatarProvider(user['avatar_url'].toString()),
-        child: user['avatar_url'] == null ? const Icon(Icons.person) : null,
-      ),
-      title: Text(
-        (user['display_name'] ?? user['username'] ?? 'Twice user').toString(),
-        style: const TextStyle(fontWeight: FontWeight.w800),
-      ),
-      subtitle: Text('@${user['username'] ?? 'user'}'),
-      trailing: isSelf
-          ? null
-          : Wrap(
+    final outlined = current == 'Following' || current == 'Requested';
+    final child = busy
+        ? SizedBox(
+            width: 15,
+            height: 15,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: outlined ? violet : Colors.white,
+            ),
+          )
+        : Text(
+            current,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+          );
+    final shape = const StadiumBorder();
+    return SizedBox(
+      height: 34,
+      width: 94,
+      child: outlined
+          ? OutlinedButton(
+              onPressed: busy ? null : _toggle,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: current == 'Requested' ? muted : ink,
+                side: const BorderSide(color: Color(0xFFDAD7E8)),
+                padding: EdgeInsets.zero,
+                shape: shape,
+              ),
+              child: child,
+            )
+          : FilledButton(
+              onPressed: busy ? null : _toggle,
+              style: FilledButton.styleFrom(
+                backgroundColor: violet,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.zero,
+                shape: shape,
+              ),
+              child: child,
+            ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = widget.user;
+    final username = (user['username'] ?? 'user').toString();
+    final name = (user['display_name'] ?? '').toString().trim();
+    final followers = _asInt(user['followers_count']);
+    final following = _asInt(user['following_count']);
+    const numStyle = TextStyle(fontWeight: FontWeight.w800, color: ink);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Material(
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: Color(0xFFEFEDF7)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: widget.onOpen,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            child: Row(
               children: [
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          setState(() => busy = true);
-                          try {
-                            if (following) {
-                              await SocialRepository.instance.unfollow(
-                                user['id'].toString(),
-                              );
-                            } else {
-                              await SocialRepository.instance.follow(
-                                user['id'].toString(),
-                                privateAccount: user['is_private'] == true,
-                              );
-                            }
-                            if (mounted) setState(() => following = !following);
-                          } catch (e) {
-                            if (mounted) {
-                              ScaffoldMessenger.of(this.context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Follow action failed: $e'),
-                                ),
-                              );
-                            }
-                          } finally {
-                            if (mounted) setState(() => busy = false);
-                          }
-                        },
-                  child: Text(
-                    busy
-                        ? '…'
-                        : following
-                        ? 'Following'
-                        : 'Follow',
+                _UserAvatar(
+                  url: (user['avatar_url'] ?? '').toString(),
+                  name: name.isEmpty ? username : name,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              name.isEmpty ? username : name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                                color: ink,
+                              ),
+                            ),
+                          ),
+                          if (user['is_private'] == true) ...[
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.lock_rounded,
+                              size: 13,
+                              color: muted,
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '@$username',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: muted, fontSize: 13),
+                      ),
+                      const SizedBox(height: 5),
+                      Text.rich(
+                        TextSpan(
+                          style: const TextStyle(color: muted, fontSize: 11.5),
+                          children: [
+                            TextSpan(
+                              text: _compactCount(followers),
+                              style: numStyle,
+                            ),
+                            TextSpan(
+                              text: followers == 1
+                                  ? ' follower   '
+                                  : ' followers   ',
+                            ),
+                            TextSpan(
+                              text: _compactCount(following),
+                              style: numStyle,
+                            ),
+                            const TextSpan(text: ' following'),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Message',
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          setState(() => busy = true);
-                          try {
-                            final id = await SocialRepository.instance
-                                .createConversation(user['id'].toString());
-                            if (context.mounted) {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => ConversationPage(
-                                    id: id,
-                                    title:
-                                        (user['display_name'] ??
-                                                user['username'] ??
-                                                'Message')
-                                            .toString(),
+                const SizedBox(width: 8),
+                _followButton(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PostResultTile extends StatelessWidget {
+  const _PostResultTile({required this.post, required this.onTap});
+  final SocialPost post;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: Color(0xFFEFEDF7)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (post.media.isNotEmpty) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SizedBox(
+                    width: 82,
+                    height: 82,
+                    child: _PostThumb(post: post),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _openUserProfile(
+                        context,
+                        userId: (post.author['id'] ?? '').toString(),
+                        profile: post.author,
+                      ),
+                      child: Row(
+                        children: [
+                          _UserAvatar(
+                            url: post.avatarUrl ?? '',
+                            name: post.name,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            child: Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: post.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: ink,
+                                    ),
                                   ),
-                                ),
-                              );
-                            }
-                          } catch (e) {
-                            if (mounted) {
-                              ScaffoldMessenger.of(this.context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Could not start conversation: $e',
+                                  TextSpan(
+                                    text: '  ${post.handle}',
+                                    style: const TextStyle(color: muted),
                                   ),
-                                ),
-                              );
-                            }
-                          } finally {
-                            if (mounted) setState(() => busy = false);
-                          }
-                        },
-                  icon: const Icon(Icons.send_outlined),
+                                ],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      post.caption.isEmpty ? 'Media post' : post.caption,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: ink,
+                        fontSize: 14,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.favorite_rounded,
+                          size: 14,
+                          color: Color(0xFFFF2D55),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _compactCount(post.likes),
+                          style: const TextStyle(
+                            color: muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        const Icon(
+                          Icons.chat_bubble_rounded,
+                          size: 13,
+                          color: muted,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _compactCount(post.commentCount),
+                          style: const TextStyle(
+                            color: muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _timeAgo(post.data['created_at']),
+                          style: const TextStyle(color: muted, fontSize: 11.5),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// A single post opened from search or a profile grid.
+class PostDetailPage extends StatefulWidget {
+  const PostDetailPage({
+    super.key,
+    required this.post,
+    this.authorTappable = true,
+  });
+  final SocialPost post;
+  final bool authorTappable;
+  @override
+  State<PostDetailPage> createState() => _PostDetailPageState();
+}
+
+class _PostDetailPageState extends State<PostDetailPage> {
+  Future<void> _like(SocialPost item) async {
+    final wasLiked = item.liked;
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+    final before = List<Map<String, dynamic>>.from(
+      (item.data['post_likes'] as List? ?? const []).whereType<Map>().map(
+        (e) => Map<String, dynamic>.from(e),
+      ),
+    );
+    final rows = List<Map<String, dynamic>>.from(before);
+    setState(() {
+      if (wasLiked) {
+        rows.removeWhere((e) => e['user_id'] == uid);
+      } else {
+        rows.add({'user_id': uid});
+      }
+      item.data['post_likes'] = rows;
+    });
+    try {
+      await SocialRepository.instance.toggleLike(item.id, wasLiked);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => item.data['post_likes'] = before);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Like failed: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: canvas,
+    appBar: AppBar(
+      backgroundColor: canvas,
+      surfaceTintColor: Colors.transparent,
+      leading: IconButton(
+        tooltip: 'Back',
+        onPressed: () => Navigator.of(context).pop(),
+        icon: const Icon(Icons.arrow_back_rounded),
+      ),
+      title: const Text(
+        'Post',
+        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+      ),
+    ),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 28),
+      children: [
+        PostCard(
+          post: widget.post,
+          authorTappable: widget.authorTappable,
+          onLike: _like,
+          onCommentChanged: () {
+            if (mounted) setState(() {});
+          },
+        ),
+      ],
+    ),
+  );
+}
+
+class _ProfileTabsDelegate extends SliverPersistentHeaderDelegate {
+  _ProfileTabsDelegate({required this.child});
+  final Widget child;
+  @override
+  double get minExtent => 52;
+  @override
+  double get maxExtent => 52;
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) => SizedBox.expand(child: child);
+  @override
+  bool shouldRebuild(covariant _ProfileTabsDelegate oldDelegate) => true;
+}
+
+/// Public profile of any Twice user: header, follow / message actions,
+/// followers + following lists and all their posts, photos and videos.
+class UserProfilePage extends StatefulWidget {
+  const UserProfilePage({super.key, required this.userId, this.initialProfile});
+  final String userId;
+  final Map<String, dynamic>? initialProfile;
+  @override
+  State<UserProfilePage> createState() => _UserProfilePageState();
+}
+
+class _UserProfilePageState extends State<UserProfilePage> {
+  Map<String, dynamic> profile = {};
+  int followers = 0, following = 0, postCount = 0;
+  bool statsLoaded = false;
+  bool profileLoading = true;
+  bool postsLoading = true;
+  bool notFound = false;
+  String? postsError;
+  List<SocialPost> posts = [];
+  String followLabel = '';
+  bool labelLoaded = false;
+  bool followBusy = false;
+  bool messageBusy = false;
+  int tab = 0;
+
+  bool get isSelf =>
+      widget.userId == Supabase.instance.client.auth.currentUser?.id;
+
+  bool get isPrivate => profile['is_private'] == true;
+
+  bool get isFollowing => followLabel == 'Following' || followLabel == 'Connected';
+
+  bool get locked =>
+      isPrivate && !isSelf && labelLoaded && !isFollowing && posts.isEmpty;
+
+  String get username => (profile['username'] ?? '').toString();
+  String get displayName => (profile['display_name'] ?? '').toString().trim();
+  String get shownName => displayName.isEmpty ? username : displayName;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialProfile;
+    if (initial != null) {
+      profile = Map<String, dynamic>.from(initial);
+      if (initial.containsKey('followers_count')) {
+        followers = _asInt(initial['followers_count']);
+        following = _asInt(initial['following_count']);
+      }
+    }
+    _load();
+  }
+
+  Future<void> _load() async {
+    await Future.wait<void>([
+      _loadProfile(),
+      _loadStats(),
+      _loadFollowLabel(),
+      _loadPosts(),
+    ]);
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final fresh = await SocialRepository.instance.profileById(widget.userId);
+      if (!mounted) return;
+      setState(() {
+        if (fresh == null) {
+          notFound = profile.isEmpty;
+        } else {
+          final oldAvatar = (profile['avatar_url'] ?? '').toString();
+          profile = fresh;
+          if ((fresh['avatar_url'] ?? '').toString().isEmpty &&
+              oldAvatar.isNotEmpty) {
+            profile['avatar_url'] = oldAvatar;
+          }
+        }
+        profileLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => profileLoading = false);
+    }
+  }
+
+  Future<void> _loadStats() async {
+    try {
+      final stats = await SocialRepository.instance.profileStats(widget.userId);
+      if (!mounted) return;
+      setState(() {
+        followers = stats['followers'] ?? 0;
+        following = stats['following'] ?? 0;
+        postCount = stats['posts'] ?? 0;
+        statsLoaded = true;
+      });
+    } catch (_) {
+      if (mounted) setState(() => statsLoaded = true);
+    }
+  }
+
+  Future<void> _loadFollowLabel() async {
+    try {
+      final label = await SocialRepository.instance.getFollowLabel(
+        widget.userId,
+      );
+      if (!mounted) return;
+      setState(() {
+        followLabel = label;
+        labelLoaded = true;
+      });
+    } catch (_) {
+      if (mounted) setState(() => labelLoaded = true);
+    }
+  }
+
+  Future<void> _loadPosts() async {
+    try {
+      final rows = await SocialRepository.instance.userPosts(widget.userId);
+      if (!mounted) return;
+      setState(() {
+        posts = rows.map(SocialPost.new).toList();
+        postsLoading = false;
+        postsError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        postsLoading = false;
+        postsError = _searchError(e);
+      });
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    if (followBusy || isSelf) return;
+    final repo = SocialRepository.instance;
+    final previous = followLabel;
+    setState(() => followBusy = true);
+    try {
+      if (previous == 'Following' ||
+          previous == 'Connected' ||
+          previous == 'Requested') {
+        await repo.unfollow(widget.userId);
+        setState(() {
+          followLabel = 'Follow';
+          if (previous != 'Requested') followers = max(0, followers - 1);
+        });
+      } else {
+        final priv = await repo.isPrivateAccount(widget.userId);
+        await repo.follow(widget.userId, privateAccount: priv);
+        setState(() {
+          followLabel = priv ? 'Requested' : 'Following';
+          if (!priv) followers += 1;
+        });
+      }
+      await Future.wait<void>([
+        _loadFollowLabel(),
+        _loadStats(),
+        _loadPosts(),
+      ]);
+    } catch (e) {
+      if (mounted) {
+        setState(() => followLabel = previous);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not update follow: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => followBusy = false);
+    }
+  }
+
+  Future<void> _message() async {
+    if (messageBusy || isSelf) return;
+    setState(() => messageBusy = true);
+    try {
+      final id = await SocialRepository.instance.createConversation(
+        widget.userId,
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ConversationPage(
+            id: id,
+            title: shownName.isEmpty ? 'Message' : shownName,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not start conversation: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => messageBusy = false);
+    }
+  }
+
+  Future<void> _copyLink() async {
+    if (username.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: 'https://twice.app/@$username'));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Profile link copied')));
+  }
+
+  void _openFollowList(bool showFollowers) {
+    if (locked) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            FollowListPage(profileId: widget.userId, followers: showFollowers),
+      ),
+    );
+  }
+
+  Future<void> _openPost(SocialPost post) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PostDetailPage(post: post, authorTappable: false),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  bool _isPhoto(SocialPost p) => p.media.any((m) {
+    final t = (m['media_type'] ?? '').toString().toLowerCase();
+    return t == 'image' || t == 'gif';
+  });
+
+  bool _isVideo(SocialPost p) => p.media.any(
+    (m) => (m['media_type'] ?? '').toString().toLowerCase() == 'video',
+  );
+
+  List<SocialPost> get _visible => tab == 1
+      ? posts.where(_isPhoto).toList()
+      : tab == 2
+      ? posts.where(_isVideo).toList()
+      : posts;
+
+  Widget _stat(String value, String label, {VoidCallback? onTap}) => Expanded(
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                color: ink,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(
+                color: muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _divider() =>
+      Container(width: 1, height: 30, color: const Color(0xFFECEAF5));
+
+  Widget _followButton() {
+    final label = !labelLoaded
+        ? 'Follow'
+        : followLabel.isEmpty
+        ? 'Follow'
+        : isFollowing
+        ? 'Following'
+        : followLabel;
+    final outlined = label == 'Following' || label == 'Requested';
+    final spinner = SizedBox(
+      width: 18,
+      height: 18,
+      child: CircularProgressIndicator(
+        strokeWidth: 2,
+        color: outlined ? violet : Colors.white,
+      ),
+    );
+    final text = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          label == 'Following'
+              ? Icons.check_rounded
+              : label == 'Requested'
+              ? Icons.schedule_rounded
+              : Icons.person_add_alt_1_rounded,
+          size: 18,
+        ),
+        const SizedBox(width: 7),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+      ],
+    );
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(15));
+    return SizedBox(
+      height: 46,
+      child: outlined
+          ? OutlinedButton(
+              onPressed: followBusy || !labelLoaded ? null : _toggleFollow,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: ink,
+                side: const BorderSide(color: Color(0xFFDAD7E8)),
+                shape: shape,
+              ),
+              child: followBusy ? spinner : text,
+            )
+          : FilledButton(
+              onPressed: followBusy || !labelLoaded ? null : _toggleFollow,
+              style: FilledButton.styleFrom(
+                backgroundColor: violet,
+                foregroundColor: Colors.white,
+                shape: shape,
+              ),
+              child: followBusy ? spinner : text,
+            ),
+    );
+  }
+
+  Widget _header() {
+    final avatar = (profile['avatar_url'] ?? '').toString();
+    final bio = (profile['bio'] ?? '').toString().trim();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 2, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: const Color(0xFFEFEDF7)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F4B3AA8),
+            blurRadius: 22,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                height: 96,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF8E7BFF), Color(0xFF7257F5), Color(0xFFB58CFF)],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: -48,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: _UserAvatar(url: avatar, name: shownName, size: 96),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 58),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        shownName.isEmpty ? ' ' : shownName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: ink,
+                        ),
+                      ),
+                    ),
+                    if (isPrivate) ...[
+                      const SizedBox(width: 6),
+                      const Icon(Icons.lock_rounded, size: 16, color: muted),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  username.isEmpty ? '' : '@$username',
+                  style: const TextStyle(color: muted, fontSize: 14.5),
+                ),
+                if (bio.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    bio,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: ink, height: 1.4),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                _stat(statsLoaded ? _compactCount(postCount) : '…', 'Posts'),
+                _divider(),
+                _stat(
+                  statsLoaded || followers > 0 ? _compactCount(followers) : '…',
+                  'Followers',
+                  onTap: () => _openFollowList(true),
+                ),
+                _divider(),
+                _stat(
+                  statsLoaded || following > 0 ? _compactCount(following) : '…',
+                  'Following',
+                  onTap: () => _openFollowList(false),
                 ),
               ],
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+            child: isSelf
+                ? Container(
+                    height: 46,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDE9FF),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: const Text(
+                      'This is your profile',
+                      style: TextStyle(
+                        color: violet,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  )
+                : Row(
+                    children: [
+                      Expanded(child: _followButton()),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        height: 46,
+                        child: OutlinedButton.icon(
+                          onPressed: messageBusy ? null : _message,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: ink,
+                            side: const BorderSide(color: Color(0xFFDAD7E8)),
+                            padding: const EdgeInsets.symmetric(horizontal: 18),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                          ),
+                          icon: messageBusy
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.send_outlined, size: 18),
+                          label: const Text(
+                            'Message',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tabBar() {
+    Widget item(int index, IconData icon, String label) {
+      final active = tab == index;
+      return Expanded(
+        child: InkWell(
+          onTap: () => setState(() => tab = index),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: active ? violet : Colors.transparent,
+                  width: 3,
+                ),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 20, color: active ? violet : muted),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: active ? FontWeight.w900 : FontWeight.w600,
+                    color: active ? ink : muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      color: canvas,
+      child: Row(
+        children: [
+          item(0, Icons.grid_on_rounded, 'Posts'),
+          item(1, Icons.photo_outlined, 'Photos'),
+          item(2, Icons.play_circle_outline_rounded, 'Videos'),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyBox(IconData icon, String title, String subtitle) => SizedBox(
+    height: 300,
+    child: _SearchEmpty(icon: icon, title: title, subtitle: subtitle),
+  );
+
+  List<Widget> _content() {
+    if (notFound) {
+      return [
+        SliverToBoxAdapter(
+          child: _emptyBox(
+            Icons.person_off_rounded,
+            'Profile not available',
+            'This account doesn’t exist or can’t be shown.',
+          ),
+        ),
+      ];
+    }
+    if (locked) {
+      return [
+        SliverToBoxAdapter(
+          child: _emptyBox(
+            Icons.lock_rounded,
+            'This account is private',
+            'Follow ${shownName.isEmpty ? 'this account' : shownName} to see their posts, photos and videos.',
+          ),
+        ),
+      ];
+    }
+    if (postsLoading && posts.isEmpty) {
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+          sliver: SliverToBoxAdapter(
+            child: SizedBox(
+              height: 330,
+              child: _Pulse(
+                child: GridView.count(
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 4,
+                  crossAxisSpacing: 4,
+                  children: List.generate(
+                    9,
+                    (_) => DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE9E7F3),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+    if (postsError != null && posts.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: 300,
+            child: _SearchEmpty(
+              icon: Icons.cloud_off_rounded,
+              title: 'Could not load posts',
+              subtitle: postsError!,
+              actionLabel: 'Try again',
+              onAction: _loadPosts,
+            ),
+          ),
+        ),
+      ];
+    }
+    final items = _visible;
+    if (items.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: _emptyBox(
+            tab == 2
+                ? Icons.play_circle_outline_rounded
+                : tab == 1
+                ? Icons.photo_library_outlined
+                : Icons.grid_on_rounded,
+            tab == 2
+                ? 'No videos yet'
+                : tab == 1
+                ? 'No photos yet'
+                : 'No posts yet',
+            isSelf
+                ? 'Share a moment and it will appear here.'
+                : '${shownName.isEmpty ? 'This user' : shownName} hasn’t shared anything here yet.',
+          ),
+        ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+        sliver: SliverGrid(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+            childAspectRatio: tab == 2 ? 0.72 : 1,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (_, i) => _MediaGridTile(
+              post: items[i],
+              onTap: () => _openPost(items[i]),
+            ),
+            childCount: items.length,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).padding.bottom;
+    return Scaffold(
+      backgroundColor: canvas,
+      body: RefreshIndicator(
+        color: violet,
+        onRefresh: _load,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              backgroundColor: canvas,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              leading: IconButton(
+                tooltip: 'Back',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.arrow_back_rounded),
+              ),
+              title: Text(
+                username.isEmpty ? 'Profile' : '@$username',
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+              ),
+              actions: [
+                IconButton(
+                  tooltip: 'Copy profile link',
+                  onPressed: _copyLink,
+                  icon: const Icon(Icons.ios_share_rounded),
+                ),
+              ],
+            ),
+            if (profile.isEmpty && profileLoading)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator(color: violet)),
+              )
+            else ...[
+              if (!notFound) SliverToBoxAdapter(child: _header()),
+              if (!notFound && !locked)
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _ProfileTabsDelegate(child: _tabBar()),
+                ),
+              ..._content(),
+              SliverToBoxAdapter(child: SizedBox(height: 28 + bottom)),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -4542,7 +6505,14 @@ class _CommentsSheetState extends State<CommentsSheet> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Builder(
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _openUserProfile(
+                              context,
+                              userId: (p['id'] ?? r['user_id'] ?? '').toString(),
+                              profile: Map<String, dynamic>.from(p),
+                            ),
+                            child: Builder(
                             builder: (context) {
                               final avatar = (p['avatar_url'] ?? '')
                                   .toString()
@@ -4571,6 +6541,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                               );
                             },
                           ),
+                          ),
                           const SizedBox(width: 10),
                           Flexible(
                             child: Container(
@@ -4585,19 +6556,34 @@ class _CommentsSheetState extends State<CommentsSheet> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13,
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () => _openUserProfile(
+                                      context,
+                                      userId: (p['id'] ?? r['user_id'] ?? '')
+                                          .toString(),
+                                      profile: Map<String, dynamic>.from(p),
                                     ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '@${(p['username'] ?? 'user').toString().replaceFirst(RegExp(r'^@'), '')}  ·  ${_timeAgo(r['created_at'])}',
-                                    style: const TextStyle(
-                                      color: muted,
-                                      fontSize: 11,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '@${(p['username'] ?? 'user').toString().replaceFirst(RegExp(r'^@'), '')}  ·  ${_timeAgo(r['created_at'])}',
+                                          style: const TextStyle(
+                                            color: muted,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                   const SizedBox(height: 5),
@@ -4928,7 +6914,16 @@ class _ActivityPageState extends State<ActivityPage> {
     final thumb = (row['post_thumb'] ?? '').toString();
     final isNew = _newIds.contains(row['id'].toString());
     final (icon, tint) = _badgeFor((row['type'] ?? '').toString());
-    return Container(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openUserProfile(
+        context,
+        userId: (actor['id'] ?? '').toString(),
+        profile: actor.isEmpty
+            ? null
+            : {...actor, 'avatar_url': avatar},
+      ),
+      child: Container(
       color: isNew ? const Color(0xFFF0EBFF) : Colors.transparent,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
@@ -5014,6 +7009,7 @@ class _ActivityPageState extends State<ActivityPage> {
             const CircleAvatar(radius: 5, backgroundColor: Color(0xFF6A3DF0)),
           ],
         ],
+      ),
       ),
     );
   }
@@ -5620,7 +7616,14 @@ class _FollowListPageState extends State<FollowListPage> {
                     final name = (user['display_name'] ?? '').toString().trim();
                     final username = (user['username'] ?? '').toString().trim();
                     final avatar = (user['avatar_url'] ?? '').toString().trim();
-                    return Container(
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _openUserProfile(
+                        context,
+                        userId: (user['id'] ?? '').toString(),
+                        profile: user,
+                      ),
+                      child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 12,
@@ -5680,6 +7683,7 @@ class _FollowListPageState extends State<FollowListPage> {
                           ],
                         ],
                       ),
+                    ),
                     );
                   },
                 ),

@@ -1,0 +1,249 @@
+{
+  "project_ref": "jgqxvqlwnfywzoxbfkpk",
+  "checked_at": "2026-10-21T01:32:53.116831+08:00",
+  "queries": {
+    "conversation_policies": [
+      {
+        "schemaname": "public",
+        "tablename": "conversation_members",
+        "policyname": "conversation_members_add_creator_or_self",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "INSERT",
+        "qual": null,
+        "with_check": "(((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1\n   FROM conversations c\n  WHERE ((c.id = conversation_members.conversation_id) AND (c.created_by = ( SELECT auth.uid() AS uid)))))) OR (EXISTS ( SELECT 1\n   FROM conversations c\n  WHERE ((c.id = conversation_members.conversation_id) AND (c.created_by = ( SELECT auth.uid() AS uid))))))"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "conversation_members",
+        "policyname": "conversation_members_read_members",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "SELECT",
+        "qual": "is_conversation_member(conversation_id)",
+        "with_check": null
+      },
+      {
+        "schemaname": "public",
+        "tablename": "conversation_members",
+        "policyname": "conversation_members_remove_self",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "DELETE",
+        "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+        "with_check": null
+      },
+      {
+        "schemaname": "public",
+        "tablename": "conversations",
+        "policyname": "conversations_create_self",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "INSERT",
+        "qual": null,
+        "with_check": "(created_by = ( SELECT auth.uid() AS uid))"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "conversations",
+        "policyname": "conversations_read_members",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "SELECT",
+        "qual": "is_conversation_member(id)",
+        "with_check": null
+      },
+      {
+        "schemaname": "public",
+        "tablename": "messages",
+        "policyname": "messages_delete_sender",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "DELETE",
+        "qual": "(sender_id = ( SELECT auth.uid() AS uid))",
+        "with_check": null
+      },
+      {
+        "schemaname": "public",
+        "tablename": "messages",
+        "policyname": "messages_insert_members",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "INSERT",
+        "qual": null,
+        "with_check": "((sender_id = ( SELECT auth.uid() AS uid)) AND is_conversation_member(conversation_id))"
+      },
+      {
+        "schemaname": "public",
+        "tablename": "messages",
+        "policyname": "messages_read_members",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "SELECT",
+        "qual": "is_conversation_member(conversation_id)",
+        "with_check": null
+      },
+      {
+        "schemaname": "public",
+        "tablename": "messages",
+        "policyname": "messages_update_sender",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "UPDATE",
+        "qual": "(sender_id = ( SELECT auth.uid() AS uid))",
+        "with_check": "(sender_id = ( SELECT auth.uid() AS uid))"
+      }
+    ],
+    "conversation_table_columns": [
+      {
+        "table_name": "conversation_members",
+        "column_name": "conversation_id",
+        "data_type": "uuid",
+        "is_nullable": "NO",
+        "column_default": null
+      },
+      {
+        "table_name": "conversation_members",
+        "column_name": "user_id",
+        "data_type": "uuid",
+        "is_nullable": "NO",
+        "column_default": null
+      },
+      {
+        "table_name": "conversation_members",
+        "column_name": "joined_at",
+        "data_type": "timestamp with time zone",
+        "is_nullable": "NO",
+        "column_default": "now()"
+      },
+      {
+        "table_name": "conversation_members",
+        "column_name": "last_read_at",
+        "data_type": "timestamp with time zone",
+        "is_nullable": "YES",
+        "column_default": null
+      },
+      {
+        "table_name": "conversations",
+        "column_name": "id",
+        "data_type": "uuid",
+        "is_nullable": "NO",
+        "column_default": "gen_random_uuid()"
+      },
+      {
+        "table_name": "conversations",
+        "column_name": "is_group",
+        "data_type": "boolean",
+        "is_nullable": "NO",
+        "column_default": "false"
+      },
+      {
+        "table_name": "conversations",
+        "column_name": "title",
+        "data_type": "text",
+        "is_nullable": "YES",
+        "column_default": null
+      },
+      {
+        "table_name": "conversations",
+        "column_name": "created_by",
+        "data_type": "uuid",
+        "is_nullable": "YES",
+        "column_default": null
+      },
+      {
+        "table_name": "conversations",
+        "column_name": "created_at",
+        "data_type": "timestamp with time zone",
+        "is_nullable": "NO",
+        "column_default": "now()"
+      },
+      {
+        "table_name": "messages",
+        "column_name": "id",
+        "data_type": "uuid",
+        "is_nullable": "NO",
+        "column_default": "gen_random_uuid()"
+      },
+      {
+        "table_name": "messages",
+        "column_name": "conversation_id",
+        "data_type": "uuid",
+        "is_nullable": "NO",
+        "column_default": null
+      },
+      {
+        "table_name": "messages",
+        "column_name": "sender_id",
+        "data_type": "uuid",
+        "is_nullable": "NO",
+        "column_default": null
+      },
+      {
+        "table_name": "messages",
+        "column_name": "body",
+        "data_type": "text",
+        "is_nullable": "NO",
+        "column_default": "''::text"
+      },
+      {
+        "table_name": "messages",
+        "column_name": "media_url",
+        "data_type": "text",
+        "is_nullable": "YES",
+        "column_default": null
+      },
+      {
+        "table_name": "messages",
+        "column_name": "media_type",
+        "data_type": "text",
+        "is_nullable": "YES",
+        "column_default": null
+      },
+      {
+        "table_name": "messages",
+        "column_name": "created_at",
+        "data_type": "timestamp with time zone",
+        "is_nullable": "NO",
+        "column_default": "now()"
+      },
+      {
+        "table_name": "messages",
+        "column_name": "edited_at",
+        "data_type": "timestamp with time zone",
+        "is_nullable": "YES",
+        "column_default": null
+      },
+      {
+        "table_name": "messages",
+        "column_name": "deleted_at",
+        "data_type": "timestamp with time zone",
+        "is_nullable": "YES",
+        "column_default": null
+      }
+    ],
+    "conversation_rls_and_grants": [
+      {
+        "table_name": "conversation_members",
+        "rls_enabled": true,
+        "rls_forced": false,
+        "authenticated_can_insert": true,
+        "authenticated_can_select": true
+      },
+      {
+        "table_name": "conversations",
+        "rls_enabled": true,
+        "rls_forced": false,
+        "authenticated_can_insert": true,
+        "authenticated_can_select": true
+      },
+      {
+        "table_name": "messages",
+        "rls_enabled": true,
+        "rls_forced": false,
+        "authenticated_can_insert": true,
+        "authenticated_can_select": true
+      }
+    ]
+  }
+}

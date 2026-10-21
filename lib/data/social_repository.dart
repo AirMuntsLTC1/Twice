@@ -289,7 +289,7 @@ class SocialRepository {
     final rows = await _db
         .from('posts')
         .select(
-          'id,user_id,caption,visibility,comments_enabled,created_at,profiles!posts_user_id_fkey(id,username,display_name,avatar_url),post_media(id,media_url,thumbnail_url,media_type,position),post_likes(user_id),saved_posts(user_id)',
+          'id,user_id,caption,visibility,comments_enabled,created_at,profiles!posts_user_id_fkey(id,username,display_name,avatar_url),post_media(id,media_url,thumbnail_url,media_type,position),post_likes(user_id),saved_posts(user_id),comments(count)',
         )
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1)
@@ -971,6 +971,15 @@ class SocialRepository {
     }
 
     return Future.wait(profiles.map(_resolveProfileAvatar));
+  }
+
+  Future<int> commentCount(String postId) async {
+    final rows = await _db
+        .from('comments')
+        .select('id')
+        .eq('post_id', postId)
+        .timeout(const Duration(seconds: 15));
+    return (rows as List).length;
   }
 
   Future<List<Map<String, dynamic>>> comments(String postId) async {

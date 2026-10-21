@@ -767,6 +767,13 @@ class SocialPost {
     (e) => e['user_id'] == Supabase.instance.client.auth.currentUser?.id,
   );
   int get likes => likesRows.length;
+  int get commentCount {
+    final raw = data['comments'];
+    if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      return int.tryParse((raw.first as Map)['count'].toString()) ?? 0;
+    }
+    return 0;
+  }
   bool get saved =>
       ((data['saved_posts'] as List? ?? const []).cast<Map>()).any(
         (e) => e['user_id'] == Supabase.instance.client.auth.currentUser?.id,
@@ -2170,6 +2177,53 @@ class FeedPage extends StatelessWidget {
   );
 }
 
+/// Instagram-style comment bubble (round bubble with a tail at bottom-left).
+class _InstagramCommentIcon extends StatelessWidget {
+  const _InstagramCommentIcon({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    size: Size.square(size),
+    painter: _InstagramCommentPainter(color),
+  );
+}
+
+class _InstagramCommentPainter extends CustomPainter {
+  const _InstagramCommentPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.scale(size.width / 24);
+    final path = Path()
+      ..moveTo(20.656, 17.008)
+      ..arcToPoint(
+        const Offset(17.066, 20.623),
+        radius: const Radius.circular(9.993),
+        largeArc: true,
+        clockwise: false,
+      )
+      ..lineTo(22, 22)
+      ..close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeJoin = StrokeJoin.round
+        ..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _InstagramCommentPainter old) =>
+      old.color != color;
+}
+
 class _AnimatedLikeButton extends StatefulWidget {
   const _AnimatedLikeButton({required this.liked, required this.onPressed});
 
@@ -2920,9 +2974,8 @@ class PostCard extends StatelessWidget {
                       liked: post.liked,
                       onPressed: () => onLike(post),
                     ),
-                    IconButton(
-                      tooltip: 'Comments',
-                      onPressed: () async {
+                    InkResponse(
+                      onTap: () async {
                         await showModalBottomSheet<void>(
                           context: context,
                           isScrollControlled: true,
@@ -2939,12 +2992,38 @@ class PostCard extends StatelessWidget {
                           clipBehavior: Clip.antiAlias,
                           builder: (_) => CommentsSheet(post: post),
                         );
+                        try {
+                          final n = await SocialRepository.instance
+                              .commentCount(post.id);
+                          post.data['comments'] = [
+                            {'count': n},
+                          ];
+                        } catch (_) {}
                         onCommentChanged();
                       },
-                      icon: const Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        size: 25,
-                        color: ink,
+                      radius: 26,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const _InstagramCommentIcon(size: 25, color: ink),
+                            if (post.commentCount > 0) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                '${post.commentCount}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: ink,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                     const Spacer(),

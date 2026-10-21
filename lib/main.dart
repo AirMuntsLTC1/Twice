@@ -22,6 +22,9 @@ import 'data/inbox_controller.dart';
 import 'data/local_cache.dart';
 import 'data/twice_media.dart';
 import 'widgets/ig_icons.dart';
+import 'ads/ad_manager.dart';
+import 'ads/feed_entries.dart';
+import 'ads/native_ad_card.dart';
 
 part 'videos_screen.dart';
 
@@ -163,6 +166,7 @@ Future<void> main() async {
   );
   TwiceMedia.configure();
   runApp(const TwiceApp());
+  unawaited(TwiceAds.init());
   unawaited(_bootSupabase());
   unawaited(TwiceMedia.trimDiskCache());
 }
@@ -2953,13 +2957,20 @@ class FeedPage extends StatelessWidget {
             ),
           )
         else
-          ...posts.map(
-            (post) => PostCard(
-              key: ValueKey('post-${post.id}'),
-              post: post,
-              onLike: onLike,
-              onCommentChanged: onCommentChanged,
-            ),
+          // Organic posts + a native video ad after every N posts, all in the
+          // same list so ads scroll inline like any other post.
+          ...interleaveAds<SocialPost>(posts).map(
+            (entry) => entry.isAd
+                ? FeedNativeAdCard(
+                    key: ValueKey('ad-slot-${entry.adSlot}'),
+                    slot: entry.adSlot!,
+                  )
+                : PostCard(
+                    key: ValueKey('post-${entry.item!.id}'),
+                    post: entry.item!,
+                    onLike: onLike,
+                    onCommentChanged: onCommentChanged,
+                  ),
           ),
       ],
     ),

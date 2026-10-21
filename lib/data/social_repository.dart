@@ -1934,13 +1934,67 @@ Future<List<Map<String, dynamic>>> messagesDetailed(
       .map((e) => Map<String, dynamic>.from(e as Map))
       .toList();
 
+  // Conversation-level read receipt based on members' last_read_at.
+  final memberRows = await _db
+      .from('conversation_members')
+      .select('user_id,last_read_at')
+      .eq('conversation_id', conversationId);
+
+  final otherMembers = (memberRows as List)
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .where((m) => (m['user_id'] ?? '').toString() != userId)
+      .toList();
+
+  for (final message in list) {
+    message['read_at'] = null;
+    if ((message['sender_id'] ?? '').toString() != userId ||
+        otherMembers.isEmpty) {
+      continue;
+    }
+    final created = DateTime.tryParse(
+      (message['created_at'] ?? '').toString(),
+    );
+    if (created == null) continue;
+
+    final everyoneRead = otherMembers.every((member) {
+      final value = member['last_read_at'];
+      if (value == null) return false;
+      final readAt = DateTime.tryParse(value.toString());
+      return readAt != null && !readAt.isBefore(created);
+    });
+
+    if (everyoneRead) {
+      message['read_at'] = created.toIso8601String();
+    }
+  }
+
   // Resolve media + attach sender profiles
   final needed = <String>{};
   final senderIds = <String>{};
+  final attachmentRows = <Map<String, dynamic>>[];
+
   for (final m in list) {
     senderIds.add((m['sender_id'] ?? '').toString());
     final path = (m['media_url'] ?? '').toString().trim();
     if (_isStoragePath(path)) needed.add(path);
+  }
+
+  if (list.isNotEmpty) {
+    final rawAttachments = await _db
+        .from('message_attachments')
+        .select('id,message_id,conversation_id,sender_id,media_url,media_type,position,created_at')
+        .eq('conversation_id', conversationId)
+        .inFilter('message_id', list.map((m) => m['id']).toList())
+        .order('position');
+
+    attachmentRows.addAll(
+      (rawAttachments as List)
+          .map((e) => Map<String, dynamic>.from(e as Map)),
+    );
+    for (final a in attachmentRows) {
+      final path = (a['media_url'] ?? '').toString().trim();
+      if (_isStoragePath(path)) needed.add(path);
+    }
   }
 
   final urls = await _resolvePaths('chat-media', needed, strict: false);
@@ -1967,6 +2021,20 @@ Future<List<Map<String, dynamic>>> messagesDetailed(
       m['resolved_media_url'] = path;
     }
     m['sender_profile'] = profiles[(m['sender_id'] ?? '').toString()];
+  }
+
+  final attachmentsByMessage = <String, List<Map<String, dynamic>>>{};
+  for (final a in attachmentRows) {
+    final path = (a['media_url'] ?? '').toString().trim();
+    a['resolved_media_url'] =
+        _isStoragePath(path) ? (urls[path] ?? '') : path;
+    final messageId = (a['message_id'] ?? '').toString();
+    (attachmentsByMessage[messageId] ??= <Map<String, dynamic>>[]).add(a);
+  }
+  for (final m in list) {
+    m['resolved_attachments'] =
+        attachmentsByMessage[(m['id'] ?? '').toString()] ??
+        <Map<String, dynamic>>[];
   }
   return list;
 }
@@ -2005,6 +2073,91 @@ Future<void> sendMediaMessage({
     'media_url': objectPath,
     'media_type': mediaType,
   });
+}
+
+Future<void> sendMediaAlbum({
+  required String conversationId,
+  required List<File> files,
+}) async {
+  if (files.isEmpty || files.length > 10) {
+    throw ArgumentError('Choose between 1 and 10 photos.');
+  }
+
+  final uploadedPaths = <String>[];
+  var parentInserted = false;
+
+  String contentTypeFor(String ext) {
+    switch (ext.toLowerCase()) {
+      case '.png':
+        return 'image/png';
+      case '.webp':
+        return 'image/webp';
+      case '.gif':
+        return 'image/gif';
+      case '.jpg':
+      case '.jpeg':
+      default:
+        return 'image/jpeg';
+    }
+  }
+
+  try {
+    for (var i = 0; i < files.length; i++) {
+      final file = files[i];
+      var ext = p.extension(file.path).toLowerCase();
+      if (!['.jpg', '.jpeg', '.png', '.webp', '.gif'].contains(ext)) {
+        throw StateError(
+          'Unsupported photo format: ${ext.isEmpty ? '(unknown)' : ext}. '
+          'Choose JPG, PNG, WebP, or GIF photos.',
+        );
+      }
+
+      final objectPath =
+          '$userId/$conversationId/${DateTime.now().millisecondsSinceEpoch}_$i$ext';
+      await _db.storage.from('chat-media').upload(
+        objectPath,
+        file,
+        fileOptions: FileOptions(
+          contentType: contentTypeFor(ext),
+          upsert: false,
+        ),
+      );
+      uploadedPaths.add(objectPath);
+    }
+
+    final parent = await _db.from('messages').insert({
+      'conversation_id': conversationId,
+      'sender_id': userId,
+      'body': '',
+      'media_url': uploadedPaths.first,
+      'media_type': 'image',
+    }).select('id').single();
+
+    parentInserted = true;
+    final messageId = parent['id'].toString();
+
+    await _db.from('message_attachments').insert([
+      for (var i = 0; i < uploadedPaths.length; i++)
+        {
+          'conversation_id': conversationId,
+          'message_id': messageId,
+          'sender_id': userId,
+          'media_url': uploadedPaths[i],
+          'media_type': 'image',
+          'position': i,
+        },
+    ]);
+  } catch (_) {
+    // Keep uploads if the parent message exists; it may already reference them.
+    if (!parentInserted && uploadedPaths.isNotEmpty) {
+      try {
+        await _db.storage.from('chat-media').remove(uploadedPaths);
+      } catch (_) {
+        // Preserve the original send error.
+      }
+    }
+    rethrow;
+  }
 }
 
 // Keep the original simple helpers for backward compatibility:

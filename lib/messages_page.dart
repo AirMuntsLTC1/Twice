@@ -392,6 +392,16 @@ class _ConversationPageState extends State<ConversationPage> {
   String? _error;
   RealtimeChannel? _channel;
   final Map<String, Map<String, dynamic>> _senderCache = {};
+  bool _attachmentRefreshScheduled = false;
+
+  void _scheduleAttachmentRefresh() {
+    if (_attachmentRefreshScheduled) return;
+    _attachmentRefreshScheduled = true;
+    Future<void>.delayed(const Duration(milliseconds: 300), () {
+      _attachmentRefreshScheduled = false;
+      if (mounted) unawaited(_refreshMessagesQuietly());
+    });
+  }
 
   String get _myId => Supabase.instance.client.auth.currentUser?.id ?? '';
 
@@ -429,13 +439,44 @@ class _ConversationPageState extends State<ConversationPage> {
           callback: (payload) {
             final row = Map<String, dynamic>.from(payload.newRecord);
             if (_messages.any((m) => m['id'] == row['id'])) return;
-            setState(() => _messages = [..._messages, row]);
-            InboxController.instance
-                .markConversationRead(widget.conversationId);
-            _scrollToBottom();
+            unawaited(_refreshMessagesQuietly());
           },
         )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'message_attachments',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'conversation_id',
+            value: widget.conversationId,
+          ),
+          callback: (_) => _scheduleAttachmentRefresh(),
+        )
         .subscribe();
+  }
+
+  Future<void> _refreshMessagesQuietly() async {
+    try {
+      final rows = await SocialRepository.instance
+          .messagesDetailed(widget.conversationId);
+      if (!mounted) return;
+
+      for (final r in rows) {
+        final sid = (r['sender_id'] ?? '').toString();
+        final profile = r['sender_profile'];
+        if (sid.isNotEmpty && profile is Map) {
+          _senderCache[sid] = Map<String, dynamic>.from(profile);
+        }
+      }
+
+      setState(() => _messages = rows);
+      InboxController.instance
+          .markConversationRead(widget.conversationId);
+      _scrollToBottom();
+    } catch (e) {
+      // Keep the current conversation visible if a quiet refresh fails.
+    }
   }
 
   Future<void> _load() async {
@@ -517,56 +558,189 @@ class _ConversationPageState extends State<ConversationPage> {
       }
       return;
     }
+
     final paths = await PhotoManager.getAssetPathList(
       type: video ? RequestType.video : RequestType.image,
       onlyAll: true,
     );
     if (paths.isEmpty) return;
-    final assets = await paths.first.getAssetListPaged(page: 0, size: 40);
+
+    final assets = await paths.first.getAssetListPaged(page: 0, size: 100);
     if (!mounted || assets.isEmpty) return;
 
-    final chosen = await showModalBottomSheet<AssetEntity>(
+    final selected = <AssetEntity>[];
+    final chosen = await showModalBottomSheet<List<AssetEntity>>(
       context: context,
       backgroundColor: _igSurface,
-      builder: (ctx) => SizedBox(
-        height: 360,
-        child: GridView.builder(
-          padding: const EdgeInsets.all(8),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisSpacing: 4,
-            crossAxisSpacing: 4,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * 0.65,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        video
+                            ? 'Choose a video'
+                            : 'Choose photos (${selected.length}/10)',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (!video)
+                      TextButton(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () => Navigator.pop(
+                                  sheetContext,
+                                  List<AssetEntity>.from(selected),
+                                ),
+                        child: const Text('Next'),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.all(8),
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 4,
+                    crossAxisSpacing: 4,
+                  ),
+                  itemCount: assets.length,
+                  itemBuilder: (_, index) {
+                    final asset = assets[index];
+                    final isSelected =
+                        selected.any((item) => item.id == asset.id);
+
+                    return FutureBuilder<File?>(
+                      future: asset.file,
+                      builder: (_, snapshot) {
+                        final file = snapshot.data;
+                        return GestureDetector(
+                          onTap: () {
+                            if (video) {
+                              Navigator.pop(sheetContext, [asset]);
+                              return;
+                            }
+
+                            setSheetState(() {
+                              if (isSelected) {
+                                selected.removeWhere(
+                                  (item) => item.id == asset.id,
+                                );
+                              } else if (selected.length < 10) {
+                                selected.add(asset);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'You can select up to 10 photos.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            });
+                          },
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              if (file == null)
+                                Container(color: _igElevated)
+                              else
+                                Image.file(file, fit: BoxFit.cover),
+                              if (isSelected)
+                                Container(
+                                  color: Colors.black.withOpacity(0.35),
+                                  alignment: Alignment.topRight,
+                                  padding: const EdgeInsets.all(6),
+                                  child: CircleAvatar(
+                                    radius: 12,
+                                    backgroundColor: _igBlue,
+                                    child: Text(
+                                      '${selected.indexWhere(
+                                            (item) => item.id == asset.id,
+                                          ) + 1}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              if (video)
+                                const Positioned(
+                                  right: 6,
+                                  bottom: 6,
+                                  child: Icon(
+                                    Icons.play_circle_fill,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              if (!video)
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: selected.isEmpty
+                          ? null
+                          : () => Navigator.pop(
+                                sheetContext,
+                                List<AssetEntity>.from(selected),
+                              ),
+                      child: Text('Send ${selected.length} photo(s)'),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          itemCount: assets.length,
-          itemBuilder: (_, i) {
-            final a = assets[i];
-            return FutureBuilder<File?>(
-              future: a.file,
-              builder: (_, s) {
-                final f = s.data;
-                return GestureDetector(
-                  onTap: () => Navigator.pop(ctx, a),
-                  child: f == null
-                      ? Container(color: _igElevated)
-                      : Image.file(f, fit: BoxFit.cover),
-                );
-              },
-            );
-          },
         ),
       ),
     );
-    if (chosen == null) return;
-    final file = await chosen.file;
-    if (file == null) return;
+
+    if (chosen == null || chosen.isEmpty || !mounted) return;
 
     setState(() => _sending = true);
     try {
-      await SocialRepository.instance.sendMediaMessage(
-        conversationId: widget.conversationId,
-        file: file,
-        mediaType: video ? 'video' : 'image',
-      );
+      final files = <File>[];
+      for (final asset in chosen) {
+        final file = await asset.file;
+        if (file != null) files.add(file);
+      }
+      if (files.isEmpty) {
+        throw StateError('Could not read the selected media.');
+      }
+
+      if (!video && files.length > 1) {
+        await SocialRepository.instance.sendMediaAlbum(
+          conversationId: widget.conversationId,
+          files: files,
+        );
+      } else {
+        await SocialRepository.instance.sendMediaMessage(
+          conversationId: widget.conversationId,
+          file: files.first,
+          mediaType: video ? 'video' : 'image',
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -595,7 +769,7 @@ class _ConversationPageState extends State<ConversationPage> {
         title: Row(
           children: [
             CircleAvatar(
-              radius: 16,
+              radius: 20,
               backgroundColor: _igElevated,
               backgroundImage: otherProv,
               onBackgroundImageError: otherProv == null
@@ -696,7 +870,7 @@ class _ConversationPageState extends State<ConversationPage> {
 
     return ListView.builder(
       controller: _scroll,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
       itemCount: _messages.length,
       itemBuilder: (_, i) {
         final m = _messages[i];
@@ -718,7 +892,7 @@ class _ConversationPageState extends State<ConversationPage> {
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+        padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
         decoration: const BoxDecoration(
           color: _igBlack,
           border: Border(top: BorderSide(color: _igElevated, width: 0.5)),
@@ -731,10 +905,11 @@ class _ConversationPageState extends State<ConversationPage> {
             ),
             Expanded(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 15),
                 decoration: BoxDecoration(
-                  color: _igElevated,
-                  borderRadius: BorderRadius.circular(24),
+                  color: const Color(0xFF1D1D1D),
+                  border: Border.all(color: const Color(0xFF303030), width: 0.7),
+                  borderRadius: BorderRadius.circular(28),
                 ),
                 child: Row(
                   children: [
@@ -815,8 +990,28 @@ class _Bubble extends StatelessWidget {
             '')
         .toString();
     final mediaType = (message['media_type'] ?? '').toString();
+    final createdAt = DateTime.tryParse(
+      (message['created_at'] ?? '').toString(),
+    )?.toLocal();
+    final timeLabel = createdAt == null
+        ? ''
+        : '${createdAt.hour.toString().padLeft(2, '0')}:'
+          '${createdAt.minute.toString().padLeft(2, '0')}';
+    final isRead = own && message['read_at'] != null;
     final hasMedia = mediaUrl.isNotEmpty &&
         (mediaUrl.startsWith('http') || mediaUrl.startsWith('file'));
+    final rawAttachments = message['resolved_attachments'];
+    final attachments = rawAttachments is List
+        ? rawAttachments
+            .whereType<Map>()
+            .map((a) => Map<String, dynamic>.from(a))
+            .where((a) {
+              final url = (a['resolved_media_url'] ?? '').toString();
+              return url.startsWith('http') || url.startsWith('file');
+            })
+            .toList()
+        : <Map<String, dynamic>>[];
+    final hasAlbum = attachments.length > 1;
 
     final avatarUrl = (senderProfile?['avatar_url'] ?? fallbackAvatar).toString();
     final prov = _avatarProvider(avatarUrl);
@@ -861,16 +1056,19 @@ class _Bubble extends StatelessWidget {
               decoration: BoxDecoration(
                 color: own ? _igBubbleMe : _igBubbleThem,
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
-                  bottomLeft: Radius.circular(own ? 18 : 4),
-                  bottomRight: Radius.circular(own ? 4 : 18),
+                  topLeft: const Radius.circular(20),
+                  topRight: const Radius.circular(20),
+                  bottomLeft: Radius.circular(own ? 20 : 5),
+                  bottomRight: Radius.circular(own ? 5 : 20),
                 ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (hasMedia) _media(mediaUrl, mediaType),
+                  if (hasAlbum)
+                    _AlbumGrid(attachments: attachments)
+                  else if (hasMedia)
+                    _media(mediaUrl, mediaType),
                   if (body.isNotEmpty)
                     Padding(
                       padding: hasMedia
@@ -883,6 +1081,40 @@ class _Bubble extends StatelessWidget {
                           fontSize: 15,
                           height: 1.35,
                         ),
+                      ),
+                    ),
+                  if (timeLabel.isNotEmpty || isRead)
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        hasMedia ? 8 : 0,
+                        6,
+                        hasMedia ? 8 : 0,
+                        2,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (timeLabel.isNotEmpty)
+                            Text(
+                              timeLabel,
+                              style: const TextStyle(
+                                color: Colors.white60,
+                                fontSize: 10,
+                              ),
+                            ),
+                          if (isRead) ...[
+                            const SizedBox(width: 6),
+                            const Text(
+                              'Seen',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                 ],
@@ -911,6 +1143,71 @@ class _Bubble extends StatelessWidget {
           color: _igElevated,
           alignment: Alignment.center,
           child: const Icon(Icons.broken_image, color: _igMuted),
+        ),
+      ),
+    );
+  }
+}
+
+class _AlbumGrid extends StatelessWidget {
+  const _AlbumGrid({required this.attachments});
+
+  final List<Map<String, dynamic>> attachments;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = attachments.take(4).toList();
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        width: 240,
+        height: visible.length == 2 ? 132 : 220,
+        child: GridView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          itemCount: visible.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 2,
+            crossAxisSpacing: 2,
+          ),
+          itemBuilder: (_, index) {
+            final item = visible[index];
+            final url = (item['resolved_media_url'] ?? '').toString();
+            final remaining = attachments.length - 4;
+
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Image(
+                  image: _avatarProvider(url) ?? const NetworkImage(''),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    color: _igElevated,
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.broken_image_outlined,
+                      color: _igMuted,
+                    ),
+                  ),
+                ),
+                if (index == 3 && remaining > 0)
+                  Container(
+                    color: Colors.black.withOpacity(0.58),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '+$remaining',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );

@@ -1263,7 +1263,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
         transitionDuration: const Duration(milliseconds: 380),
         reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (_, animation, secondaryAnimation) =>
-            CreatePage(onPost: _publish),
+            CreatePage(onPost: _publish, profile: profile),
         transitionsBuilder: (_, animation, secondaryAnimation, child) {
           final curved = CurvedAnimation(
             parent: animation,
@@ -4166,7 +4166,12 @@ Future<List<AssetEntity>> _loadSelectableMedia({int size = 200}) async {
 }
 
 class CreatePage extends StatefulWidget {
-  const CreatePage({super.key, required this.onPost});
+  const CreatePage({
+    super.key,
+    required this.onPost,
+    required this.profile,
+  });
+  final Map<String, dynamic> profile;
   final Future<void> Function(
     String caption,
     List<AssetEntity> media,
@@ -4284,118 +4289,161 @@ class _CreatePageState extends State<CreatePage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 20),
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 25,
-                      backgroundColor: const Color(0xFF262626),
-                      child: const Icon(
-                        Icons.person,
-                        color: Color(0xFF0095F6),
-                        size: 29,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
+                Builder(
+                  builder: (context) {
+                    final avatar =
+                        (widget.profile['avatar_url'] ?? '').toString().trim();
+                    final displayName =
+                        (widget.profile['display_name'] ?? '').toString().trim();
+                    final username =
+                        (widget.profile['username'] ?? '').toString().trim();
+                    final name = displayName.isNotEmpty
+                        ? displayName
+                        : (username.isNotEmpty ? username : 'Twice user');
+
+                    return Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Your profile',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        PopupMenuButton<String>(
-                          initialValue: visibility,
-                          onSelected: (value) {
-                            setState(() => visibility = value);
-                          },
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(
-                              value: 'public',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.public, size: 19),
-                                  SizedBox(width: 10),
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text('Public'),
-                                      Text(
-                                        'Anyone can see this post',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            PopupMenuItem(
-                              value: 'private',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.lock_outline, size: 19),
-                                  SizedBox(width: 10),
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text('Private'),
-                                      Text(
-                                        'Only you can see this post',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF262626),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  visibility == 'public'
-                                      ? Icons.public
-                                      : Icons.lock_outline,
-                                  size: 14,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  visibility == 'public' ? 'Public' : 'Private',
+                        CircleAvatar(
+                          radius: 25,
+                          backgroundColor: const Color(0xFF262626),
+                          backgroundImage: _isImageSource(avatar)
+                              ? _twiceAvatarProvider(avatar)
+                              : null,
+                          child: !_isImageSource(avatar)
+                              ? Text(
+                                  name.characters.first.toUpperCase(),
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 19,
+                                  ),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '@${username.isNotEmpty ? username : 'user'}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFFA8A8A8),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 7),
+                              PopupMenuButton<String>(
+                                initialValue: visibility,
+                                onSelected: (value) {
+                                  setState(() => visibility = value);
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'public',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.public, size: 19),
+                                        SizedBox(width: 10),
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text('Public'),
+                                            Text(
+                                              'Anyone can see this post',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'private',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.lock_outline, size: 19),
+                                        SizedBox(width: 10),
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text('Private'),
+                                            Text(
+                                              'Only you can see this post',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF262626),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        visibility == 'public'
+                                            ? Icons.public
+                                            : Icons.lock_outline,
+                                        size: 14,
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        visibility == 'public'
+                                            ? 'Public'
+                                            : 'Private',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      const Icon(
+                                        Icons.arrow_drop_down,
+                                        size: 17,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(width: 5),
-                                const Icon(Icons.arrow_drop_down, size: 17),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                    ),
-                  ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 22),
                 TextField(

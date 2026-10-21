@@ -660,7 +660,7 @@ class _ConversationPageState extends State<ConversationPage> {
                                 Image.file(file, fit: BoxFit.cover),
                               if (isSelected)
                                 Container(
-                                  color: Colors.black.withOpacity(0.35),
+                                  color: Colors.black.withValues(alpha: 0.35),
                                   alignment: Alignment.topRight,
                                   padding: const EdgeInsets.all(6),
                                   child: CircleAvatar(
@@ -1194,7 +1194,7 @@ class _AlbumGrid extends StatelessWidget {
                 ),
                 if (index == 3 && remaining > 0)
                   Container(
-                    color: Colors.black.withOpacity(0.58),
+                    color: Colors.black.withValues(alpha: 0.58),
                     alignment: Alignment.center,
                     child: Text(
                       '+$remaining',

@@ -21,6 +21,7 @@ import 'data/social_repository.dart';
 import 'data/inbox_controller.dart';
 import 'data/local_cache.dart';
 import 'data/twice_media.dart';
+import 'ads/ad_config.dart';
 import 'widgets/ig_icons.dart';
 import 'ads/ad_manager.dart';
 import 'ads/feed_entries.dart';
@@ -103,9 +104,8 @@ const violet = igBlue; // accent (was purple) -> Instagram blue
 const canvas = igBlack; // page background
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-const supabasePublishableKey = String.fromEnvironment(
-  'SUPABASE_PUBLISHABLE_KEY',
-);
+const supabasePublishableKey =
+    String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
 
 bool get supabaseConfigured =>
     supabaseUrl.startsWith('https://') && supabasePublishableKey.isNotEmpty;
@@ -6947,6 +6947,7 @@ class CommentsSheet extends StatefulWidget {
 class _CommentsSheetState extends State<CommentsSheet> {
   final controller = TextEditingController();
   List<Map<String, dynamic>> rows = [];
+  Map<String, dynamic>? replyingTo;
   bool busy = true;
   @override
   void initState() {
@@ -7001,6 +7002,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       'post_id': widget.post.id,
       'user_id': Supabase.instance.client.auth.currentUser?.id ?? '',
       'body': text,
+      if (replyingTo != null) 'parent_id': replyingTo!['id'].toString(),
       'created_at': DateTime.now().toIso8601String(),
       'profiles': <String, dynamic>{'display_name': 'You'},
       '_pending': true,
@@ -7010,6 +7012,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
     setState(() {
       rows = [...rows, optimistic];
       controller.clear();
+      replyingTo = null;
       loadError = null;
       busy = false;
       sending = true;
@@ -7054,6 +7057,57 @@ class _CommentsSheetState extends State<CommentsSheet> {
     }
   }
 
+  List<Widget> _buildCommentThread() {
+    final ids = rows.map((r) => r['id']?.toString() ?? '').toSet();
+    final roots = <Map<String, dynamic>>[];
+    final children = <String, List<Map<String, dynamic>>>{};
+    for (final row in rows) {
+      final parent = row['parent_id']?.toString() ?? '';
+      if (parent.isEmpty || parent == 'null' || !ids.contains(parent)) {
+        roots.add(row);
+      } else {
+        children.putIfAbsent(parent, () => <Map<String, dynamic>>[]).add(row);
+      }
+    }
+    final result = <Widget>[];
+    for (final row in roots) {
+      result.add(_buildOneComment(row, onReply: () {
+        setState(() => replyingTo = row);
+      }));
+      final replies = children[row['id']?.toString() ?? ''] ?? <Map<String, dynamic>>[];
+      for (final reply in replies) {
+        result.add(_buildOneComment(reply, isReply: true));
+      }
+    }
+    return result;
+  }
+
+  Widget _buildOneComment(Map<String, dynamic> row, {
+    bool isReply = false, VoidCallback? onReply,
+  }) {
+    final profile = row['profiles'] as Map? ?? {};
+    final name = (profile['username'] ?? profile['display_name'] ?? 'user')
+        .toString().replaceFirst(RegExp(r'^@'), '');
+    return _commentRow(
+      p: profile,
+      userId: (profile['id'] ?? row['user_id'] ?? '').toString(),
+      name: name,
+      body: (row['body'] ?? '').toString(),
+      time: _timeAgo(row['created_at']),
+      isReply: isReply,
+      onReply: isReply ? null : onReply,
+      status: row['_queued'] == true
+          ? const Padding(padding: EdgeInsets.only(top: 4), child: Text(
+              'Saved offline · waiting to sync',
+              style: TextStyle(fontSize: 11, color: muted)))
+          : row['_failed'] == true
+              ? const Padding(padding: EdgeInsets.only(top: 4), child: Text(
+                  'Not synced · check connection and retry',
+                  style: TextStyle(fontSize: 11, color: igRed)))
+              : null,
+    );
+  }
+
   Widget _commentAvatar(Map p, String name, {double radius = 18}) {
     final avatar = (p['avatar_url'] ?? '').toString().trim();
     final hasAvatar =
@@ -7083,6 +7137,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
     required String body,
     String? time,
     Widget? status,
+    VoidCallback? onReply,
+    bool isReply = false,
   }) {
     void openProfile() => _openUserProfile(
       context,
@@ -7090,7 +7146,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       profile: Map<String, dynamic>.from(p),
     );
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.only(bottom: 16, left: isReply ? 34 : 0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -7128,6 +7184,19 @@ class _CommentsSheetState extends State<CommentsSheet> {
                   ),
                 ],
                 ?status,
+                if (onReply != null) ...[
+                  const SizedBox(height: 5),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onReply,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 3),
+                      child: Text('Reply', style: TextStyle(
+                        color: muted, fontSize: 12, fontWeight: FontWeight.w800,
+                      )),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -7197,39 +7266,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                 ],
               ),
             ),
-          for (final r in rows)
-            Builder(
-              builder: (context) {
-                final p = r['profiles'] as Map? ?? {};
-                final name = (p['username'] ?? p['display_name'] ?? 'user')
-                    .toString()
-                    .replaceFirst(RegExp(r'^@'), '');
-                return _commentRow(
-                  p: p,
-                  userId: (p['id'] ?? r['user_id'] ?? '').toString(),
-                  name: name,
-                  body: (r['body'] ?? '').toString(),
-                  time: _timeAgo(r['created_at']),
-                  status: r['_queued'] == true
-                      ? const Padding(
-                          padding: EdgeInsets.only(top: 4),
-                          child: Text(
-                            'Saved offline · waiting to sync',
-                            style: TextStyle(fontSize: 11, color: muted),
-                          ),
-                        )
-                      : r['_failed'] == true
-                      ? const Padding(
-                          padding: EdgeInsets.only(top: 4),
-                          child: Text(
-                            'Not synced · check connection and retry',
-                            style: TextStyle(fontSize: 11, color: igRed),
-                          ),
-                        )
-                      : null,
-                );
-              },
-            ),
+          ..._buildCommentThread(),
         ],
       );
     }
@@ -7261,6 +7298,24 @@ class _CommentsSheetState extends State<CommentsSheet> {
           const Divider(height: 1, thickness: 0.5, color: igBorder),
           Expanded(child: list()),
           const Divider(height: 1, thickness: 0.5, color: igBorder),
+          if (replyingTo != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+              color: const Color(0xFF202020),
+              child: Row(children: [
+                Expanded(child: Text(
+                  'Replying to comment: ${(replyingTo!['body'] ?? '').toString()}',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: muted, fontSize: 12),
+                )),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(() => replyingTo = null),
+                  icon: const Icon(Icons.close, size: 18),
+                ),
+              ]),
+            ),
           SafeArea(
             top: false,
             child: Padding(
@@ -7293,7 +7348,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                               onSubmitted: (_) => _send(),
                               style: const TextStyle(fontSize: 14),
                               decoration: InputDecoration(
-                                hintText: 'Add a comment for $postUsername…',
+                                hintText: replyingTo == null ? 'Add a comment for $postUsername…' : 'Reply to comment…',
                                 hintStyle: const TextStyle(
                                   color: muted,
                                   fontSize: 14,

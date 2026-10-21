@@ -1787,6 +1787,7 @@ class SocialRepository {
     String postId,
     String body, {
     String? commentId,
+    String? parentId,
   }) async {
     final uid = _db.auth.currentUser?.id;
     if (uid == null) throw AuthException('Please sign in again.');
@@ -1818,6 +1819,8 @@ class SocialRepository {
       'post_id': postId,
       'user_id': uid,
       'body': text,
+      if (parentId != null && parentId.trim().isNotEmpty)
+        'parent_id': parentId.trim(),
     };
     try {
       await _db

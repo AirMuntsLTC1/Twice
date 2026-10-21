@@ -30,7 +30,7 @@ class TwiceAdConfig {
       (kReleaseMode || _forceLive) ? liveNativeUnitId : testNativeUnitId;
 
   /// One ad after every [feedInterval] organic posts (recommended 5 to 7).
-  static const int feedInterval = 6;
+  static const int feedInterval = 4;
 
   /// Hard cap so a very long feed never builds unlimited ad slots.
   static const int maxAdSlots = 12;

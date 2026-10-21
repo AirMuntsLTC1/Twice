@@ -313,20 +313,50 @@ class _VideosPageState extends State<VideosPage> with WidgetsBindingObserver {
         onAction: widget.onCreate,
       );
     } else {
+      final entries = interleaveAds<SocialPost>(
+        _posts, interval: 5, maxAds: TwiceAdConfig.maxAdSlots,
+      );
       body = PageView.builder(
         scrollDirection: Axis.vertical,
         controller: _pager,
-        itemCount: _posts.length,
-        onPageChanged: _onPage,
-        itemBuilder: (context, i) => _VideoReel(
-          key: ValueKey<String>(_posts[i].id),
-          post: _posts[i],
-          myProfile: widget.profile,
-          topInset: top,
-          playing: widget.active && _appResumed && i == _index,
-          preload: i == _index || (widget.active && (i - _index).abs() <= 1),
-          onNext: _next,
-        ),
+        itemCount: entries.length,
+        onPageChanged: (page) {
+          final entry = entries[page];
+          if (entry.isAd) {
+            setState(() => _index = -1);
+            return;
+          }
+          final postIndex = entries.take(page + 1).where((e) => !e.isAd).length - 1;
+          _onPage(postIndex);
+        },
+        itemBuilder: (context, page) {
+          final entry = entries[page];
+          if (entry.isAd) {
+            return ColoredBox(
+              color: Colors.black,
+              child: Center(
+                child: SingleChildScrollView(
+                  child: FeedNativeAdCard(
+                    key: ValueKey<String>('video-ad-${entry.adSlot}'),
+                    slot: entry.adSlot!,
+                  ),
+                ),
+              ),
+            );
+          }
+          final post = entry.item!;
+          final postIndex = entries.take(page + 1).where((e) => !e.isAd).length - 1;
+          return _VideoReel(
+            key: ValueKey<String>(post.id),
+            post: post,
+            myProfile: widget.profile,
+            topInset: top,
+            playing: widget.active && _appResumed && postIndex == _index,
+            preload: postIndex == _index ||
+                (widget.active && (postIndex - _index).abs() <= 1),
+            onNext: _next,
+          );
+        },
       );
     }
 

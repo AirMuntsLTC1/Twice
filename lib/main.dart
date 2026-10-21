@@ -120,7 +120,16 @@ String? supabaseStartupError;
 // background and the gate swaps from the splash to the app when it is ready.
 final ValueNotifier<bool> supabaseBootFinished = ValueNotifier<bool>(false);
 
-Future<void> _bootSupabase() async {
+Future<void>? _bootFuture;
+
+Future<void> _bootSupabase({bool isRetry = false}) {
+  if (_bootFuture != null && !isRetry) return _bootFuture!;
+  final future = _bootSupabaseImpl();
+  _bootFuture = future;
+  return future;
+}
+
+Future<void> _bootSupabaseImpl() async {
   final watch = Stopwatch()..start();
   if (!supabaseConfigured) {
     final missing = <String>[
@@ -132,11 +141,14 @@ Future<void> _bootSupabase() async {
         'Check GitHub Repository secrets and rebuild the APK.';
   } else {
     try {
-      await Supabase.initialize(
-        url: supabaseUrl,
-        publishableKey: supabasePublishableKey,
-      );
-      supabaseReady = true;
+      if (!supabaseReady) {
+        await Supabase.initialize(
+          url: supabaseUrl,
+          publishableKey: supabasePublishableKey,
+        ).timeout(const Duration(seconds: 15));
+        supabaseReady = true;
+        supabaseStartupError = null;
+      }
     } catch (error, stackTrace) {
       debugPrint('Twice Supabase startup failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -165,10 +177,12 @@ Future<void> main() async {
     ),
   );
   TwiceMedia.configure();
+  unawaited(LocalCache.instance.prewarm());
   runApp(const TwiceApp());
   unawaited(TwiceAds.init());
   unawaited(_bootSupabase());
   unawaited(TwiceMedia.trimDiskCache());
+  unawaited(LocalCache.instance.pruneOldCacheEntries());
 }
 
 class NativeCore {
@@ -349,8 +363,14 @@ class TwiceAuthGate extends StatelessWidget {
         if (!finished && supabaseConfigured) return const _TwiceSplash();
         if (!supabaseReady) {
           return TwiceSignInPage(
-            configurationMissing: true,
+            configurationMissing: !supabaseConfigured,
             startupError: supabaseStartupError,
+            onRetryStartup: supabaseConfigured
+                ? () {
+                    supabaseBootFinished.value = false;
+                    _bootSupabase(isRetry: true);
+                  }
+                : null,
           );
         }
         return StreamBuilder<AuthState>(
@@ -404,9 +424,23 @@ class _TwiceSplashState extends State<_TwiceSplash> {
             AnimatedOpacity(
               opacity: _slow ? 1 : 0,
               duration: const Duration(milliseconds: 300),
-              child: const Text(
-                'Still connecting… check your internet.',
-                style: TextStyle(color: muted, fontSize: 13),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Still connecting… check your internet.',
+                    style: TextStyle(color: muted, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () {
+                      supabaseBootFinished.value = false;
+                      _bootSupabase(isRetry: true);
+                    },
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    label: const Text('Retry Connection'),
+                  ),
+                ],
               ),
             ),
           ],
@@ -546,10 +580,12 @@ class TwiceSignInPage extends StatefulWidget {
     super.key,
     this.configurationMissing = false,
     this.startupError,
+    this.onRetryStartup,
   });
 
   final bool configurationMissing;
   final String? startupError;
+  final VoidCallback? onRetryStartup;
 
   @override
   State<TwiceSignInPage> createState() => _TwiceSignInPageState();
@@ -829,11 +865,19 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                       child: const Text('Resend code'),
                     ),
                   ],
-                  if (widget.configurationMissing) ...[
+                  if (widget.configurationMissing || widget.startupError != null) ...[
                     const SizedBox(height: 18),
                     _ErrorPanel(
                       message: widget.startupError ?? 'Supabase configuration is missing. Check the GitHub Actions build secrets.',
                     ),
+                    if (widget.onRetryStartup != null) ...[
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _loading ? null : widget.onRetryStartup,
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: const Text('Retry Connection'),
+                      ),
+                    ],
                   ],
                   if (_error != null) ...[
                     const SizedBox(height: 16),
@@ -1128,20 +1172,21 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
   Future<void> _loadAll() async {
     if (!mounted) return;
     _syncPendingLikes(); // Replay in background; show cached content immediately.
-    setState(() {
-      loading = true;
-      error = null;
-    });
-    // Render durable local data first (a few ms), like Facebook's cold start.
+
+    // 1. Render durable local cache immediately (instant cold-start paint).
     try {
       final cached = await Future.wait<dynamic>([
         repo.cachedMyProfile(),
         repo.cachedFeed(),
+        repo.cachedStories(),
       ]);
       if (!mounted) return;
       final cachedProfile = cached[0];
       final cachedPosts = cached[1] as List<Map<String, dynamic>>;
-      if (cachedProfile is Map || cachedPosts.isNotEmpty) {
+      final cachedStories = cached[2] as List<Map<String, dynamic>>;
+      if (cachedProfile is Map ||
+          cachedPosts.isNotEmpty ||
+          cachedStories.isNotEmpty) {
         setState(() {
           if (cachedProfile is Map) {
             profile = Map<String, dynamic>.from(cachedProfile);
@@ -1149,25 +1194,34 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
           if (cachedPosts.isNotEmpty) {
             posts = cachedPosts.map(SocialPost.new).toList();
           }
+          if (cachedStories.isNotEmpty) {
+            stories = cachedStories;
+          }
           loading = false;
           error = null;
         });
       }
     } catch (_) {
-      /* A first install simply has an empty cache. */
+      /* A cold install simply has an empty cache. */
     }
 
-    // BOOTFIX: profile, feed and stories load independently and each one
-    // paints the moment it arrives, instead of waiting for the slowest.
+    if (posts.isEmpty && profile.isEmpty) {
+      setState(() {
+        loading = true;
+        error = null;
+      });
+    }
+
+    // 2. Fetch fresh data in the background and update smoothly.
     var anySuccess = false;
     Object? firstError;
     Future<void> run<T>(Future<T> work, void Function(T value) apply) async {
       try {
-        final value = await work.timeout(const Duration(seconds: 40));
+        final value = await work.timeout(const Duration(seconds: 25));
         if (!mounted) return;
         setState(() {
           apply(value);
-          if (profile.isNotEmpty) loading = false;
+          if (profile.isNotEmpty || posts.isNotEmpty) loading = false;
           error = null;
         });
         anySuccess = true;

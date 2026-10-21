@@ -17,8 +17,12 @@ class TwiceAdConfig {
       'ca-app-pub-2388362234538140/2313557661';
 
   /// Google's official "Native Advanced Video" test unit (Android).
-  static const String testNativeUnitId =
+  static const String testNativeVideoUnitId =
       'ca-app-pub-3940256099942544/1044960115';
+
+  /// Google's official "Native Advanced" test unit for Native Templates (Android).
+  static const String testNativeUnitId =
+      'ca-app-pub-3940256099942544/2247696110';
 
   static const bool _forceLive = bool.fromEnvironment('TWICE_LIVE_ADS');
 

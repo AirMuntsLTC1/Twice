@@ -52,6 +52,7 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
       setState(() => _failed = true);
       return;
     }
+    TwiceAds.markMounted(widget.slot, true);
     setState(() => _ad = ad);
     // Give the platform view a moment to draw its first frame, then fade the
     // skeleton away. Avoids a white flash.
@@ -63,7 +64,11 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
   @override
   void dispose() {
     _revealTimer?.cancel();
-    if (_ad != null) TwiceAds.release(widget.slot);
+    if (_ad != null) {
+      TwiceAds.markMounted(widget.slot, false);
+      TwiceAds.release(widget.slot);
+      _ad = null;
+    }
     super.dispose();
   }
 

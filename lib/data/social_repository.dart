@@ -25,7 +25,9 @@ class SocialRepository {
     if (uid == null) return [];
     final value = await _cache.get(uid, 'feed');
     if (value is! List) return [];
-    return value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    final posts =
+        value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    return _applyPendingToPosts(uid, posts);
   }
 
   Future<Map<String, dynamic>?> cachedMyProfile() async {
@@ -33,6 +35,61 @@ class SocialRepository {
     if (uid == null) return null;
     final value = await _cache.get(uid, 'profile');
     return value is Map ? Map<String, dynamic>.from(value) : null;
+  }
+
+  Future<List<Map<String, dynamic>>> cachedStories() async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) return [];
+    final value = await _cache.get(uid, 'stories');
+    if (value is! List) return [];
+    return value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  /// Merges pending outbox mutations (likes, bookmarks, comments) into feed posts
+  /// so local changes are never overwritten by stale network snapshots or cache reads.
+  Future<List<Map<String, dynamic>>> _applyPendingToPosts(
+    String uid,
+    List<Map<String, dynamic>> posts,
+  ) async {
+    final pending = await _cache.pending(uid);
+    if (pending.isEmpty) return posts;
+
+    final byId = <String, Map<String, dynamic>>{
+      for (final p in posts) (p['id'] ?? '').toString(): p,
+    };
+
+    for (final item in pending) {
+      final op = item['operation'];
+      final payload = item['payload'];
+      if (payload is! Map) continue;
+
+      final postId = payload['post_id']?.toString();
+      if (postId == null || !byId.containsKey(postId)) continue;
+      final post = byId[postId]!;
+
+      if (op == 'set_like') {
+        final liked = payload['liked'] == true;
+        final likes = List<Map<String, dynamic>>.from(
+          (post['post_likes'] as List? ?? const []).whereType<Map>().map(
+            (row) => Map<String, dynamic>.from(row),
+          ),
+        );
+        likes.removeWhere((row) => row['user_id']?.toString() == uid);
+        if (liked) likes.add({'user_id': uid});
+        post['post_likes'] = likes;
+      } else if (op == 'set_saved') {
+        final saved = payload['saved'] == true;
+        final savedRows = List<Map<String, dynamic>>.from(
+          (post['saved_posts'] as List? ?? const []).whereType<Map>().map(
+            (row) => Map<String, dynamic>.from(row),
+          ),
+        );
+        savedRows.removeWhere((row) => row['user_id']?.toString() == uid);
+        if (saved) savedRows.add({'user_id': uid});
+        post['saved_posts'] = savedRows;
+      }
+    }
+    return posts;
   }
 
   Future<Map<String, dynamic>> _resolveProfileAvatar(
@@ -220,13 +277,17 @@ class SocialRepository {
   }
 
   Future<Map<String, dynamic>> myProfile() async {
-    await ensureProfile();
-    final row = await _db.from('profiles').select().eq('id', userId).single();
-    final resolved = await _resolveProfileAvatar(
-      Map<String, dynamic>.from(row),
-    );
-    await _cache.put(userId, 'profile', resolved);
-    return resolved;
+    try {
+      final ensured = await ensureProfile();
+      await _cache.put(userId, 'profile', ensured);
+      return ensured;
+    } catch (e) {
+      if (_looksLikeNetworkFailure(e)) {
+        final cached = await cachedMyProfile();
+        if (cached != null) return cached;
+      }
+      rethrow;
+    }
   }
 
   Future<void> updateProfile({
@@ -287,80 +348,89 @@ class SocialRepository {
     int limit = 30,
     int offset = 0,
   }) async {
-    await ensureProfile();
-    final rows = await _db
-        .from('posts')
-        .select(
-          'id,user_id,caption,visibility,comments_enabled,created_at,profiles!posts_user_id_fkey(id,username,display_name,avatar_url),post_media(id,media_url,thumbnail_url,media_type,position),post_likes(user_id),saved_posts(user_id),comments(count)',
-        )
-        .order('created_at', ascending: false)
-        .range(offset, offset + limit - 1)
-        .timeout(const Duration(seconds: 25));
+    try {
+      final rows = await _db
+          .from('posts')
+          .select(
+            'id,user_id,caption,visibility,comments_enabled,created_at,profiles!posts_user_id_fkey(id,username,display_name,avatar_url),post_media(id,media_url,thumbnail_url,media_type,position),post_likes(user_id),saved_posts(user_id),comments(count)',
+          )
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1)
+          .timeout(const Duration(seconds: 25));
 
-    final posts = (rows as List)
-        .map((raw) => Map<String, dynamic>.from(raw as Map))
-        .toList();
+      final posts = (rows as List)
+          .map((raw) => Map<String, dynamic>.from(raw as Map))
+          .toList();
 
-    // BOOTFIX: collect every storage path once (authors repeat across posts),
-    // then sign them all with a single batched request.
-    final needed = <String>{};
-    for (final post in posts) {
-      final author = post['profiles'];
-      if (author is Map) {
-        final path = (author['avatar_url'] ?? '').toString().trim();
-        if (_isStoragePath(path)) needed.add(path);
-      }
-      for (final media in (post['post_media'] as List? ?? const [])) {
-        if (media is! Map) continue;
-        for (final key in const ['media_url', 'thumbnail_url']) {
-          final path = (media[key] ?? '').toString().trim();
+      // BOOTFIX: collect every storage path once (authors repeat across posts),
+      // then sign them all with a single batched request.
+      final needed = <String>{};
+      for (final post in posts) {
+        final author = post['profiles'];
+        if (author is Map) {
+          final path = (author['avatar_url'] ?? '').toString().trim();
           if (_isStoragePath(path)) needed.add(path);
         }
+        for (final media in (post['post_media'] as List? ?? const [])) {
+          if (media is! Map) continue;
+          for (final key in const ['media_url', 'thumbnail_url']) {
+            final path = (media[key] ?? '').toString().trim();
+            if (_isStoragePath(path)) needed.add(path);
+          }
+        }
       }
-    }
-    // strict: if signing fails the caller keeps showing the cached feed.
-    final urls = await _resolvePaths('post-media', needed, strict: true);
+      // strict: if signing fails the caller keeps showing the cached feed.
+      final urls = await _resolvePaths('post-media', needed, strict: true);
 
-    String resolve(String path) {
-      if (path.isEmpty) return '';
-      if (!_isStoragePath(path)) return path;
-      return urls[path] ?? '';
-    }
-
-    for (final post in posts) {
-      final authorRaw = post['profiles'];
-      if (authorRaw is Map) {
-        final author = Map<String, dynamic>.from(authorRaw);
-        final path = (author['avatar_url'] ?? '').toString().trim();
-        author['avatar_object_path'] = _isStoragePath(path) ? path : '';
-        author['avatar_url'] = resolve(path);
-        post['profiles'] = author;
+      String resolve(String path) {
+        if (path.isEmpty) return '';
+        if (!_isStoragePath(path)) return path;
+        return urls[path] ?? '';
       }
-      post['media_resolved'] = (post['post_media'] as List? ?? const [])
-          .whereType<Map>()
-          .map((raw) {
-            final item = Map<String, dynamic>.from(raw);
-            item['resolved_url'] = resolve(
-              (item['media_url'] ?? '').toString().trim(),
-            );
-            item['resolved_thumbnail_url'] = resolve(
-              (item['thumbnail_url'] ?? '').toString().trim(),
-            );
-            return item;
-          })
-          .toList();
-    }
 
-    await _cache.put(userId, 'feed', posts);
-    // Prefetch only after the screen is already drawn, so it never competes
-    // with the first paint for bandwidth.
-    unawaited(
-      Future<void>.delayed(
-        const Duration(seconds: 4),
-        () => _warmFeedMediaCache(posts),
-      ).catchError((Object _) {}),
-    );
-    return posts;
+      for (final post in posts) {
+        final authorRaw = post['profiles'];
+        if (authorRaw is Map) {
+          final author = Map<String, dynamic>.from(authorRaw);
+          final path = (author['avatar_url'] ?? '').toString().trim();
+          author['avatar_object_path'] = _isStoragePath(path) ? path : '';
+          author['avatar_url'] = resolve(path);
+          post['profiles'] = author;
+        }
+        post['media_resolved'] = (post['post_media'] as List? ?? const [])
+            .whereType<Map>()
+            .map((raw) {
+              final item = Map<String, dynamic>.from(raw);
+              item['resolved_url'] = resolve(
+                (item['media_url'] ?? '').toString().trim(),
+              );
+              item['resolved_thumbnail_url'] = resolve(
+                (item['thumbnail_url'] ?? '').toString().trim(),
+              );
+              return item;
+            })
+            .toList();
+      }
+
+      // Preserve local pending changes so stale network responses cannot overwrite them.
+      final mergedPosts = await _applyPendingToPosts(userId, posts);
+      await _cache.put(userId, 'feed', mergedPosts);
+
+      // Prefetch only after the screen is already drawn, so it never competes
+      // with the first paint for bandwidth.
+      unawaited(
+        Future<void>.delayed(
+          const Duration(seconds: 4),
+          () => _warmFeedMediaCache(mergedPosts),
+        ).catchError((Object _) {}),
+      );
+      return mergedPosts;
+    } catch (error) {
+      if (_looksLikeNetworkFailure(error)) {
+        return cachedFeed();
+      }
+      rethrow;
+    }
   }
 
   // FBFIX: lightweight, bounded prefetch of photos + thumbnails (3 at a time).
@@ -517,7 +587,7 @@ class SocialRepository {
     await _cache.put(uid, 'feed', updated);
   }
 
-  /// Replays queued likes and comments for the signed-in account.
+  /// Replays queued likes, bookmarks, and comments for the signed-in account.
   Future<void> syncPendingLikes() async {
     final uid = _db.auth.currentUser?.id;
     if (uid == null) return;
@@ -525,6 +595,7 @@ class SocialRepository {
     final pending = await _cache.pending(uid);
     for (final item in pending) {
       if (item['operation'] != 'set_like' &&
+          item['operation'] != 'set_saved' &&
           item['operation'] != 'add_comment') {
         continue;
       }
@@ -535,6 +606,29 @@ class SocialRepository {
               .from('comments')
               .upsert(payload, onConflict: 'id', ignoreDuplicates: true)
               .timeout(const Duration(seconds: 15));
+          await _cache.removePending(item['id'].toString());
+          continue;
+        }
+        if (item['operation'] == 'set_saved') {
+          final postId = payload['post_id']?.toString();
+          if (postId != null && postId.isNotEmpty) {
+            final saved = payload['saved'] == true;
+            if (saved) {
+              await _db
+                  .from('saved_posts')
+                  .upsert({'post_id': postId, 'user_id': uid},
+                      onConflict: 'user_id,post_id', ignoreDuplicates: true)
+                  .timeout(const Duration(seconds: 15));
+            } else {
+              await _db
+                  .from('saved_posts')
+                  .delete()
+                  .eq('post_id', postId)
+                  .eq('user_id', uid)
+                  .timeout(const Duration(seconds: 15));
+            }
+            await _updateCachedSaved(postId, saved);
+          }
           await _cache.removePending(item['id'].toString());
           continue;
         }
@@ -557,21 +651,69 @@ class SocialRepository {
   }
 
   Future<void> toggleSaved(String postId, bool saved) async {
-    if (saved) {
-      await _db
-          .from('saved_posts')
-          .delete()
-          .eq('post_id', postId)
-          .eq('user_id', userId);
-    } else {
-      await _db
-          .from('saved_posts')
-          .upsert(
-            {'post_id': postId, 'user_id': userId},
-            onConflict: 'user_id,post_id',
-            ignoreDuplicates: true,
-          );
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) throw AuthException('Please sign in again.');
+    final newSaved = !saved;
+
+    try {
+      if (saved) {
+        await _db
+            .from('saved_posts')
+            .delete()
+            .eq('post_id', postId)
+            .eq('user_id', uid)
+            .timeout(const Duration(seconds: 15));
+      } else {
+        await _db
+            .from('saved_posts')
+            .upsert(
+              {'post_id': postId, 'user_id': uid},
+              onConflict: 'user_id,post_id',
+              ignoreDuplicates: true,
+            )
+            .timeout(const Duration(seconds: 15));
+      }
+      final pending = await _cache.pending(uid);
+      for (final item in pending) {
+        if (item['operation'] == 'set_saved' &&
+            item['payload'] is Map &&
+            item['payload']['post_id'] == postId) {
+          await _cache.removePending(item['id'].toString());
+        }
+      }
+    } catch (error) {
+      if (!_looksLikeNetworkFailure(error)) rethrow;
+      await _cache.enqueue(uid, 'set_saved', {
+        'post_id': postId,
+        'saved': newSaved,
+      });
     }
+    await _updateCachedSaved(postId, newSaved);
+  }
+
+  Future<void> _updateCachedSaved(String postId, bool saved) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) return;
+    final cached = await _cache.get(uid, 'feed');
+    if (cached is! List) return;
+
+    final updated = <Map<String, dynamic>>[];
+    for (final raw in cached) {
+      if (raw is! Map) continue;
+      final post = Map<String, dynamic>.from(raw);
+      if (post['id']?.toString() == postId) {
+        final savedRows = List<Map<String, dynamic>>.from(
+          (post['saved_posts'] as List? ?? const []).whereType<Map>().map(
+            (row) => Map<String, dynamic>.from(row),
+          ),
+        );
+        savedRows.removeWhere((row) => row['user_id']?.toString() == uid);
+        if (saved) savedRows.add({'user_id': uid});
+        post['saved_posts'] = savedRows;
+      }
+      updated.add(post);
+    }
+    await _cache.put(uid, 'feed', updated);
   }
 
   Future<String> publishPost(
@@ -663,60 +805,78 @@ class SocialRepository {
   }
 
   Future<List<Map<String, dynamic>>> loadStories() async {
-    final rows = await _db
-        .from('stories')
-        .select('id,user_id,media_url,media_type,caption,created_at,expires_at')
-        .gt('expires_at', DateTime.now().toUtc().toIso8601String())
-        .order('created_at', ascending: true);
+    try {
+      final rows = await _db
+          .from('stories')
+          .select(
+            'id,user_id,media_url,media_type,caption,created_at,expires_at',
+          )
+          .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+          .order('created_at', ascending: true)
+          .timeout(const Duration(seconds: 15));
 
-    final stories = (rows as List)
-        .map((row) => Map<String, dynamic>.from(row as Map))
-        .toList();
+      final stories = (rows as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList();
 
-    if (stories.isEmpty) return stories;
+      if (stories.isEmpty) {
+        final uid = _db.auth.currentUser?.id;
+        if (uid != null) await _cache.put(uid, 'stories', stories);
+        return stories;
+      }
 
-    final ids = stories
-        .map((story) => story['user_id'].toString())
-        .toSet()
-        .toList();
+      final ids = stories
+          .map((story) => story['user_id'].toString())
+          .toSet()
+          .toList();
 
-    final profiles = await _db
-        .from('profiles')
-        .select('id,username,display_name,avatar_url')
-        .inFilter('id', ids);
+      final profiles = await _db
+          .from('profiles')
+          .select('id,username,display_name,avatar_url')
+          .inFilter('id', ids)
+          .timeout(const Duration(seconds: 15));
 
-    // BOOTFIX: resolve all avatars and story media with batched requests
-    // (this used to be one sequential HTTP request per story).
-    final profileRows = (profiles as List)
-        .map((raw) => Map<String, dynamic>.from(raw as Map))
-        .toList();
-    final avatarUrls = await _resolvePaths('post-media', [
-      for (final row in profileRows)
-        if (_isStoragePath((row['avatar_url'] ?? '').toString().trim()))
-          (row['avatar_url'] ?? '').toString().trim(),
-    ]);
-    final byId = <String, Map<String, dynamic>>{};
-    for (final row in profileRows) {
-      final path = (row['avatar_url'] ?? '').toString().trim();
-      row['avatar_object_path'] = _isStoragePath(path) ? path : '';
-      row['avatar_url'] = _isStoragePath(path) ? (avatarUrls[path] ?? '') : path;
-      byId[row['id'].toString()] = row;
+      // BOOTFIX: resolve all avatars and story media with batched requests
+      // (this used to be one sequential HTTP request per story).
+      final profileRows = (profiles as List)
+          .map((raw) => Map<String, dynamic>.from(raw as Map))
+          .toList();
+      final avatarUrls = await _resolvePaths('post-media', [
+        for (final row in profileRows)
+          if (_isStoragePath((row['avatar_url'] ?? '').toString().trim()))
+            (row['avatar_url'] ?? '').toString().trim(),
+      ]);
+      final byId = <String, Map<String, dynamic>>{};
+      for (final row in profileRows) {
+        final path = (row['avatar_url'] ?? '').toString().trim();
+        row['avatar_object_path'] = _isStoragePath(path) ? path : '';
+        row['avatar_url'] =
+            _isStoragePath(path) ? (avatarUrls[path] ?? '') : path;
+        byId[row['id'].toString()] = row;
+      }
+
+      final storyUrls = await _resolvePaths('stories', [
+        for (final story in stories)
+          if (_isStoragePath((story['media_url'] ?? '').toString()))
+            (story['media_url'] ?? '').toString(),
+      ]);
+      for (final story in stories) {
+        story['profiles'] = byId[story['user_id'].toString()] ?? {};
+        final path = (story['media_url'] ?? '').toString();
+        story['resolved_url'] = _isStoragePath(path)
+            ? (storyUrls[path] ?? '')
+            : (path == 'pending' ? '' : path);
+      }
+
+      final uid = _db.auth.currentUser?.id;
+      if (uid != null) await _cache.put(uid, 'stories', stories);
+      return stories;
+    } catch (e) {
+      if (_looksLikeNetworkFailure(e)) {
+        return cachedStories();
+      }
+      rethrow;
     }
-
-    final storyUrls = await _resolvePaths('stories', [
-      for (final story in stories)
-        if (_isStoragePath((story['media_url'] ?? '').toString()))
-          (story['media_url'] ?? '').toString(),
-    ]);
-    for (final story in stories) {
-      story['profiles'] = byId[story['user_id'].toString()] ?? {};
-      final path = (story['media_url'] ?? '').toString();
-      story['resolved_url'] = _isStoragePath(path)
-          ? (storyUrls[path] ?? '')
-          : (path == 'pending' ? '' : path);
-    }
-
-    return stories;
   }
 
   // ---- Story views, likes and replies ----
@@ -1546,6 +1706,29 @@ class SocialRepository {
         }
         result.add(row);
       }
+      final pending = await _cache.pending(uid);
+      final cachedProfile = await _cache.get(uid, 'profile');
+      for (final item in pending) {
+        if (item['operation'] == 'add_comment' &&
+            item['payload'] is Map &&
+            item['payload']['post_id'] == postId) {
+          final payload = Map<String, dynamic>.from(item['payload'] as Map);
+          final id = payload['id']?.toString();
+          if (!result.any((row) => row['id']?.toString() == id)) {
+            result.add({
+              ...payload,
+              'created_at': DateTime.fromMillisecondsSinceEpoch(
+                (item['created_at'] as num?)?.toInt() ??
+                    DateTime.now().millisecondsSinceEpoch,
+              ).toIso8601String(),
+              'profiles': cachedProfile is Map
+                  ? Map<String, dynamic>.from(cachedProfile)
+                  : <String, dynamic>{},
+              '_queued': true,
+            });
+          }
+        }
+      }
       await _cache.put(uid, 'comments', result, id: postId);
       return result;
     } catch (error) {
@@ -1557,9 +1740,36 @@ class SocialRepository {
   }
 
   Future<List<Map<String, dynamic>>> cachedComments(String postId) async {
-    final value = await _cache.get(userId, 'comments', id: postId);
-    if (value is! List) return [];
-    return value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) return [];
+    final value = await _cache.get(uid, 'comments', id: postId);
+    final rows = value is List
+        ? value.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+        : <Map<String, dynamic>>[];
+    final pending = await _cache.pending(uid);
+    final cachedProfile = await _cache.get(uid, 'profile');
+    for (final item in pending) {
+      if (item['operation'] == 'add_comment' &&
+          item['payload'] is Map &&
+          item['payload']['post_id'] == postId) {
+        final payload = Map<String, dynamic>.from(item['payload'] as Map);
+        final id = payload['id']?.toString();
+        if (!rows.any((row) => row['id']?.toString() == id)) {
+          rows.add({
+            ...payload,
+            'created_at': DateTime.fromMillisecondsSinceEpoch(
+              (item['created_at'] as num?)?.toInt() ??
+                  DateTime.now().millisecondsSinceEpoch,
+            ).toIso8601String(),
+            'profiles': cachedProfile is Map
+                ? Map<String, dynamic>.from(cachedProfile)
+                : <String, dynamic>{},
+            '_queued': true,
+          });
+        }
+      }
+    }
+    return rows;
   }
 
   String _newCommentId() {

@@ -4225,10 +4225,20 @@ class _CreatePageState extends State<CreatePage> {
     );
 
     if (picked != null && mounted) {
+      final videos = picked
+          .where((asset) => asset.type == AssetType.video)
+          .take(1)
+          .toList();
+      final photos = picked
+          .where((asset) => asset.type == AssetType.image)
+          .take(10)
+          .toList();
+      final validMedia = videos.isNotEmpty ? videos : photos;
+
       setState(() {
         selectedMedia
           ..clear()
-          ..addAll(picked.take(10));
+          ..addAll(validMedia);
       });
     }
   }
@@ -4619,7 +4629,11 @@ class _MediaPickerState extends State<_MediaPicker> {
             'Select media',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
-          subtitle: Text('${chosen.length}/10 selected'),
+          subtitle: Text(
+            chosen.any((asset) => asset.type == AssetType.video)
+                ? '1/1 video selected'
+                : '${chosen.where((asset) => asset.type == AssetType.image).length}/10 photos selected',
+          ),
           trailing: TextButton(
             onPressed: () => Navigator.pop(context, chosen.toList()),
             child: const Text('Done'),
@@ -4641,13 +4655,51 @@ class _MediaPickerState extends State<_MediaPicker> {
               return InkWell(
                 key: ValueKey<String>(asset.id),
                 onTap: () {
-                  setState(() {
-                    if (isChosen) {
-                      chosen.remove(asset);
-                    } else if (chosen.length < 10) {
-                      chosen.add(asset);
-                    }
-                  });
+                  if (isChosen) {
+                    setState(() => chosen.remove(asset));
+                    return;
+                  }
+
+                  final hasVideo = chosen.any(
+                    (item) => item.type == AssetType.video,
+                  );
+                  final isVideo = asset.type == AssetType.video;
+                  final photoCount = chosen
+                      .where((item) => item.type == AssetType.image)
+                      .length;
+
+                  if (isVideo && chosen.isNotEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Choose either 10 photos or 1 video per post.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (!isVideo && hasVideo) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Remove the video before selecting photos.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (!isVideo && photoCount >= 10) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('You can select up to 10 photos.'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  setState(() => chosen.add(asset));
                 },
                 child: Stack(
                   fit: StackFit.expand,

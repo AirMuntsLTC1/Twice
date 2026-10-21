@@ -236,6 +236,10 @@ class _ConversationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = (data['other_name'] ?? data['other_username'] ?? 'User')
         .toString();
+    final username = (data['other_username'] ?? '')
+        .toString()
+        .trim()
+        .replaceFirst(RegExp(r'^@'), '');
     final avatar = (data['other_avatar'] ?? '').toString();
     final preview = (data['last_body'] ?? '').toString();
     final mediaType = (data['last_media_type'] ?? '').toString();
@@ -267,6 +271,9 @@ class _ConversationTile extends StatelessWidget {
               radius: 28,
               backgroundColor: _igElevated,
               backgroundImage: prov,
+              onBackgroundImageError: prov == null
+                  ? null
+                  : (exception, stackTrace) {},
               child: prov == null
                   ? Text(
                       name.isNotEmpty ? name[0].toUpperCase() : '?',
@@ -293,6 +300,19 @@ class _ConversationTile extends StatelessWidget {
                       fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),
+                  if (username.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      '@$username',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _igMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 3),
                   Text(
                     subtitle,
@@ -578,6 +598,9 @@ class _ConversationPageState extends State<ConversationPage> {
               radius: 16,
               backgroundColor: _igElevated,
               backgroundImage: otherProv,
+              onBackgroundImageError: otherProv == null
+                  ? null
+                  : (exception, stackTrace) {},
               child: otherProv == null
                   ? Text(
                       widget.title.isNotEmpty
@@ -816,6 +839,9 @@ class _Bubble extends StatelessWidget {
                 radius: 14,
                 backgroundColor: _igElevated,
                 backgroundImage: prov,
+                onBackgroundImageError: prov == null
+                    ? null
+                    : (exception, stackTrace) {},
                 child: prov == null
                     ? const Icon(Icons.person, size: 14, color: _igMuted)
                     : null,

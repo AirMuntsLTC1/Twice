@@ -727,6 +727,22 @@ class SocialRepository {
     } catch (_) {}
   }
 
+  /// Ids (out of [storyIds]) that the signed-in user has already viewed.
+  /// Used so the story ring turns grey on every device, not just this one.
+  Future<Set<String>> myViewedStoryIds(Iterable<String> storyIds) async {
+    final ids = storyIds.where((id) => id.isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return <String>{};
+    final rows = await _db
+        .from('story_views')
+        .select('story_id')
+        .eq('viewer_id', userId)
+        .inFilter('story_id', ids)
+        .timeout(const Duration(seconds: 15));
+    return (rows as List)
+        .map((row) => (row as Map)['story_id'].toString())
+        .toSet();
+  }
+
   Future<int> storyViewCount(String storyId) async {
     final rows = await _db
         .from('story_views')

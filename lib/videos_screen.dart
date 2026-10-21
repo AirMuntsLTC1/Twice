@@ -12,8 +12,8 @@ final ValueNotifier<bool> _videoMuted = ValueNotifier<bool>(false);
 final ValueNotifier<double> _videoSpeed = ValueNotifier<double>(1.0);
 final ValueNotifier<bool> _videoAutoNext = ValueNotifier<bool>(false);
 
-const Color _reelHeart = Color(0xFFFF3B5C);
-const Color _fbGrey = Color(0xFFF0F2F5);
+const Color _reelHeart = Color(0xFFFF3040);
+const Color _fbGrey = Color(0xFF262626);
 const List<Shadow> _reelShadow = <Shadow>[
   Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 1)),
 ];
@@ -460,7 +460,7 @@ Future<void> _showVideoSettings(
   String label(double s) => s == s.roundToDouble() ? '${s.toInt()}x' : '${s}x';
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: Colors.white,
+    backgroundColor: igSurface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
     ),
@@ -502,7 +502,7 @@ Future<void> _showVideoSettings(
                     ChoiceChip(
                       label: Text(label(s)),
                       selected: current == s,
-                      selectedColor: const Color(0xFFECE7FF),
+                      selectedColor: const Color(0xFF363636),
                       onSelected: (_) => _videoSpeed.value = s,
                     ),
                 ],
@@ -941,7 +941,7 @@ class _VideoReelState extends State<_VideoReel> {
     final post = widget.post;
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: igSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
@@ -2083,7 +2083,7 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
     final mine = row['user_id']?.toString() == _uid;
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: igSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -2217,7 +2217,7 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFECE7FF),
+                                  color: const Color(0xFF363636),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: const Text(
@@ -2407,8 +2407,8 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
     final myName = (me['display_name'] ?? me['username'] ?? 'You').toString();
     return Container(
       decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFEAEAEA))),
+        color: igSurface,
+        border: Border(top: BorderSide(color: Color(0xFF363636), width: 0.5)),
       ),
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 10),
       child: Column(
@@ -2508,7 +2508,7 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
       child: Container(
         height: max(height, 240),
         decoration: const BoxDecoration(
-          color: Colors.white,
+          color: igSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         ),
         clipBehavior: Clip.antiAlias,

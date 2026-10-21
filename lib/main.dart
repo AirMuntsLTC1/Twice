@@ -62,10 +62,34 @@ String _newTwiceUuid() {
       '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
 }
 
-const ink = Color(0xFF171923);
-const muted = Color(0xFF7B8191);
-const violet = Color(0xFF7257F5);
-const canvas = Color(0xFFF7F7FB);
+// ---- Twice design system (Instagram dark theme) -------------------------
+// Pure AMOLED black background, white text, #262626 surfaces/dividers,
+// Instagram blue for actions and #FF3040 for likes.
+const igBlack = Color(0xFF000000);
+const igSurface = Color(0xFF121212);
+const igElevated = Color(0xFF262626);
+const igBorder = Color(0xFF262626);
+const igBlue = Color(0xFF0095F6);
+const igHashtagBlue = Color(0xFF3897F0);
+const igRed = Color(0xFFFF3040);
+const igSeenRing = Color(0xFF4D4D4D);
+const igStoryGradient = LinearGradient(
+  colors: [
+    Color(0xFFFEDA75),
+    Color(0xFFFA7E1E),
+    Color(0xFFD62976),
+    Color(0xFF962FBF),
+    Color(0xFF4F5BD5),
+  ],
+  begin: Alignment.bottomLeft,
+  end: Alignment.topRight,
+);
+
+// Legacy names kept so the rest of the app picks the new palette up.
+const ink = Color(0xFFFFFFFF); // primary text / icons (white on black)
+const muted = Color(0xFFA8A8A8); // secondary text
+const violet = igBlue; // accent (was purple) -> Instagram blue
+const canvas = igBlack; // page background
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabasePublishableKey = String.fromEnvironment(
@@ -122,6 +146,13 @@ Future<void> _bootSupabase() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(
+    SystemUiOverlayStyle.light.copyWith(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: igBlack,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
   TwiceMedia.configure();
   runApp(const TwiceApp());
   unawaited(_bootSupabase());
@@ -151,6 +182,133 @@ class NativeCore {
   bool get isLoaded => _add != null;
 }
 
+ThemeData _twiceDarkTheme() {
+  final base = ThemeData.dark(useMaterial3: true);
+  const scheme = ColorScheme.dark(
+    primary: igBlue,
+    onPrimary: Colors.white,
+    secondary: igBlue,
+    onSecondary: Colors.white,
+    surface: igBlack,
+    onSurface: Colors.white,
+    surfaceContainerLowest: igBlack,
+    surfaceContainerLow: igBlack,
+    surfaceContainer: igSurface,
+    surfaceContainerHigh: igElevated,
+    surfaceContainerHighest: igElevated,
+    outline: Color(0xFF363636),
+    outlineVariant: igBorder,
+    error: igRed,
+    onError: Colors.white,
+  );
+  return base.copyWith(
+    colorScheme: scheme,
+    scaffoldBackgroundColor: igBlack,
+    canvasColor: igBlack,
+    cardColor: igBlack,
+    dividerColor: igBorder,
+    dividerTheme: const DividerThemeData(color: igBorder, thickness: 0.5),
+    textTheme: base.textTheme.apply(
+      fontFamily: 'Roboto',
+      bodyColor: Colors.white,
+      displayColor: Colors.white,
+    ),
+    primaryTextTheme: base.primaryTextTheme.apply(
+      fontFamily: 'Roboto',
+      bodyColor: Colors.white,
+      displayColor: Colors.white,
+    ),
+    iconTheme: const IconThemeData(color: Colors.white),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: igBlack,
+      foregroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      systemOverlayStyle: SystemUiOverlayStyle.light,
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: igSurface,
+      surfaceTintColor: Colors.transparent,
+      modalBackgroundColor: igSurface,
+      showDragHandle: false,
+    ),
+    dialogTheme: const DialogThemeData(
+      backgroundColor: igElevated,
+      surfaceTintColor: Colors.transparent,
+    ),
+    popupMenuTheme: const PopupMenuThemeData(
+      color: igElevated,
+      surfaceTintColor: Colors.transparent,
+      textStyle: TextStyle(color: Colors.white, fontSize: 14),
+    ),
+    snackBarTheme: const SnackBarThemeData(
+      backgroundColor: igElevated,
+      contentTextStyle: TextStyle(color: Colors.white),
+      actionTextColor: igBlue,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: igElevated,
+      hintStyle: const TextStyle(color: muted),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xFF363636)),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: igBlue,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: igBlue,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: igBlue),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: const BorderSide(color: Color(0xFF363636)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    ),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(color: Colors.white),
+    textSelectionTheme: const TextSelectionThemeData(
+      cursorColor: Colors.white,
+      selectionColor: Color(0x660095F6),
+      selectionHandleColor: igBlue,
+    ),
+    listTileTheme: const ListTileThemeData(
+      iconColor: Colors.white,
+      textColor: Colors.white,
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.all(Colors.white),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) =>
+            states.contains(WidgetState.selected) ? igBlue : igElevated,
+      ),
+    ),
+  );
+}
+
 class TwiceApp extends StatelessWidget {
   const TwiceApp({super.key});
 
@@ -159,25 +317,9 @@ class TwiceApp extends StatelessWidget {
     return MaterialApp(
       title: 'Twice',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: canvas,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: violet,
-          brightness: Brightness.light,
-        ),
-        fontFamily: 'Roboto',
-        textTheme: ThemeData.light().textTheme.apply(fontFamily: 'Roboto'),
-        primaryTextTheme: ThemeData.light().primaryTextTheme.apply(
-          fontFamily: 'Roboto',
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: canvas,
-          foregroundColor: ink,
-          elevation: 0,
-          centerTitle: false,
-        ),
-      ),
+      themeMode: ThemeMode.dark,
+      darkTheme: _twiceDarkTheme(),
+      theme: _twiceDarkTheme(),
       home: const TwiceAuthGate(),
     );
   }
@@ -244,19 +386,7 @@ class _TwiceSplashState extends State<_TwiceSplash> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ShaderMask(
-              shaderCallback: (bounds) => const LinearGradient(
-                colors: [Color(0xFFFF5FA2), Color(0xFFFF2D75), Color(0xFFD946EF)],
-              ).createShader(bounds),
-              child: const Text(
-                'Twice',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 46,
-                ),
-              ),
-            ),
+            const _TwiceLogo(size: 58),
             const SizedBox(height: 18),
             AnimatedOpacity(
               opacity: _slow ? 1 : 0,
@@ -301,8 +431,8 @@ class _FeedSkeletonState extends State<_FeedSkeleton>
       animation: _pulse,
       builder: (context, child) {
         final tone = Color.lerp(
-          const Color(0xFFE6E8EC),
-          const Color(0xFFF3F4F6),
+          const Color(0xFF262626),
+          const Color(0xFF262626),
           _pulse.value,
         )!;
         Widget box(double w, double h, {double r = 8}) => Container(
@@ -337,7 +467,7 @@ class _FeedSkeletonState extends State<_FeedSkeleton>
             for (var i = 0; i < 3; i++)
               Container(
                 margin: const EdgeInsets.fromLTRB(0, 12, 0, 0),
-                color: Colors.white,
+                color: igBlack,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -381,15 +511,15 @@ class _ErrorPanel extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF0F0),
-        border: Border.all(color: const Color(0xFFFFCACA)),
+        color: const Color(0xFF2B1013),
+        border: Border.all(color: const Color(0xFF5C1D24)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: SelectableText(
         message,
         textAlign: TextAlign.center,
         style: const TextStyle(
-          color: Color(0xFFB42318),
+          color: Color(0xFFFF6B6B),
           fontSize: 12,
           height: 1.45,
         ),
@@ -562,26 +692,7 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Center(
-                    child: Container(
-                      width: 76,
-                      height: 76,
-                      decoration: BoxDecoration(
-                        color: violet,
-                        borderRadius: BorderRadius.circular(25),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text(
-                        't.',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 49,
-                          fontWeight: FontWeight.w900,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                  ),
+                  const Center(child: _TwiceLogo(size: 58)),
                   const SizedBox(height: 30),
                   const Text(
                     'Welcome to Twice',
@@ -611,14 +722,14 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                       hintText: 'you@example.com',
                       prefixIcon: const Icon(Icons.email_outlined),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: igElevated,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: Color(0xFFE2E3EA)),
+                        borderSide: const BorderSide(color: Color(0xFF363636)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: Color(0xFFE2E3EA)),
+                        borderSide: const BorderSide(color: Color(0xFF363636)),
                       ),
                     ),
                   ),
@@ -646,7 +757,7 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                         hintText: '000000',
                         counterText: '',
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: igElevated,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
@@ -1177,54 +1288,51 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final title = [
-      'Twice',
-      'Search',
-      'Videos',
-      'Inbox',
-      'Profile',
-    ][selected];
-    return Scaffold(
-      appBar: selected == 4 || selected == 2
-          ? null
-          : AppBar(
-              title: title == 'Twice'
-                  ? ShaderMask(
-                      shaderCallback: (bounds) => const LinearGradient(
-                        colors: [
-                          Color(0xFFFF5FA2),
-                          Color(0xFFFF2D75),
-                          Color(0xFFD946EF),
-                        ],
-                      ).createShader(bounds),
-                      child: const Text(
-                        'Twice',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 25,
-                        ),
-                      ),
-                    )
-                  : Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 25,
-                      ),
-                    ),
-              actions: [
-                IconButton(
-                  tooltip: 'Messages',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const MessagesPage(),
-                    ),
-                  ),
-                  icon: const Icon(Icons.send_outlined),
-                ),
-              ],
+    // Tabs (Instagram order): Home, Search, Create (+), Reels, Profile.
+    // Page index 3 is the notifications page, opened from the heart icon in
+    // the top bar, so no tab is highlighted while it is open.
+    final avatarUrl = (profile['avatar_url'] ?? '').toString();
+    final avatarFallback =
+        (profile['display_name'] ?? profile['username'] ?? 'U').toString();
+
+    PreferredSizeWidget? appBar;
+    if (selected == 0) {
+      appBar = AppBar(
+        toolbarHeight: 44,
+        backgroundColor: igBlack,
+        titleSpacing: 14,
+        title: const _TwiceLogo(size: 30),
+        actions: [
+          _InboxHeartButton(onTap: () => setState(() => selected = 3)),
+          IconButton(
+            tooltip: 'Messages',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const MessagesPage()),
             ),
+            icon: const Icon(Icons.send_outlined, size: 25),
+          ),
+          const SizedBox(width: 4),
+        ],
+      );
+    } else if (selected == 3) {
+      appBar = AppBar(
+        toolbarHeight: 44,
+        backgroundColor: igBlack,
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: () => setState(() => selected = 0),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+        ),
+        title: const Text(
+          'Notifications',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: igBlack,
+      appBar: appBar,
       body: loading && profile.isEmpty
           ? const _FeedSkeleton()
           : error != null && profile.isEmpty
@@ -1262,83 +1370,206 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
                 ),
               ],
             ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: const Color(0xFFEAEAEA)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.07),
-                blurRadius: 18,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: NavigationBar(
-            height: 68,
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            selectedIndex: selected,
-            backgroundColor: Colors.white,
-            indicatorColor: const Color(0xFFECE7FF),
-            onDestinationSelected: (value) {
-              setState(() => selected = value);
-            },
-            destinations: [
-              NavigationDestination(
-                icon: _SocialNavIcon(kind: _SocialNavKind.home),
-                selectedIcon: _SocialNavIcon(
-                  kind: _SocialNavKind.home,
-                  selected: true,
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: igBlack,
+          border: Border(top: BorderSide(color: igBorder, width: 0.5)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 49,
+            child: Row(
+              children: [
+                _IgTabButton(
+                  label: 'Home',
+                  active: selected == 0,
+                  onTap: () => setState(() => selected = 0),
+                  icon: const _SocialNavIcon(kind: _SocialNavKind.home),
+                  activeIcon: const _SocialNavIcon(
+                    kind: _SocialNavKind.home,
+                    selected: true,
+                  ),
                 ),
-                label: 'Home',
-              ),
-              const NavigationDestination(
-                icon: _SocialNavIcon(kind: _SocialNavKind.search),
-                selectedIcon: _SocialNavIcon(
-                  kind: _SocialNavKind.search,
-                  selected: true,
+                _IgTabButton(
+                  label: 'Search',
+                  active: selected == 1,
+                  onTap: () => setState(() => selected = 1),
+                  icon: const _SocialNavIcon(kind: _SocialNavKind.search),
+                  activeIcon: const _SocialNavIcon(
+                    kind: _SocialNavKind.search,
+                    selected: true,
+                  ),
                 ),
-                label: 'Search',
-              ),
-              const NavigationDestination(
-                icon: _SocialNavIcon(kind: _SocialNavKind.create),
-                selectedIcon: _SocialNavIcon(
-                  kind: _SocialNavKind.create,
-                  selected: true,
+                _IgTabButton(
+                  label: 'Create',
+                  active: false,
+                  onTap: _openComposer,
+                  icon: const _SocialNavIcon(kind: _SocialNavKind.plus),
+                  activeIcon: const _SocialNavIcon(
+                    kind: _SocialNavKind.plus,
+                    selected: true,
+                  ),
                 ),
-                label: 'Videos',
-              ),
-              const NavigationDestination(
-            icon: _InboxNavIcon(selected: false),
-            selectedIcon: _InboxNavIcon(selected: true),
-            label: 'Inbox',
-          ),
-              NavigationDestination(
-                icon: _ProfileNavAvatar(
-                  url: (profile['avatar_url'] ?? '').toString(),
-                  fallback: (profile['display_name'] ??
-                      profile['username'] ?? 'U').toString(),
-                  selected: false,
+                _IgTabButton(
+                  label: 'Reels',
+                  active: selected == 2,
+                  onTap: () => setState(() => selected = 2),
+                  icon: const _SocialNavIcon(kind: _SocialNavKind.create),
+                  activeIcon: const _SocialNavIcon(
+                    kind: _SocialNavKind.create,
+                    selected: true,
+                  ),
                 ),
-                selectedIcon: _ProfileNavAvatar(
-                  url: (profile['avatar_url'] ?? '').toString(),
-                  fallback: (profile['display_name'] ??
-                      profile['username'] ?? 'U').toString(),
-                  selected: true,
+                _IgTabButton(
+                  label: 'Profile',
+                  active: selected == 4,
+                  onTap: () => setState(() => selected = 4),
+                  icon: _ProfileNavAvatar(
+                    url: avatarUrl,
+                    fallback: avatarFallback,
+                    selected: false,
+                  ),
+                  activeIcon: _ProfileNavAvatar(
+                    url: avatarUrl,
+                    fallback: avatarFallback,
+                    selected: true,
+                  ),
                 ),
-                label: 'Profile',
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// "Twice" script logo shown top-left on the home feed.
+class _TwiceLogo extends StatelessWidget {
+  const _TwiceLogo({this.size = 30, this.color = Colors.white});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    'Twice',
+    style: TextStyle(
+      fontFamily: 'cursive',
+      fontFamilyFallback: const ['Billabong', 'Dancing Script', 'serif'],
+      fontStyle: FontStyle.italic,
+      fontWeight: FontWeight.w700,
+      fontSize: size,
+      height: 1.1,
+      color: color,
+    ),
+  );
+}
+
+/// Heart icon in the top bar. Opens notifications; red badge = unread count.
+class _InboxHeartButton extends StatelessWidget {
+  const _InboxHeartButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: InboxController.instance,
+      builder: (context, _) {
+        final count = InboxController.instance.unread;
+        return IconButton(
+          tooltip: 'Notifications',
+          onPressed: onTap,
+          icon: Badge(
+            isLabelVisible: count > 0,
+            label: Text(count > 99 ? '99+' : '$count'),
+            backgroundColor: igRed,
+            textColor: Colors.white,
+            offset: const Offset(5, -5),
+            child: const Icon(Icons.favorite_border_rounded, size: 27),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Bottom tab. Tapping squeezes the icon to 90% and springs it back
+/// (100 ms elastic), like the Instagram tab bar.
+class _IgTabButton extends StatefulWidget {
+  const _IgTabButton({
+    required this.label,
+    required this.active,
+    required this.onTap,
+    required this.icon,
+    required this.activeIcon,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  final Widget icon;
+  final Widget activeIcon;
+
+  @override
+  State<_IgTabButton> createState() => _IgTabButtonState();
+}
+
+class _IgTabButtonState extends State<_IgTabButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 100),
+  );
+  late final Animation<double> _scale = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 1.0,
+        end: 0.9,
+      ).chain(CurveTween(curve: Curves.easeOut)),
+      weight: 35,
+    ),
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 0.9,
+        end: 1.0,
+      ).chain(CurveTween(curve: Curves.elasticOut)),
+      weight: 65,
+    ),
+  ]).animate(_press);
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: Semantics(
+      button: true,
+      selected: widget.active,
+      label: widget.label,
+      child: InkResponse(
+        containedInkWell: true,
+        highlightShape: BoxShape.rectangle,
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        onTap: () {
+          _press.forward(from: 0);
+          widget.onTap();
+        },
+        child: Center(
+          child: ScaleTransition(
+            scale: _scale,
+            child: widget.active ? widget.activeIcon : widget.icon,
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class StoryStrip extends StatefulWidget {
@@ -1387,19 +1618,51 @@ class StoryStripState extends State<StoryStrip> {
       debugPrint('Could not restore viewed stories: $e');
     }
     if (mounted) setState(() => _viewedStoriesLoaded = true);
+    unawaited(_syncViewedFromServer());
+  }
+
+  @override
+  void didUpdateWidget(covariant StoryStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.stories.length != widget.stories.length) {
+      unawaited(_syncViewedFromServer());
+    }
+  }
+
+  // The server remembers every story this account has opened, so the ring is
+  // grey on all devices (and after a reinstall), like Instagram / Facebook.
+  Future<void> _syncViewedFromServer() async {
+    if (_storyViewsCacheKey.isEmpty || widget.stories.isEmpty) return;
+    try {
+      final ids = await SocialRepository.instance.myViewedStoryIds(
+        widget.stories.map((s) => (s['id'] ?? '').toString()),
+      );
+      if (!mounted) return;
+      final before = _viewedStoryIds.length;
+      _viewedStoryIds.addAll(ids);
+      if (_viewedStoryIds.length != before) {
+        setState(() {});
+        _persistViewed();
+      }
+    } catch (e) {
+      debugPrint('Could not sync viewed stories: $e');
+    }
+  }
+
+  void _persistViewed() {
+    final uid = _storyViewsCacheKey;
+    if (uid.isEmpty) return;
+    LocalCache.instance
+        .put(uid, 'viewed_stories', _viewedStoryIds.toList())
+        .catchError((Object e) {
+          debugPrint('Could not save viewed stories: $e');
+        });
   }
 
   void _markStoryViewed(String storyId) {
     if (storyId.isEmpty || !_viewedStoryIds.add(storyId)) return;
     if (mounted) setState(() {});
-    final uid = _storyViewsCacheKey;
-    if (uid.isNotEmpty) {
-      LocalCache.instance
-          .put(uid, 'viewed_stories', _viewedStoryIds.toList())
-          .catchError((Object e) {
-            debugPrint('Could not save viewed stories: $e');
-          });
-    }
+    _persistViewed();
   }
 
   Future<void> openCreator() async {
@@ -1488,7 +1751,7 @@ class StoryStripState extends State<StoryStrip> {
                               Image.memory(snapshot.data!, fit: BoxFit.cover)
                             else
                               const ColoredBox(
-                                color: Color(0xFFF0F0F4),
+                                color: Color(0xFF262626),
                                 child: Icon(Icons.image_outlined),
                               ),
                             if (item.type == AssetType.video)
@@ -1607,13 +1870,26 @@ class StoryStripState extends State<StoryStrip> {
       if (uid.isNotEmpty) (grouped[uid] ??= []).add(story);
     }
     final ownStories = grouped.remove(ownId) ?? [];
-    final otherIds = grouped.keys.toList();
+    bool seen(List<Map<String, dynamic>> rows) => rows.every(
+      (story) => _viewedStoryIds.contains((story['id'] ?? '').toString()),
+    );
+    // Unseen stories first, already-viewed (grey ring) ones move to the end,
+    // exactly like Instagram. Order inside each group is kept stable.
+    final otherIds = grouped.keys.toList()
+      ..sort((a, b) {
+        final sa = _viewedStoriesLoaded && seen(grouped[a]!) ? 1 : 0;
+        final sb = _viewedStoriesLoaded && seen(grouped[b]!) ? 1 : 0;
+        return sa.compareTo(sb);
+      });
 
-    return SizedBox(
-      height: 104,
+    return Container(
+      height: 108,
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: igBorder, width: 0.5)),
+      ),
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         children: [
           _storyCircle(
             context,
@@ -1673,7 +1949,7 @@ class StoryStripState extends State<StoryStrip> {
                 stories: stories,
                 initialProfile: profile,
                 onStoryViewed: (storyId) {
-                  if (!own && mounted) _markStoryViewed(storyId);
+                  if (mounted) _markStoryViewed(storyId);
                 },
               ),
               transitionsBuilder: (_, animation, _, child) => FadeTransition(
@@ -1696,39 +1972,42 @@ class StoryStripState extends State<StoryStrip> {
             Stack(
               clipBehavior: Clip.none,
               children: [
+                // Ring: pink/orange gradient while there is something new,
+                // flat grey once every story of this person has been seen.
                 Container(
-                  padding: const EdgeInsets.all(3),
+                  padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient:
                         stories.isNotEmpty && !allViewed && _viewedStoriesLoaded
-                        ? const LinearGradient(
-                            colors: [
-                              Color(0xFFF9CE34),
-                              Color(0xFFEE2A7B),
-                              Color(0xFF6228D7),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          )
+                        ? igStoryGradient
                         : null,
-                    border: stories.isEmpty || allViewed
-                        ? Border.all(color: const Color(0xFFB8BBC4), width: 1.7)
+                    border: stories.isEmpty
+                        ? null
+                        : (allViewed && _viewedStoriesLoaded)
+                        ? Border.all(color: igSeenRing, width: 1.5)
                         : null,
                   ),
-                  child: CircleAvatar(
-                    radius: 29,
-                    backgroundColor: const Color(0xFFF0F0F4),
-                    backgroundImage: _isImageSource(avatar)
-                        ? _twiceAvatarProvider(avatar)
-                        : null,
-                    child: _isImageSource(avatar)
-                        ? null
-                        : const Icon(
-                            Icons.person_rounded,
-                            color: muted,
-                            size: 30,
-                          ),
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: igBlack,
+                    ),
+                    child: CircleAvatar(
+                      radius: 28,
+                      backgroundColor: igElevated,
+                      backgroundImage: _isImageSource(avatar)
+                          ? _twiceAvatarProvider(avatar)
+                          : null,
+                      child: _isImageSource(avatar)
+                          ? null
+                          : const Icon(
+                              Icons.person_rounded,
+                              color: muted,
+                              size: 30,
+                            ),
+                    ),
                   ),
                 ),
                 if (own)
@@ -1747,7 +2026,7 @@ class StoryStripState extends State<StoryStrip> {
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
+                            border: Border.all(color: igBlack, width: 2),
                           ),
                           child: const Icon(
                             Icons.add_rounded,
@@ -1843,6 +2122,17 @@ class _StoryViewerState extends State<StoryViewer>
     _loadCurrent();
   }
 
+  // A story counts as seen the moment it is shown (not only when it plays to
+  // the end), so the pink ring turns grey as soon as you open it. Deferred to
+  // after the frame because the story strip calls setState in response.
+  void _markSeen() {
+    final id = _storyId;
+    if (id.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onStoryViewed(id);
+    });
+  }
+
   Future<void> _loadStoryMeta() async {
     final id = _storyId;
     if (id.isEmpty) return;
@@ -1876,6 +2166,7 @@ class _StoryViewerState extends State<StoryViewer>
     }
     if (!mounted) return;
     unawaited(_loadStoryMeta());
+    _markSeen();
 
     if (_url.isEmpty) {
       _progress.duration = const Duration(seconds: 5);
@@ -2034,7 +2325,7 @@ class _StoryViewerState extends State<StoryViewer>
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: Colors.white,
+      backgroundColor: igSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
@@ -2280,15 +2571,36 @@ class _StoryViewerState extends State<StoryViewer>
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: _openOwnerProfile,
-                            child: Text(
-                              (user['display_name'] ??
-                                      user['username'] ??
-                                      'Twice user')
-                                  .toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
+                            child: Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text:
+                                        (user['username'] ??
+                                                user['display_name'] ??
+                                                'twice_user')
+                                            .toString()
+                                            .replaceFirst(RegExp(r'^@'), ''),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  // Timestamp of this story, e.g. "3h".
+                                  TextSpan(
+                                    text:
+                                        '   ${_storyAge(_story['created_at'])}',
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontWeight: FontWeight.w400,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ),
@@ -2359,7 +2671,7 @@ class _StoryViewerState extends State<StoryViewer>
                                       scale: 0.7 + 0.7 * (1 - p),
                                       child: const Icon(
                                         Icons.favorite_rounded,
-                                        color: Color(0xFFFF2D55),
+                                        color: Color(0xFFFF3040),
                                         size: 28,
                                       ),
                                     ),
@@ -2437,7 +2749,7 @@ class _StoryHeartButtonState extends State<_StoryHeartButton>
                   widget.liked
                       ? Icons.favorite_rounded
                       : Icons.favorite_border_rounded,
-                  color: widget.liked ? const Color(0xFFFF2D55) : Colors.white,
+                  color: widget.liked ? const Color(0xFFFF3040) : Colors.white,
                   size: 32,
                 ),
               );
@@ -2559,7 +2871,7 @@ class _StoryViewersSheetState extends State<_StoryViewersSheet> {
                         trailing: row['liked'] == true
                             ? const Icon(
                                 Icons.favorite_rounded,
-                                color: Color(0xFFFF2D55),
+                                color: Color(0xFFFF3040),
                               )
                             : null,
                       );
@@ -2599,78 +2911,18 @@ class FeedPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => RefreshIndicator(
     onRefresh: onRefresh,
+    color: Colors.white,
+    backgroundColor: igElevated,
     child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       scrollCacheExtent: ScrollCacheExtent.pixels(2500),
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
+      padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
       children: [
         StoryStrip(
           key: storyStripKey,
           onCreateStory: onCreateStory,
           profile: profile,
           stories: stories,
-        ),
-        const SizedBox(height: 5),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-          child: Material(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(17),
-            child: InkWell(
-              onTap: onOpenComposer,
-              borderRadius: BorderRadius.circular(17),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: const Color(0xFFECE7FF),
-                      backgroundImage:
-                          _isImageSource((profile['avatar_url'] ?? '').toString())
-                          ? _twiceAvatarProvider(
-                              (profile['avatar_url'] ?? '').toString().trim(),
-                            )
-                          : null,
-                      child:
-                          _isImageSource((profile['avatar_url'] ?? '').toString())
-                          ? null
-                          : const Icon(
-                              Icons.person_rounded,
-                              color: violet,
-                              size: 27,
-                            ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF2F3F5),
-                          borderRadius: BorderRadius.circular(25),
-                        ),
-                        child: const Text(
-                          "What's on your mind?",
-                          style: TextStyle(
-                            color: Color(0xFF65676B),
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Icon(
-                      Icons.photo_library_outlined,
-                      color: Color(0xFF45BD62),
-                      size: 25,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
         ),
         if (posts.isEmpty)
           const Padding(
@@ -2812,7 +3064,7 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
       child: Icon(
         widget.liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
         size: 27,
-        color: widget.liked ? Colors.redAccent : ink,
+        color: widget.liked ? igRed : ink,
       ),
     ),
   );
@@ -3048,7 +3300,7 @@ class _PostMediaItemState extends State<_PostMediaItem> {
 
     if (!_isVideo) {
       return ColoredBox(
-        color: const Color(0xFFF4F5F7),
+        color: const Color(0xFF262626),
         child: url.isEmpty
             ? _brokenImage()
             : Image(
@@ -3280,43 +3532,30 @@ class _PostFollowButtonState extends State<_PostFollowButton> {
       return const SizedBox.shrink();
     }
     final active = _label == 'Following' || _label == 'Connected';
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: SizedBox(
-        height: 32,
-        child: OutlinedButton(
-          onPressed: _loading || _busy ? null : _tap,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: active ? muted : violet,
-            side: BorderSide(color: active ? const Color(0xFFE1E3EA) : violet),
-            padding: const EdgeInsets.symmetric(horizontal: 9),
-            minimumSize: const Size(0, 32),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-          child: _loading || _busy
-              ? const SizedBox(
-                  width: 13,
-                  height: 13,
-                  child: CircularProgressIndicator(strokeWidth: 1.5),
-                )
-              : Text(
-                  _label,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-        ),
+    return TextButton(
+      onPressed: _loading || _busy ? null : _tap,
+      style: TextButton.styleFrom(
+        foregroundColor: active ? muted : igBlue,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 32),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
       ),
+      child: _loading || _busy
+          ? const SizedBox(
+              width: 13,
+              height: 13,
+              child: CircularProgressIndicator(strokeWidth: 1.5),
+            )
+          : Text(
+              _label,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
     );
   }
 }
 
-class PostCard extends StatelessWidget {
+class PostCard extends StatefulWidget {
   const PostCard({
     super.key,
     required this.post,
@@ -3331,28 +3570,193 @@ class PostCard extends StatelessWidget {
   final VoidCallback onCommentChanged;
 
   @override
-  Widget build(BuildContext context) {
-    final media = post.media;
+  State<PostCard> createState() => _PostCardState();
+}
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEDEDED)),
+class _PostCardState extends State<PostCard>
+    with SingleTickerProviderStateMixin {
+  // Double-tap heart: pop in 150 ms (scale 50% -> 110%, opacity 0 -> 100%),
+  // hold 100 ms, then fade out over 150 ms. 400 ms in total.
+  late final AnimationController _heart = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 400),
+  );
+  late final Animation<double> _heartScale = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 0.5,
+        end: 1.1,
+      ).chain(CurveTween(curve: Curves.easeOut)),
+      weight: 150,
+    ),
+    TweenSequenceItem(tween: ConstantTween<double>(1.1), weight: 250),
+  ]).animate(_heart);
+  late final Animation<double> _heartOpacity = TweenSequence<double>([
+    TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 150),
+    TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 100),
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 1.0,
+        end: 0.0,
+      ).chain(CurveTween(curve: Curves.linear)),
+      weight: 150,
+    ),
+  ]).animate(_heart);
+
+  int _page = 0;
+  int _lastDownMs = -10000;
+  Offset _lastDownPos = Offset.zero;
+
+  @override
+  void dispose() {
+    _heart.dispose();
+    super.dispose();
+  }
+
+  // A Listener never joins the gesture arena, so a double tap is detected on
+  // photos AND videos without breaking swiping or the video's own tap.
+  void _onPointerDown(PointerDownEvent event) {
+    final now = event.timeStamp.inMilliseconds;
+    if (now - _lastDownMs < 300 &&
+        (event.position - _lastDownPos).distance < 80) {
+      _lastDownMs = -10000;
+      _doubleTapLike();
+    } else {
+      _lastDownMs = now;
+      _lastDownPos = event.position;
+    }
+  }
+
+  void _doubleTapLike() {
+    _heart.forward(from: 0);
+    HapticFeedback.lightImpact();
+    // Instagram: double tap only ever likes, it never un-likes.
+    if (!widget.post.liked) widget.onLike(widget.post);
+  }
+
+  Future<void> _openComments() async {
+    final post = widget.post;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      enableDrag: true,
+      showDragHandle: false,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       clipBehavior: Clip.antiAlias,
+      builder: (_) => CommentsSheet(post: post),
+    );
+    try {
+      final n = await SocialRepository.instance.commentCount(post.id);
+      post.data['comments'] = [
+        {'count': n},
+      ];
+    } catch (_) {}
+    widget.onCommentChanged();
+  }
+
+  Future<void> _share() async {
+    final post = widget.post;
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          text: '${post.username} on Twice: ${post.caption}'.trim(),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Share failed: $e');
+    }
+  }
+
+  void _toggleSave() {
+    final post = widget.post;
+    final wasSaved = post.saved;
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    final rows = List<Map<String, dynamic>>.from(
+      (post.data['saved_posts'] as List? ?? const [])
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row)),
+    );
+
+    // Update the bookmark immediately.
+    if (wasSaved) {
+      rows.removeWhere((row) => row['user_id'] == uid);
+    } else {
+      rows.add({'user_id': uid});
+    }
+    post.data['saved_posts'] = rows;
+    widget.onCommentChanged();
+
+    // Persist asynchronously; do not reload the feed.
+    SocialRepository.instance.toggleSaved(post.id, wasSaved).catchError((
+      Object e,
+    ) {
+      if (!mounted) return;
+      // Roll back only this bookmark state.
+      final current = List<Map<String, dynamic>>.from(
+        (post.data['saved_posts'] as List? ?? const [])
+            .whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row)),
+      );
+      current.removeWhere((row) => row['user_id'] == uid);
+      if (wasSaved) current.add({'user_id': uid});
+      post.data['saved_posts'] = current;
+      widget.onCommentChanged();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+    });
+  }
+
+  Widget _avatar(String? url) {
+    const placeholder = ColoredBox(
+      color: igElevated,
+      child: Icon(Icons.person_outline_rounded, color: muted, size: 20),
+    );
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: ClipOval(
+        child: (url ?? '').trim().isEmpty
+            ? placeholder
+            : Image(
+                image: _twiceAvatarProvider(url!),
+                gaplessPlayback: true,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => placeholder,
+              ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final post = widget.post;
+    final media = post.media;
+    final username = post.username.replaceFirst(RegExp(r'^@'), '');
+    final comments = post.commentCount;
+    final createdAt = post.data['created_at'];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ---- Header: avatar, bold username, follow, 3-dot menu ----
           Padding(
-            padding: const EdgeInsets.fromLTRB(13, 12, 8, 10),
+            padding: const EdgeInsets.fromLTRB(12, 8, 0, 8),
             child: Row(
               children: [
                 Expanded(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: authorTappable
+                    onTap: widget.authorTappable
                         ? () => _openUserProfile(
                             context,
                             userId: (post.author['id'] ?? '').toString(),
@@ -3361,57 +3765,20 @@ class PostCard extends StatelessWidget {
                         : null,
                     child: Row(
                       children: [
-                SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: ClipOval(
-                    child: (post.avatarUrl ?? '').trim().isEmpty
-                        ? const ColoredBox(
-                            color: Color(0xFFF0F2F5),
-                            child: Icon(
-                              Icons.person_outline_rounded,
-                              color: muted,
-                            ),
-                          )
-                        : Image(
-                            image: _twiceAvatarProvider(post.avatarUrl!),
-                            gaplessPlayback: true,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const ColoredBox(
-                              color: Color(0xFFF0F2F5),
-                              child: Icon(
-                                Icons.person_outline_rounded,
-                                color: muted,
-                              ),
+                        _avatar(post.avatarUrl),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text(
+                            username,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: ink,
                             ),
                           ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        post.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: ink,
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${post.handle} · ${_timeAgo(post.data['created_at'])}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, color: muted),
-                      ),
-                    ],
-                  ),
-                ),
                       ],
                     ),
                   ),
@@ -3420,30 +3787,22 @@ class PostCard extends StatelessWidget {
                     post.author['id'].toString().isNotEmpty)
                   _PostFollowButton(
                     profileId: post.author['id'].toString(),
-                    onChanged: onCommentChanged,
+                    onChanged: widget.onCommentChanged,
                   ),
                 PopupMenuButton<String>(
                   tooltip: 'Post options',
                   icon: const Icon(Icons.more_horiz_rounded, color: ink),
                   onSelected: (value) {
-                    if (value == 'copy') {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Use your device share options to share this post.',
-                          ),
-                        ),
-                      );
-                    }
+                    if (value == 'share') _share();
                   },
                   itemBuilder: (_) => const [
                     PopupMenuItem(
-                      value: 'copy',
+                      value: 'share',
                       child: Row(
                         children: [
                           Icon(Icons.ios_share_rounded, size: 19),
                           SizedBox(width: 10),
-                          Text('Share options'),
+                          Text('Share'),
                         ],
                       ),
                     ),
@@ -3453,213 +3812,189 @@ class PostCard extends StatelessWidget {
             ),
           ),
 
-          if (post.caption.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-              child: Text(
-                post.caption,
-                style: const TextStyle(color: ink, fontSize: 14, height: 1.4),
-              ),
-            ),
-
+          // ---- Media: 1:1 (single) or 4:5 (carousel), double-tap to like ----
           if (media.isNotEmpty)
             AspectRatio(
-              aspectRatio: media.length == 1 ? 1 : 0.92,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  PageView.builder(
-                    itemCount: media.length,
-                    itemBuilder: (context, index) {
-                      final item = media[index];
-                      return _PostMediaItem(
-                        key: ValueKey(
-                          'media-${item['id'] ?? item['media_url']}',
-                        ),
-                        media: item,
-                      );
-                    },
-                  ),
-                  if (media.length > 1)
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: const Color(0xB8000000),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
+              aspectRatio: media.length == 1 ? 1 : 0.8,
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: _onPointerDown,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    PageView.builder(
+                      itemCount: media.length,
+                      onPageChanged: (i) => setState(() => _page = i),
+                      itemBuilder: (context, index) {
+                        final item = media[index];
+                        return _PostMediaItem(
+                          key: ValueKey(
+                            'media-${item['id'] ?? item['media_url']}',
                           ),
-                          child: Text(
-                            '${media.length} photos/videos',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
+                          media: item,
+                        );
+                      },
+                    ),
+                    if (media.length > 1)
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: const Color(0xB8000000),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            child: Text(
+                              '${_page + 1}/${media.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            ),
-
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 4, 10, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _AnimatedLikeButton(
-                      liked: post.liked,
-                      onPressed: () => onLike(post),
-                    ),
-                    InkResponse(
-                      onTap: () async {
-                        await showModalBottomSheet<void>(
-                          context: context,
-                          isScrollControlled: true,
-                          useSafeArea: true,
-                          backgroundColor: Colors.transparent,
-                          barrierColor: Colors.black54,
-                          enableDrag: true,
-                          showDragHandle: false,
-                          shape: const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.vertical(
-                              top: Radius.circular(24),
-                            ),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          builder: (_) => CommentsSheet(post: post),
-                        );
-                        try {
-                          final n = await SocialRepository.instance
-                              .commentCount(post.id);
-                          post.data['comments'] = [
-                            {'count': n},
-                          ];
-                        } catch (_) {}
-                        onCommentChanged();
-                      },
-                      radius: 26,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 12,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const _InstagramCommentIcon(size: 25, color: ink),
-                            if (post.commentCount > 0) ...[
-                              const SizedBox(width: 6),
-                              Text(
-                                '${post.commentCount}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                  color: ink,
+                    // Big white heart that pops out of the centre on double tap.
+                    IgnorePointer(
+                      child: Center(
+                        child: AnimatedBuilder(
+                          animation: _heart,
+                          builder: (context, _) {
+                            if (_heart.isDismissed) {
+                              return const SizedBox.shrink();
+                            }
+                            return Opacity(
+                              opacity: _heartOpacity.value.clamp(0.0, 1.0),
+                              child: Transform.scale(
+                                scale: _heartScale.value,
+                                child: const Icon(
+                                  Icons.favorite_rounded,
+                                  color: Colors.white,
+                                  size: 96,
+                                  shadows: [
+                                    Shadow(
+                                      blurRadius: 24,
+                                      color: Color(0x66000000),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ],
+                            );
+                          },
                         ),
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      tooltip: post.saved ? 'Remove saved post' : 'Save post',
-                      onPressed: () {
-                        final wasSaved = post.saved;
-                        final uid =
-                            Supabase.instance.client.auth.currentUser?.id;
-                        if (uid == null) return;
-
-                        final rows = List<Map<String, dynamic>>.from(
-                          (post.data['saved_posts'] as List? ?? const [])
-                              .whereType<Map>()
-                              .map((row) => Map<String, dynamic>.from(row)),
-                        );
-
-                        // Update the bookmark immediately.
-                        if (wasSaved) {
-                          rows.removeWhere((row) => row['user_id'] == uid);
-                        } else {
-                          rows.add({'user_id': uid});
-                        }
-                        post.data['saved_posts'] = rows;
-                        onCommentChanged();
-
-                        // Persist asynchronously; do not reload the feed.
-                        SocialRepository.instance
-                            .toggleSaved(post.id, wasSaved)
-                            .catchError((Object e) {
-                              if (!context.mounted) return;
-                              // Roll back only this bookmark state.
-                              final current = List<Map<String, dynamic>>.from(
-                                (post.data['saved_posts'] as List? ?? const [])
-                                    .whereType<Map>()
-                                    .map(
-                                      (row) => Map<String, dynamic>.from(row),
-                                    ),
-                              );
-                              current.removeWhere(
-                                (row) => row['user_id'] == uid,
-                              );
-                              if (wasSaved) current.add({'user_id': uid});
-                              post.data['saved_posts'] = current;
-                              onCommentChanged();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Save failed: $e')),
-                              );
-                            });
-                      },
-                      icon: Icon(
-                        post.saved
-                            ? Icons.bookmark_rounded
-                            : Icons.bookmark_border_rounded,
-                        size: 26,
-                        color: post.saved ? const Color(0xFFE2B900) : ink,
                       ),
                     ),
                   ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                  child: Text(
-                    '${post.likes} ${post.likes == 1 ? 'like' : 'likes'}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                      color: ink,
+              ),
+            ),
+
+          // ---- Action row: like / comment / share ... bookmark ----
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: SizedBox(
+              height: 46,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Row(
+                    children: [
+                      _AnimatedLikeButton(
+                        liked: post.liked,
+                        onPressed: () => widget.onLike(post),
+                      ),
+                      IconButton(
+                        tooltip: 'Comment',
+                        onPressed: _openComments,
+                        icon: const _InstagramCommentIcon(
+                          size: 25,
+                          color: ink,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Share',
+                        onPressed: _share,
+                        icon: const Icon(Icons.send_outlined, size: 25),
+                      ),
+                      const Spacer(),
+                      _BookmarkButton(
+                        saved: post.saved,
+                        onPressed: _toggleSave,
+                      ),
+                    ],
+                  ),
+                  if (media.length > 1)
+                    IgnorePointer(
+                      child: _PageDots(count: media.length, index: _page),
                     ),
+                ],
+              ),
+            ),
+          ),
+
+          // ---- Likes, caption, comments link, time ----
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  post.likes == 0
+                      ? 'Be the first to like this'
+                      : '${_withCommas(post.likes)} ${post.likes == 1 ? 'like' : 'likes'}',
+                  style: TextStyle(
+                    fontWeight: post.likes == 0
+                        ? FontWeight.w400
+                        : FontWeight.w700,
+                    fontSize: 14,
+                    color: ink,
                   ),
                 ),
                 if (post.caption.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 5),
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: '${post.handle}  ',
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          TextSpan(text: post.caption),
-                        ],
+                  const SizedBox(height: 4),
+                  Text.rich(
+                    TextSpan(
+                      style: const TextStyle(
+                        color: ink,
+                        fontSize: 14,
+                        height: 1.3,
                       ),
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
+                      children: [
+                        TextSpan(
+                          text: '$username ',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        ..._captionSpans(post.caption),
+                      ],
                     ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
+                const SizedBox(height: 6),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _openComments,
+                  child: Text(
+                    comments > 0
+                        ? (comments == 1
+                              ? 'View 1 comment'
+                              : 'View all $comments comments')
+                        : 'Add a comment…',
+                    style: const TextStyle(color: muted, fontSize: 14),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _timeAgo(createdAt).toUpperCase(),
+                  style: const TextStyle(color: muted, fontSize: 11),
+                ),
               ],
             ),
           ),
@@ -3667,6 +4002,131 @@ class PostCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _withCommas(int value) => value.toString().replaceAllMapped(
+  RegExp(r'\B(?=(\d{3})+(?!\d))'),
+  (match) => ',',
+);
+
+/// Caption text with #hashtags and @mentions highlighted in Instagram blue.
+List<InlineSpan> _captionSpans(String text) {
+  final spans = <InlineSpan>[];
+  var last = 0;
+  final pattern = RegExp(r'(#[\p{L}\p{N}_]+|@[\w.]+)', unicode: true);
+  for (final match in pattern.allMatches(text)) {
+    if (match.start > last) {
+      spans.add(TextSpan(text: text.substring(last, match.start)));
+    }
+    spans.add(
+      TextSpan(
+        text: match.group(0),
+        style: const TextStyle(color: igHashtagBlue),
+      ),
+    );
+    last = match.end;
+  }
+  if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
+  return spans;
+}
+
+/// Carousel position dots (active = blue, others grey).
+class _PageDots extends StatelessWidget {
+  const _PageDots({required this.count, required this.index});
+
+  final int count;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      for (var i = 0; i < count; i++)
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          margin: const EdgeInsets.symmetric(horizontal: 2.5),
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: i == index ? igBlue : const Color(0xFF5A5A5A),
+          ),
+        ),
+    ],
+  );
+}
+
+/// Bookmark: outline -> solid white, with a quick vertical bounce.
+class _BookmarkButton extends StatefulWidget {
+  const _BookmarkButton({required this.saved, required this.onPressed});
+
+  final bool saved;
+  final VoidCallback onPressed;
+
+  @override
+  State<_BookmarkButton> createState() => _BookmarkButtonState();
+}
+
+class _BookmarkButtonState extends State<_BookmarkButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _bounce = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 360),
+  );
+  late final Animation<double> _dy = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 0.0,
+        end: -7.0,
+      ).chain(CurveTween(curve: Curves.easeOut)),
+      weight: 30,
+    ),
+    TweenSequenceItem(
+      tween: Tween(
+        begin: -7.0,
+        end: 0.0,
+      ).chain(CurveTween(curve: Curves.bounceOut)),
+      weight: 70,
+    ),
+  ]).animate(_bounce);
+
+  @override
+  void dispose() {
+    _bounce.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: widget.saved ? 'Remove saved post' : 'Save post',
+    onPressed: () {
+      _bounce.forward(from: 0);
+      widget.onPressed();
+    },
+    icon: AnimatedBuilder(
+      animation: _dy,
+      builder: (context, child) =>
+          Transform.translate(offset: Offset(0, _dy.value), child: child),
+      child: Icon(
+        widget.saved
+            ? Icons.bookmark_rounded
+            : Icons.bookmark_border_rounded,
+        size: 27,
+        color: Colors.white,
+      ),
+    ),
+  );
+}
+
+/// Short Instagram-style age for stories: "now", "5m", "3h", "1d".
+String _storyAge(dynamic value) {
+  final date = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+  if (date == null) return '';
+  final diff = DateTime.now().difference(date);
+  if (diff.inMinutes < 1) return 'now';
+  if (diff.inHours < 1) return '${diff.inMinutes}m';
+  if (diff.inDays < 1) return '${diff.inHours}h';
+  return '${diff.inDays}d';
 }
 
 String _timeAgo(dynamic value) {
@@ -3785,19 +4245,19 @@ class _CreatePageState extends State<CreatePage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.white,
+    backgroundColor: igBlack,
     appBar: AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: igBlack,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       leading: IconButton(
         tooltip: 'Close',
         onPressed: () => Navigator.of(context).maybePop(),
-        icon: const Icon(Icons.close, color: Colors.black, size: 28),
+        icon: const Icon(Icons.close, color: Colors.white, size: 28),
       ),
       title: const Text(
         'Create post',
-        style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800),
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
       ),
       actions: [
         Padding(
@@ -3806,7 +4266,7 @@ class _CreatePageState extends State<CreatePage> {
             child: FilledButton(
               onPressed: publishing ? null : _publish,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF1877F2),
+                backgroundColor: const Color(0xFF0095F6),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 shape: RoundedRectangleBorder(
@@ -3830,10 +4290,10 @@ class _CreatePageState extends State<CreatePage> {
                   children: [
                     CircleAvatar(
                       radius: 25,
-                      backgroundColor: const Color(0xFFE8F0FE),
+                      backgroundColor: const Color(0xFF262626),
                       child: const Icon(
                         Icons.person,
-                        color: Color(0xFF1877F2),
+                        color: Color(0xFF0095F6),
                         size: 29,
                       ),
                     ),
@@ -3844,7 +4304,7 @@ class _CreatePageState extends State<CreatePage> {
                         const Text(
                           'Your profile',
                           style: TextStyle(
-                            color: Colors.black,
+                            color: Colors.white,
                             fontWeight: FontWeight.w800,
                             fontSize: 16,
                           ),
@@ -3909,7 +4369,7 @@ class _CreatePageState extends State<CreatePage> {
                               vertical: 5,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF0F2F5),
+                              color: const Color(0xFF262626),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
@@ -3948,14 +4408,14 @@ class _CreatePageState extends State<CreatePage> {
                   maxLength: 5000,
                   textCapitalization: TextCapitalization.sentences,
                   style: const TextStyle(
-                    color: Colors.black,
+                    color: Colors.white,
                     fontSize: 23,
                     height: 1.35,
                   ),
                   decoration: const InputDecoration(
                     hintText: "What's on your mind?",
                     hintStyle: TextStyle(
-                      color: Color(0xFF8A8D91),
+                      color: Color(0xFFA8A8A8),
                       fontSize: 23,
                     ),
                     border: InputBorder.none,
@@ -3981,7 +4441,7 @@ class _CreatePageState extends State<CreatePage> {
                                   return Container(
                                     width: 108,
                                     height: 108,
-                                    color: const Color(0xFFF0F2F5),
+                                    color: const Color(0xFF262626),
                                     child: const Center(
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
@@ -4038,8 +4498,8 @@ class _CreatePageState extends State<CreatePage> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: const Color(0xFFE0E0E0)),
+                color: igBlack,
+                border: Border.all(color: const Color(0xFF363636)),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Row(
@@ -4048,7 +4508,7 @@ class _CreatePageState extends State<CreatePage> {
                     child: Text(
                       'Add to your post',
                       style: TextStyle(
-                        color: Colors.black,
+                        color: Colors.white,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -4067,7 +4527,7 @@ class _CreatePageState extends State<CreatePage> {
                     onPressed: _pick,
                     icon: const Icon(
                       Icons.video_library_outlined,
-                      color: Color(0xFF1877F2),
+                      color: Color(0xFF0095F6),
                       size: 27,
                     ),
                   ),
@@ -4256,7 +4716,7 @@ class _UserAvatar extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFEAE4FF), Color(0xFFD2C6FF)],
+          colors: [Color(0xFF262626), Color(0xFF262626)],
         ),
       ),
       child: Center(
@@ -4323,7 +4783,7 @@ class _SkeletonPeople extends StatelessWidget {
       width: w,
       height: h,
       decoration: BoxDecoration(
-        color: const Color(0xFFE9E7F3),
+        color: const Color(0xFF262626),
         borderRadius: BorderRadius.circular(8),
       ),
     );
@@ -4336,7 +4796,7 @@ class _SkeletonPeople extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: igSurface,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Row(
@@ -4345,7 +4805,7 @@ class _SkeletonPeople extends StatelessWidget {
                 width: 54,
                 height: 54,
                 decoration: const BoxDecoration(
-                  color: Color(0xFFE9E7F3),
+                  color: Color(0xFF262626),
                   shape: BoxShape.circle,
                 ),
               ),
@@ -4379,7 +4839,7 @@ class _SkeletonGrid extends StatelessWidget {
   Widget build(BuildContext context) => _Pulse(
     child: GridView.builder(
       physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      padding: EdgeInsets.zero,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: columns,
         mainAxisSpacing: 4,
@@ -4389,7 +4849,7 @@ class _SkeletonGrid extends StatelessWidget {
       itemCount: columns * 4,
       itemBuilder: (_, _) => DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFFE9E7F3),
+          color: const Color(0xFF262626),
           borderRadius: BorderRadius.circular(14),
         ),
       ),
@@ -4422,7 +4882,7 @@ class _SearchEmpty extends StatelessWidget {
             width: 78,
             height: 78,
             decoration: const BoxDecoration(
-              color: Color(0xFFEDE9FF),
+              color: Color(0xFF262626),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, size: 36, color: violet),
@@ -4525,8 +4985,8 @@ class _PostThumb extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: isVideo
-              ? const [Color(0xFF2A2740), Color(0xFF14131F)]
-              : const [Color(0xFFEDE9FF), Color(0xFFD9D0FF)],
+              ? const [Color(0xFF262626), Color(0xFF121212)]
+              : const [Color(0xFF262626), Color(0xFF363636)],
         ),
       ),
       child: media.isEmpty
@@ -4602,7 +5062,7 @@ class _MediaGridTile extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: ClipRRect(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.zero,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -4802,12 +5262,12 @@ class _SearchPageState extends State<SearchPage> {
     padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
     child: Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: igElevated,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFECEAF5)),
+        border: Border.all(color: const Color(0xFF363636)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0F4B3AA8),
+            color: Color(0x00000000),
             blurRadius: 16,
             offset: Offset(0, 5),
           ),
@@ -4874,15 +5334,15 @@ class _SearchPageState extends State<SearchPage> {
             height: 38,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: active ? violet : Colors.white,
+              color: active ? violet : igElevated,
               borderRadius: BorderRadius.circular(19),
               border: Border.all(
-                color: active ? violet : const Color(0xFFE6E4F0),
+                color: active ? violet : const Color(0xFF363636),
               ),
               boxShadow: active
                   ? const [
                       BoxShadow(
-                        color: Color(0x337257F5),
+                        color: Color(0x330095F6),
                         blurRadius: 10,
                         offset: Offset(0, 4),
                       ),
@@ -5223,7 +5683,7 @@ class _PersonTileState extends State<_PersonTile> {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color: const Color(0xFFEDE9FF),
+          color: const Color(0xFF262626),
           borderRadius: BorderRadius.circular(20),
         ),
         child: const Text(
@@ -5259,7 +5719,7 @@ class _PersonTileState extends State<_PersonTile> {
               onPressed: busy ? null : _toggle,
               style: OutlinedButton.styleFrom(
                 foregroundColor: current == 'Requested' ? muted : ink,
-                side: const BorderSide(color: Color(0xFFDAD7E8)),
+                side: const BorderSide(color: Color(0xFF363636)),
                 padding: EdgeInsets.zero,
                 shape: shape,
               ),
@@ -5289,10 +5749,10 @@ class _PersonTileState extends State<_PersonTile> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       child: Material(
-        color: Colors.white,
+        color: igBlack,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: Color(0xFFEFEDF7)),
+          side: const BorderSide(color: Color(0xFF363636)),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -5388,10 +5848,10 @@ class _PostResultTile extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Material(
-      color: Colors.white,
+      color: igBlack,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: Color(0xFFEFEDF7)),
+        side: const BorderSide(color: Color(0xFF363636)),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -5473,7 +5933,7 @@ class _PostResultTile extends StatelessWidget {
                         const Icon(
                           Icons.favorite_rounded,
                           size: 14,
-                          color: Color(0xFFFF2D55),
+                          color: Color(0xFFFF3040),
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -5609,6 +6069,183 @@ class _ProfileTabsDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(covariant _ProfileTabsDelegate oldDelegate) => true;
 }
+
+/// Instagram-style profile header: avatar on the left, Posts / Followers /
+/// Following on the right, name + bio underneath and a row of action buttons.
+class _IgProfileHeader extends StatelessWidget {
+  const _IgProfileHeader({
+    required this.avatar,
+    required this.name,
+    required this.bio,
+    required this.isPrivate,
+    required this.posts,
+    required this.followers,
+    required this.following,
+    required this.onFollowers,
+    required this.onFollowing,
+    required this.actions,
+  });
+
+  final String avatar;
+  final String name;
+  final String bio;
+  final bool isPrivate;
+  final String posts;
+  final String followers;
+  final String following;
+  final VoidCallback? onFollowers;
+  final VoidCallback? onFollowing;
+  final List<Widget> actions;
+
+  Widget _stat(String value, String label, VoidCallback? onTap) => Expanded(
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: ink,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(label, style: const TextStyle(color: ink, fontSize: 13)),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _UserAvatar(url: avatar, name: name, size: 86),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Row(
+                children: [
+                  _stat(posts, 'Posts', null),
+                  _stat(followers, 'Followers', onFollowers),
+                  _stat(following, 'Following', onFollowing),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                name.isEmpty ? ' ' : name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: ink,
+                ),
+              ),
+            ),
+            if (isPrivate) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.lock_outline_rounded, size: 14, color: muted),
+            ],
+          ],
+        ),
+        if (bio.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text.rich(
+            TextSpan(
+              style: const TextStyle(color: ink, fontSize: 14, height: 1.3),
+              children: _captionSpans(bio),
+            ),
+          ),
+        ],
+        const SizedBox(height: 14),
+        Row(children: actions),
+      ],
+    ),
+  );
+}
+
+/// Flat Instagram profile button: #262626, or blue when it is the main action.
+class _IgProfileButton extends StatelessWidget {
+  const _IgProfileButton({
+    required this.label,
+    required this.onPressed,
+    this.primary = false,
+    this.busy = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool primary;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 34,
+    child: FilledButton(
+      onPressed: busy ? null : onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: primary ? igBlue : igElevated,
+        disabledBackgroundColor: primary ? igBlue : igElevated,
+        foregroundColor: Colors.white,
+        disabledForegroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        minimumSize: const Size(0, 34),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: busy
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+    ),
+  );
+}
+
+/// Icon-only tab (grid / photos / videos) with a white underline when active.
+Widget _igProfileTab({
+  required IconData icon,
+  required bool active,
+  required VoidCallback onTap,
+}) => Expanded(
+  child: InkWell(
+    onTap: onTap,
+    child: Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: active ? Colors.white : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+      ),
+      child: Icon(icon, size: 26, color: active ? Colors.white : muted),
+    ),
+  ),
+);
 
 /// Public profile of any Twice user: header, follow / message actions,
 /// followers + following lists and all their posts, photos and videos.
@@ -5851,40 +6488,6 @@ class _UserProfilePageState extends State<UserProfilePage> {
       ? posts.where(_isVideo).toList()
       : posts;
 
-  Widget _stat(String value, String label, {VoidCallback? onTap}) => Expanded(
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Column(
-          children: [
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 19,
-                fontWeight: FontWeight.w900,
-                color: ink,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                color: muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  Widget _divider() =>
-      Container(width: 1, height: 30, color: const Color(0xFFECEAF5));
-
   Widget _followButton() {
     final label = !labelLoaded
         ? 'Follow'
@@ -5894,264 +6497,74 @@ class _UserProfilePageState extends State<UserProfilePage> {
         ? 'Following'
         : followLabel;
     final outlined = label == 'Following' || label == 'Requested';
-    final spinner = SizedBox(
-      width: 18,
-      height: 18,
-      child: CircularProgressIndicator(
-        strokeWidth: 2,
-        color: outlined ? violet : Colors.white,
-      ),
-    );
-    final text = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          label == 'Following'
-              ? Icons.check_rounded
-              : label == 'Requested'
-              ? Icons.schedule_rounded
-              : Icons.person_add_alt_1_rounded,
-          size: 18,
-        ),
-        const SizedBox(width: 7),
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
-      ],
-    );
-    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(15));
-    return SizedBox(
-      height: 46,
-      child: outlined
-          ? OutlinedButton(
-              onPressed: followBusy || !labelLoaded ? null : _toggleFollow,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: ink,
-                side: const BorderSide(color: Color(0xFFDAD7E8)),
-                shape: shape,
-              ),
-              child: followBusy ? spinner : text,
-            )
-          : FilledButton(
-              onPressed: followBusy || !labelLoaded ? null : _toggleFollow,
-              style: FilledButton.styleFrom(
-                backgroundColor: violet,
-                foregroundColor: Colors.white,
-                shape: shape,
-              ),
-              child: followBusy ? spinner : text,
-            ),
+    return _IgProfileButton(
+      label: label,
+      primary: !outlined,
+      busy: followBusy,
+      onPressed: !labelLoaded ? null : _toggleFollow,
     );
   }
 
   Widget _header() {
     final avatar = (profile['avatar_url'] ?? '').toString();
     final bio = (profile['bio'] ?? '').toString().trim();
-    return Container(
-      margin: const EdgeInsets.fromLTRB(14, 2, 14, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFEFEDF7)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F4B3AA8),
-            blurRadius: 22,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                height: 96,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF8E7BFF), Color(0xFF7257F5), Color(0xFFB58CFF)],
-                  ),
+    return _IgProfileHeader(
+      avatar: avatar,
+      name: shownName,
+      bio: bio,
+      isPrivate: isPrivate,
+      posts: statsLoaded ? _compactCount(postCount) : '…',
+      followers: statsLoaded || followers > 0 ? _compactCount(followers) : '…',
+      following: statsLoaded || following > 0 ? _compactCount(following) : '…',
+      onFollowers: () => _openFollowList(true),
+      onFollowing: () => _openFollowList(false),
+      actions: isSelf
+          ? [
+              Expanded(
+                child: _IgProfileButton(
+                  label: 'This is your profile',
+                  onPressed: () {},
                 ),
               ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: -48,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: _UserAvatar(url: avatar, name: shownName, size: 96),
-                  ),
+            ]
+          : [
+              Expanded(child: _followButton()),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _IgProfileButton(
+                  label: 'Message',
+                  busy: messageBusy,
+                  onPressed: _message,
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 58),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        shownName.isEmpty ? ' ' : shownName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: ink,
-                        ),
-                      ),
-                    ),
-                    if (isPrivate) ...[
-                      const SizedBox(width: 6),
-                      const Icon(Icons.lock_rounded, size: 16, color: muted),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  username.isEmpty ? '' : '@$username',
-                  style: const TextStyle(color: muted, fontSize: 14.5),
-                ),
-                if (bio.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    bio,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: ink, height: 1.4),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                _stat(statsLoaded ? _compactCount(postCount) : '…', 'Posts'),
-                _divider(),
-                _stat(
-                  statsLoaded || followers > 0 ? _compactCount(followers) : '…',
-                  'Followers',
-                  onTap: () => _openFollowList(true),
-                ),
-                _divider(),
-                _stat(
-                  statsLoaded || following > 0 ? _compactCount(following) : '…',
-                  'Following',
-                  onTap: () => _openFollowList(false),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-            child: isSelf
-                ? Container(
-                    height: 46,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEDE9FF),
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: const Text(
-                      'This is your profile',
-                      style: TextStyle(
-                        color: violet,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  )
-                : Row(
-                    children: [
-                      Expanded(child: _followButton()),
-                      const SizedBox(width: 10),
-                      SizedBox(
-                        height: 46,
-                        child: OutlinedButton.icon(
-                          onPressed: messageBusy ? null : _message,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: ink,
-                            side: const BorderSide(color: Color(0xFFDAD7E8)),
-                            padding: const EdgeInsets.symmetric(horizontal: 18),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                          ),
-                          icon: messageBusy
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.send_outlined, size: 18),
-                          label: const Text(
-                            'Message',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-        ],
-      ),
     );
   }
 
   Widget _tabBar() {
-    Widget item(int index, IconData icon, String label) {
-      final active = tab == index;
-      return Expanded(
-        child: InkWell(
-          onTap: () => setState(() => tab = index),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: active ? violet : Colors.transparent,
-                  width: 3,
-                ),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, size: 20, color: active ? violet : muted),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: active ? FontWeight.w900 : FontWeight.w600,
-                    color: active ? ink : muted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
     return Container(
-      color: canvas,
+      height: 52,
+      decoration: const BoxDecoration(
+        color: canvas,
+        border: Border(bottom: BorderSide(color: igBorder, width: 0.5)),
+      ),
       child: Row(
         children: [
-          item(0, Icons.grid_on_rounded, 'Posts'),
-          item(1, Icons.photo_outlined, 'Photos'),
-          item(2, Icons.play_circle_outline_rounded, 'Videos'),
+          _igProfileTab(
+            icon: Icons.grid_on_rounded,
+            active: tab == 0,
+            onTap: () => setState(() => tab = 0),
+          ),
+          _igProfileTab(
+            icon: Icons.photo_outlined,
+            active: tab == 1,
+            onTap: () => setState(() => tab = 1),
+          ),
+          _igProfileTab(
+            icon: Icons.play_circle_outline_rounded,
+            active: tab == 2,
+            onTap: () => setState(() => tab = 2),
+          ),
         ],
       ),
     );
@@ -6188,7 +6601,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
     if (postsLoading && posts.isEmpty) {
       return [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+          padding: EdgeInsets.zero,
           sliver: SliverToBoxAdapter(
             child: SizedBox(
               height: 330,
@@ -6196,14 +6609,13 @@ class _UserProfilePageState extends State<UserProfilePage> {
                 child: GridView.count(
                   physics: const NeverScrollableScrollPhysics(),
                   crossAxisCount: 3,
-                  mainAxisSpacing: 4,
-                  crossAxisSpacing: 4,
+                  mainAxisSpacing: 1.5,
+                  crossAxisSpacing: 1.5,
                   children: List.generate(
                     9,
                     (_) => DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE9E7F3),
-                        borderRadius: BorderRadius.circular(14),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF262626),
                       ),
                     ),
                   ),
@@ -6254,12 +6666,12 @@ class _UserProfilePageState extends State<UserProfilePage> {
     }
     return [
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+        padding: EdgeInsets.zero,
         sliver: SliverGrid(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
-            mainAxisSpacing: 4,
-            crossAxisSpacing: 4,
+            mainAxisSpacing: 1.5,
+            crossAxisSpacing: 1.5,
             childAspectRatio: tab == 2 ? 0.72 : 1,
           ),
           delegate: SliverChildBuilderDelegate(
@@ -6297,7 +6709,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
                 icon: const Icon(Icons.arrow_back_rounded),
               ),
               title: Text(
-                username.isEmpty ? 'Profile' : '@$username',
+                username.isEmpty ? 'Profile' : username,
                 style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
               ),
               actions: [
@@ -6447,258 +6859,298 @@ class _CommentsSheetState extends State<CommentsSheet> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) => Container(
-    height: MediaQuery.sizeOf(context).height * .78,
-    decoration: const BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
-    child: Column(
-      children: [
-        const SizedBox(height: 10),
-        Container(
-          width: 38,
-          height: 4,
-          decoration: BoxDecoration(
-            color: Colors.black26,
-            borderRadius: BorderRadius.circular(99),
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text(
-            'Comments',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-          ),
-        ),
-        Expanded(
-          child: busy
-              ? const Center(child: CircularProgressIndicator())
-              : loadError != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('Could not load comments'),
-                        const SizedBox(height: 8),
-                        Text(loadError!, textAlign: TextAlign.center),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: _load,
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : rows.isEmpty
-              ? const Center(child: Text('No comments yet'))
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                  itemCount: rows.length,
-                  itemBuilder: (_, i) {
-                    final r = rows[i];
-                    final p = r['profiles'] as Map? ?? {};
-                    final name = (p['display_name'] ?? p['username'] ?? 'User')
-                        .toString();
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => _openUserProfile(
-                              context,
-                              userId: (p['id'] ?? r['user_id'] ?? '').toString(),
-                              profile: Map<String, dynamic>.from(p),
-                            ),
-                            child: Builder(
-                            builder: (context) {
-                              final avatar = (p['avatar_url'] ?? '')
-                                  .toString()
-                                  .trim();
-                              final hasAvatar =
-                                  _isImageSource(avatar) ||
-                                  avatar.startsWith('file://') ||
-                                  avatar.startsWith('/');
-                              return CircleAvatar(
-                                radius: 17,
-                                backgroundColor: const Color(0xFFEDE7FF),
-                                backgroundImage: hasAvatar
-                                    ? _twiceAvatarProvider(avatar)
-                                    : null,
-                                child: hasAvatar
-                                    ? null
-                                    : Text(
-                                        name.isNotEmpty
-                                            ? name[0].toUpperCase()
-                                            : 'U',
-                                        style: const TextStyle(
-                                          color: violet,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                              );
-                            },
-                          ),
-                          ),
-                          const SizedBox(width: 10),
-                          Flexible(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF3F3F6),
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: () => _openUserProfile(
-                                      context,
-                                      userId: (p['id'] ?? r['user_id'] ?? '')
-                                          .toString(),
-                                      profile: Map<String, dynamic>.from(p),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          name,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          '@${(p['username'] ?? 'user').toString().replaceFirst(RegExp(r'^@'), '')}  ·  ${_timeAgo(r['created_at'])}',
-                                          style: const TextStyle(
-                                            color: muted,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Text((r['body'] ?? '').toString()),
-                                  if (r['_queued'] == true)
-                                    const Padding(
-                                      padding: EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        'Saved offline · waiting to sync',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: muted,
-                                        ),
-                                      ),
-                                    ),
-                                  if (r['_failed'] == true)
-                                    const Padding(
-                                      padding: EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        'Not synced · check connection and retry',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.redAccent,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              14,
-              8,
-              14,
-              10 + MediaQuery.viewInsetsOf(context).bottom,
+  Widget _commentAvatar(Map p, String name, {double radius = 18}) {
+    final avatar = (p['avatar_url'] ?? '').toString().trim();
+    final hasAvatar =
+        _isImageSource(avatar) ||
+        avatar.startsWith('file://') ||
+        avatar.startsWith('/');
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: igElevated,
+      backgroundImage: hasAvatar ? _twiceAvatarProvider(avatar) : null,
+      child: hasAvatar
+          ? null
+          : Text(
+              name.isNotEmpty ? name[0].toUpperCase() : 'U',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+    );
+  }
+
+  Widget _commentRow({
+    required Map p,
+    required String userId,
+    required String name,
+    required String body,
+    String? time,
+    Widget? status,
+  }) {
+    void openProfile() => _openUserProfile(
+      context,
+      userId: userId,
+      profile: Map<String, dynamic>.from(p),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: openProfile,
+            child: _commentAvatar(p, name),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF3F3F6),
-                      borderRadius: BorderRadius.circular(26),
-                      border: Border.all(color: const Color(0xFFE5E3EC)),
+                Text.rich(
+                  TextSpan(
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      height: 1.3,
                     ),
-                    child: TextField(
-                      controller: controller,
-                      minLines: 1,
-                      maxLines: 4,
-                      textCapitalization: TextCapitalization.sentences,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _send(),
-                      decoration: const InputDecoration(
-                        hintText: 'Write a comment…',
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 12,
-                        ),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
+                    children: [
+                      TextSpan(
+                        text: '$name ',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
-                    ),
+                      ..._captionSpans(body),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Material(
-                  color: violet,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: sending ? null : _send,
-                    child: SizedBox(
-                      width: 46,
-                      height: 46,
-                      child: Center(
-                        child: sending
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.send_rounded,
-                                color: Colors.white,
-                                size: 21,
-                              ),
-                      ),
-                    ),
+                if (time != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    time,
+                    style: const TextStyle(color: muted, fontSize: 12),
                   ),
-                ),
+                ],
+                if (status != null) status,
               ],
             ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final post = widget.post;
+    final postAuthor = post.author;
+    final postUsername = post.username.replaceFirst(RegExp(r'^@'), '');
+    final hasText = controller.text.trim().isNotEmpty;
+
+    Widget list() {
+      if (busy) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (loadError != null) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Could not load comments'),
+                const SizedBox(height: 8),
+                Text(
+                  loadError!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: muted, fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                TextButton(onPressed: _load, child: const Text('Retry')),
+              ],
+            ),
+          ),
+        );
+      }
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        children: [
+          // The post's own caption is shown first, like Instagram.
+          if (post.caption.isNotEmpty)
+            _commentRow(
+              p: postAuthor,
+              userId: (postAuthor['id'] ?? '').toString(),
+              name: postUsername,
+              body: post.caption,
+              time: _timeAgo(post.data['created_at']),
+            ),
+          if (rows.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 48),
+              child: Column(
+                children: [
+                  Text(
+                    'No comments yet.',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Start the conversation.',
+                    style: TextStyle(color: muted, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          for (final r in rows)
+            Builder(
+              builder: (context) {
+                final p = r['profiles'] as Map? ?? {};
+                final name =
+                    (p['username'] ?? p['display_name'] ?? 'user')
+                        .toString()
+                        .replaceFirst(RegExp(r'^@'), '');
+                return _commentRow(
+                  p: p,
+                  userId: (p['id'] ?? r['user_id'] ?? '').toString(),
+                  name: name,
+                  body: (r['body'] ?? '').toString(),
+                  time: _timeAgo(r['created_at']),
+                  status: r['_queued'] == true
+                      ? const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Saved offline · waiting to sync',
+                            style: TextStyle(fontSize: 11, color: muted),
+                          ),
+                        )
+                      : r['_failed'] == true
+                      ? const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Not synced · check connection and retry',
+                            style: TextStyle(fontSize: 11, color: igRed),
+                          ),
+                        )
+                      : null,
+                );
+              },
+            ),
+        ],
+      );
+    }
+
+    return Container(
+      height: MediaQuery.sizeOf(context).height * .78,
+      decoration: const BoxDecoration(
+        color: igSurface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFF5A5A5A),
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'Comments',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const Divider(height: 1, thickness: 0.5, color: igBorder),
+          Expanded(child: list()),
+          const Divider(height: 1, thickness: 0.5, color: igBorder),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                12,
+                10,
+                12,
+                10 + MediaQuery.viewInsetsOf(context).bottom,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.only(left: 16, right: 4),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: const Color(0xFF363636)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: controller,
+                              minLines: 1,
+                              maxLines: 4,
+                              onChanged: (_) => setState(() {}),
+                              textCapitalization: TextCapitalization.sentences,
+                              textInputAction: TextInputAction.send,
+                              onSubmitted: (_) => _send(),
+                              style: const TextStyle(fontSize: 14),
+                              decoration: InputDecoration(
+                                hintText: 'Add a comment for $postUsername…',
+                                hintStyle: const TextStyle(
+                                  color: muted,
+                                  fontSize: 14,
+                                ),
+                                filled: false,
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                              ),
+                            ),
+                          ),
+                          sending
+                              ? const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 14),
+                                  child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                )
+                              : TextButton(
+                                  onPressed: hasText ? _send : null,
+                                  child: Text(
+                                    'Post',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                      color: hasText
+                                          ? igBlue
+                                          : const Color(0x800095F6),
+                                    ),
+                                  ),
+                                ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Crisp bell icon (outline, or filled when selected) for the Inbox tab.
@@ -6777,7 +7229,7 @@ class _InboxNavIcon extends StatelessWidget {
           offset: const Offset(4, -4),
           child: _InboxBellIcon(
             size: 25,
-            color: selected ? ink : const Color(0xFF5B5E6C),
+            color: selected ? ink : const Color(0xFFA8A8A8),
             filled: selected,
           ),
         );
@@ -6870,17 +7322,17 @@ class _ActivityPageState extends State<ActivityPage> {
   (IconData, Color) _badgeFor(String type) {
     switch (type) {
       case 'like':
-        return (Icons.favorite_rounded, const Color(0xFFFF2D55));
+        return (Icons.favorite_rounded, const Color(0xFFFF3040));
       case 'story_reaction':
-        return (Icons.favorite_rounded, const Color(0xFFFF2D55));
+        return (Icons.favorite_rounded, const Color(0xFFFF3040));
       case 'comment':
       case 'reply':
         return (Icons.mode_comment_rounded, const Color(0xFF2F80ED));
       case 'story_reply':
       case 'message':
-        return (Icons.reply_rounded, const Color(0xFF7C4DFF));
+        return (Icons.reply_rounded, const Color(0xFF0095F6));
       default:
-        return (Icons.person_add_alt_1_rounded, const Color(0xFF7C4DFF));
+        return (Icons.person_add_alt_1_rounded, const Color(0xFF0095F6));
     }
   }
 
@@ -6928,7 +7380,7 @@ class _ActivityPageState extends State<ActivityPage> {
             : {...actor, 'avatar_url': avatar},
       ),
       child: Container(
-      color: isNew ? const Color(0xFFF0EBFF) : Colors.transparent,
+      color: isNew ? const Color(0xFF262626) : Colors.transparent,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
         children: [
@@ -6937,7 +7389,7 @@ class _ActivityPageState extends State<ActivityPage> {
             children: [
               CircleAvatar(
                 radius: 25,
-                backgroundColor: const Color(0xFFE9E7F5),
+                backgroundColor: const Color(0xFF262626),
                 backgroundImage: _isImageSource(avatar)
                     ? _twiceAvatarProvider(avatar)
                     : null,
@@ -6954,7 +7406,7 @@ class _ActivityPageState extends State<ActivityPage> {
                   decoration: BoxDecoration(
                     color: tint,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
+                    border: Border.all(color: igBlack, width: 2),
                   ),
                   child: Icon(icon, size: 12, color: Colors.white),
                 ),
@@ -6984,7 +7436,7 @@ class _ActivityPageState extends State<ActivityPage> {
                 Text(
                   _timeAgo(row['created_at']),
                   style: TextStyle(
-                    color: isNew ? const Color(0xFF6A3DF0) : muted,
+                    color: isNew ? const Color(0xFF0095F6) : muted,
                     fontSize: 12.5,
                     fontWeight: isNew ? FontWeight.w700 : FontWeight.w400,
                   ),
@@ -7004,13 +7456,13 @@ class _ActivityPageState extends State<ActivityPage> {
                   fit: BoxFit.cover,
                   gaplessPlayback: true,
                   errorBuilder: (_, _, _) =>
-                      const ColoredBox(color: Color(0xFFE9E7F5)),
+                      const ColoredBox(color: Color(0xFF262626)),
                 ),
               ),
             ),
           ] else if (isNew) ...[
             const SizedBox(width: 10),
-            const CircleAvatar(radius: 5, backgroundColor: Color(0xFF6A3DF0)),
+            const CircleAvatar(radius: 5, backgroundColor: Color(0xFF0095F6)),
           ],
         ],
       ),
@@ -7207,15 +7659,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
     labelText: label,
     prefixIcon: Icon(icon, color: violet),
     filled: true,
-    fillColor: Colors.white,
+    fillColor: igElevated,
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(18),
-      borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
+      borderSide: const BorderSide(color: Color(0xFF363636)),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(18),
-      borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
+      borderSide: const BorderSide(color: Color(0xFF363636)),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(18),
@@ -7258,9 +7710,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               padding: const EdgeInsets.all(4),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Colors.white,
+                                color: igBlack,
                                 border: Border.all(
-                                  color: const Color(0xFFE5DFFF),
+                                  color: const Color(0xFF363636),
                                   width: 2,
                                 ),
                               ),
@@ -7366,8 +7818,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
             Container(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
               decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(top: BorderSide(color: Color(0xFFECECF2))),
+                color: igBlack,
+                border: Border(top: BorderSide(color: Color(0xFF363636))),
               ),
               child: SizedBox(
                 width: double.infinity,
@@ -7497,7 +7949,7 @@ class _FollowListPageState extends State<FollowListPage> {
       style: OutlinedButton.styleFrom(
         foregroundColor: connected ? Colors.green.shade700 : violet,
         side: BorderSide(
-          color: connected ? Colors.green.shade300 : const Color(0xFFDCD6FF),
+          color: connected ? Colors.green.shade300 : const Color(0xFF363636),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
@@ -7580,7 +8032,7 @@ class _FollowListPageState extends State<FollowListPage> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: const BoxDecoration(
-                        color: Color(0xFFEDE9FF),
+                        color: Color(0xFF262626),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -7633,15 +8085,15 @@ class _FollowListPageState extends State<FollowListPage> {
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: igSurface,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFECECF2)),
+                        border: Border.all(color: const Color(0xFF363636)),
                       ),
                       child: Row(
                         children: [
                           CircleAvatar(
                             radius: 27,
-                            backgroundColor: const Color(0xFFEDE9FF),
+                            backgroundColor: const Color(0xFF262626),
                             backgroundImage: avatar.isNotEmpty
                                 ? _twiceAvatarProvider(avatar)
                                 : null,
@@ -7886,7 +8338,7 @@ class _ProfilePageState extends State<ProfilePage> {
             horizontal: 20,
             vertical: 24,
           ),
-          backgroundColor: Colors.white,
+          backgroundColor: igElevated,
           elevation: 18,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(32),
@@ -7911,12 +8363,12 @@ class _ProfilePageState extends State<ProfilePage> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: const Color(0xFFEAE7FF),
+                        color: const Color(0xFF262626),
                         width: 3,
                       ),
                     ),
                     child: CircleAvatar(
-                      backgroundColor: const Color(0xFFF0F2F5),
+                      backgroundColor: const Color(0xFF262626),
                       backgroundImage: avatarUrl.isNotEmpty
                           ? _twiceAvatarProvider(avatarUrl)
                           : null,
@@ -7950,7 +8402,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(26),
-                        border: Border.all(color: const Color(0xFFECEAF5)),
+                        border: Border.all(color: const Color(0xFF363636)),
                         boxShadow: const [
                           BoxShadow(
                             color: Color(0x12000000),
@@ -8064,41 +8516,6 @@ class _ProfilePageState extends State<ProfilePage> {
     if (mounted) setState(() {});
   }
 
-  Widget _statCell(String value, String label, {VoidCallback? onTap}) =>
-      Expanded(
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Column(
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                    color: ink,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-
-  Widget _statDivider() =>
-      Container(width: 1, height: 30, color: const Color(0xFFECEAF5));
-
   Widget _headerCard() {
     final profile = widget.profile;
     final avatar = (profile['avatar_url'] ?? '').toString();
@@ -8107,221 +8524,55 @@ class _ProfilePageState extends State<ProfilePage> {
     final shownName = displayName.isEmpty ? username : displayName;
     final bio = (profile['bio'] ?? '').toString().trim();
     final isPrivate = profile['is_private'] == true;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(14, 2, 14, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFEFEDF7)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F4B3AA8),
-            blurRadius: 22,
-            offset: Offset(0, 8),
+    return _IgProfileHeader(
+      avatar: avatar,
+      name: shownName,
+      bio: bio,
+      isPrivate: isPrivate,
+      posts: _postsLoading && _posts.isEmpty
+          ? '…'
+          : _compactCount(_posts.length),
+      followers: _countsLoading ? '…' : _compactCount(followersCount),
+      following: _countsLoading ? '…' : _compactCount(followingCount),
+      onFollowers: () => _openFollowList(true),
+      onFollowing: () => _openFollowList(false),
+      actions: [
+        Expanded(child: _IgProfileButton(label: 'Edit profile', onPressed: _edit)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _IgProfileButton(
+            label: 'Share profile',
+            onPressed: _shareProfile,
           ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                height: 96,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF8E7BFF),
-                      Color(0xFF7257F5),
-                      Color(0xFFB58CFF),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: -48,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: _UserAvatar(url: avatar, name: shownName, size: 96),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 58),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        shownName.isEmpty ? ' ' : shownName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: ink,
-                        ),
-                      ),
-                    ),
-                    if (isPrivate) ...[
-                      const SizedBox(width: 6),
-                      const Icon(Icons.lock_rounded, size: 16, color: muted),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  username.isEmpty ? '' : '@$username',
-                  style: const TextStyle(color: muted, fontSize: 14.5),
-                ),
-                if (bio.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    bio,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: ink, height: 1.4),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                _statCell(
-                  _postsLoading && _posts.isEmpty
-                      ? '…'
-                      : _compactCount(_posts.length),
-                  'Posts',
-                ),
-                _statDivider(),
-                _statCell(
-                  _countsLoading ? '…' : _compactCount(followersCount),
-                  'Followers',
-                  onTap: () => _openFollowList(true),
-                ),
-                _statDivider(),
-                _statCell(
-                  _countsLoading ? '…' : _compactCount(followingCount),
-                  'Following',
-                  onTap: () => _openFollowList(false),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 46,
-                    child: FilledButton.icon(
-                      onPressed: _edit,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: violet,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                      ),
-                      icon: const Icon(Icons.edit_rounded, size: 18),
-                      label: const Text(
-                        'Edit profile',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: SizedBox(
-                    height: 46,
-                    child: OutlinedButton.icon(
-                      onPressed: _shareProfile,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: ink,
-                        side: const BorderSide(color: Color(0xFFDAD7E8)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                      ),
-                      icon: const Icon(Icons.qr_code_rounded, size: 19),
-                      label: const Text(
-                        'Share profile',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _tabBar() {
-    Widget item(int index, IconData icon, String label) {
-      final active = selectedTab == index;
-      return Expanded(
-        child: InkWell(
-          onTap: () => setState(() => selectedTab = index),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: active ? violet : Colors.transparent,
-                  width: 3,
-                ),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, size: 20, color: active ? violet : muted),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: active ? FontWeight.w900 : FontWeight.w600,
-                    color: active ? ink : muted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
     return Container(
-      color: canvas,
       height: 52,
+      decoration: const BoxDecoration(
+        color: canvas,
+        border: Border(bottom: BorderSide(color: igBorder, width: 0.5)),
+      ),
       child: Row(
         children: [
-          item(0, Icons.grid_on_rounded, 'Posts'),
-          item(1, Icons.photo_outlined, 'Photos'),
-          item(2, Icons.play_circle_outline_rounded, 'Videos'),
+          _igProfileTab(
+            icon: Icons.grid_on_rounded,
+            active: selectedTab == 0,
+            onTap: () => setState(() => selectedTab = 0),
+          ),
+          _igProfileTab(
+            icon: Icons.photo_outlined,
+            active: selectedTab == 1,
+            onTap: () => setState(() => selectedTab = 1),
+          ),
+          _igProfileTab(
+            icon: Icons.play_circle_outline_rounded,
+            active: selectedTab == 2,
+            onTap: () => setState(() => selectedTab = 2),
+          ),
         ],
       ),
     );
@@ -8332,7 +8583,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (_postsLoading && _posts.isEmpty) {
       return [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+          padding: EdgeInsets.zero,
           sliver: SliverToBoxAdapter(
             child: SizedBox(
               height: 330,
@@ -8340,14 +8591,13 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: GridView.count(
                   physics: const NeverScrollableScrollPhysics(),
                   crossAxisCount: 3,
-                  mainAxisSpacing: 4,
-                  crossAxisSpacing: 4,
+                  mainAxisSpacing: 1.5,
+                  crossAxisSpacing: 1.5,
                   children: List.generate(
                     9,
                     (_) => DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE9E7F3),
-                        borderRadius: BorderRadius.circular(14),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF262626),
                       ),
                     ),
                   ),
@@ -8398,12 +8648,12 @@ class _ProfilePageState extends State<ProfilePage> {
     }
     return [
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+        padding: EdgeInsets.zero,
         sliver: SliverGrid(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
-            mainAxisSpacing: 4,
-            crossAxisSpacing: 4,
+            mainAxisSpacing: 1.5,
+            crossAxisSpacing: 1.5,
             childAspectRatio: selectedTab == 2 ? 0.72 : 1,
           ),
           delegate: SliverChildBuilderDelegate(
@@ -8451,7 +8701,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     children: [
                       Flexible(
                         child: Text(
-                          username.isEmpty ? 'Your profile' : '@$username',
+                          username.isEmpty ? 'Your profile' : username,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -8463,7 +8713,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       const SizedBox(width: 3),
                       Material(
                         color: _accountMenuOpen
-                            ? const Color(0xFFEDE9FF)
+                            ? const Color(0xFF262626)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
                         child: InkWell(
@@ -8510,12 +8760,12 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: igElevated,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFE8E7F0)),
+                        border: Border.all(color: const Color(0xFF363636)),
                         boxShadow: const [
                           BoxShadow(
-                            color: Color(0x0D171923),
+                            color: Color(0x00000000),
                             blurRadius: 18,
                             offset: Offset(0, 6),
                           ),
@@ -8726,7 +8976,7 @@ class _ConversationPageState extends State<ConversationPage> {
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: own ? const Color(0xFFECE7FF) : Colors.white,
+                        color: own ? igBlue : igElevated,
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Text((r['body'] ?? '').toString()),
@@ -8794,7 +9044,7 @@ class _ProfileNavAvatar extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: selected
-            ? Border.all(color: const Color(0xFF262626), width: 1.8)
+            ? Border.all(color: Colors.white, width: 1.5)
             : null,
       ),
       child: ClipOval(
@@ -8814,12 +9064,12 @@ class _ProfileNavAvatar extends StatelessWidget {
 
   Widget _fallback(String initial) {
     return ColoredBox(
-      color: const Color(0xFFECE7FF),
+      color: const Color(0xFF262626),
       child: Center(
         child: Text(
           initial,
           style: const TextStyle(
-            color: Color(0xFF5135B5),
+            color: Color(0xFF0095F6),
             fontSize: 13,
             fontWeight: FontWeight.w700,
           ),
@@ -8830,7 +9080,7 @@ class _ProfileNavAvatar extends StatelessWidget {
 }
 
 
-enum _SocialNavKind { home, search, create, activity }
+enum _SocialNavKind { home, search, create, activity, plus }
 
 class _SocialNavIcon extends StatelessWidget {
   const _SocialNavIcon({
@@ -8843,8 +9093,10 @@ class _SocialNavIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = const Color(0xFF262626);
-    final stroke = selected ? 2.35 : 1.75;
+    const color = Colors.white;
+    final stroke = selected
+        ? (kind == _SocialNavKind.search ? 3.0 : 2.35)
+        : 1.75;
 
     return SizedBox(
       width: 27,
@@ -8909,7 +9161,7 @@ class _SocialNavPainter extends CustomPainter {
           canvas.drawPath(path, paint);
           canvas.drawRect(
             const Rect.fromLTWH(11.2, 16.5, 4.6, 6.5),
-            Paint()..color = Colors.white,
+            Paint()..color = igBlack,
           );
         } else {
           canvas.drawPath(path, outline);
@@ -8935,7 +9187,7 @@ class _SocialNavPainter extends CustomPainter {
         canvas.drawRRect(back, outline);
         if (selected) {
           canvas.drawRRect(front, paint);
-          final cutout = Paint()..color = Colors.white;
+          final cutout = Paint()..color = igBlack;
           final triangle = Path()
             ..moveTo(13, 11)
             ..lineTo(13, 19)
@@ -8951,6 +9203,22 @@ class _SocialNavPainter extends CustomPainter {
             ..close();
           canvas.drawPath(triangle, outline);
         }
+
+      case _SocialNavKind.plus:
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            const Rect.fromLTWH(3, 3, 21, 21),
+            const Radius.circular(6),
+          ),
+          outline,
+        );
+        final plusPaint = Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..strokeCap = StrokeCap.round;
+        canvas.drawLine(const Offset(13.5, 8.5), const Offset(13.5, 18.5), plusPaint);
+        canvas.drawLine(const Offset(8.5, 13.5), const Offset(18.5, 13.5), plusPaint);
 
       case _SocialNavKind.activity:
         final heart = Path()

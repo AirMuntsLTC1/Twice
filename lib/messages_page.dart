@@ -8,7 +8,6 @@ import 'package:video_player/video_player.dart';
 
 import 'data/inbox_controller.dart';
 import 'data/social_repository.dart';
-import 'widgets/ig_icons.dart';
 import 'widgets/skeleton.dart';
 
 // Design tokens (match main.dart dark IG theme)
@@ -372,7 +371,7 @@ class _ConversationPageState extends State<ConversationPage> {
   bool _sending = false;
   String? _error;
   RealtimeChannel? _channel;
-  Map<String, Map<String, dynamic>> _senderCache = {};
+  final Map<String, Map<String, dynamic>> _senderCache = {};
 
   String get _myId => Supabase.instance.client.auth.currentUser?.id ?? '';
 
@@ -880,7 +879,7 @@ class _Bubble extends StatelessWidget {
         fit: BoxFit.cover,
         width: 220,
         height: 280,
-        errorBuilder: (_, __, ___) => Container(
+        errorBuilder: (_, _, _) => Container(
           width: 220,
           height: 160,
           color: _igElevated,

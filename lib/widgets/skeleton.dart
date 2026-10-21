@@ -43,7 +43,7 @@ class _TwiceSkeletonState extends State<TwiceSkeleton>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _c,
-      builder: (_, __) {
+      builder: (_, _) {
         final t = _c.value;
         // Soft grey pulse matching IG dark mode.
         final base = const Color(0xFF262626);
@@ -80,8 +80,8 @@ class FeedSkeleton extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             itemCount: 7,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (_, __) => const Column(
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (_, _) => const Column(
               children: [
                 TwiceSkeleton(width: 64, height: 64, borderRadius: 32),
                 SizedBox(height: 6),
@@ -163,7 +163,7 @@ class InboxSkeleton extends StatelessWidget {
     return ListView.builder(
       physics: const NeverScrollableScrollPhysics(),
       itemCount: 10,
-      itemBuilder: (_, __) => const Padding(
+      itemBuilder: (_, _) => const Padding(
         padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [

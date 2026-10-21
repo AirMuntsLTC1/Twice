@@ -471,12 +471,70 @@ class _ConversationPageState extends State<ConversationPage> {
         }
       }
 
-      setState(() => _messages = rows);
-      InboxController.instance
-          .markConversationRead(widget.conversationId);
-      _scrollToBottom();
-    } catch (e) {
-      // Keep the current conversation visible if a quiet refresh fails.
+      // Merge server rows with pending local bubbles. Never show the loading
+      // skeleton during a background refresh.
+      final merged = List<Map<String, dynamic>>.from(rows);
+      final pending = _messages.where(
+        (m) => (m['id'] ?? '').toString().startsWith('local-'),
+      );
+
+      for (final local in pending) {
+        final localId = (local['id'] ?? '').toString();
+        final localTime = DateTime.tryParse(
+          (local['created_at'] ?? '').toString(),
+        );
+        final confirmed = merged.any((m) {
+          final serverTime = DateTime.tryParse(
+            (m['created_at'] ?? '').toString(),
+          );
+          return (m['sender_id'] ?? '').toString() ==
+                  (local['sender_id'] ?? '').toString() &&
+              (m['body'] ?? '').toString() ==
+                  (local['body'] ?? '').toString() &&
+              serverTime != null &&
+              localTime != null &&
+              serverTime.difference(localTime).inSeconds.abs() < 120;
+        });
+
+        if (confirmed) {
+          final matchIndex = merged.indexWhere((m) {
+            final serverTime = DateTime.tryParse(
+              (m['created_at'] ?? '').toString(),
+            );
+            return (m['sender_id'] ?? '').toString() ==
+                    (local['sender_id'] ?? '').toString() &&
+                (m['body'] ?? '').toString() ==
+                    (local['body'] ?? '').toString() &&
+                serverTime != null &&
+                localTime != null &&
+                serverTime.difference(localTime).inSeconds.abs() < 120;
+          });
+          if (matchIndex >= 0) {
+            merged[matchIndex]['_ui_id'] = localId;
+          }
+        } else if (!merged.any((m) => (m['id'] ?? '').toString() == localId)) {
+          merged.add(local);
+        }
+      }
+
+      merged.sort((a, b) {
+        final at = DateTime.tryParse((a['created_at'] ?? '').toString()) ??
+            DateTime(1970);
+        final bt = DateTime.tryParse((b['created_at'] ?? '').toString()) ??
+            DateTime(1970);
+        return at.compareTo(bt);
+      });
+
+      final oldIds = _messages.map((m) => '${m['id']}').join('|');
+      final newIds = merged.map((m) => '${m['id']}').join('|');
+      if (oldIds != newIds) {
+        setState(() => _messages = merged);
+        _scrollToBottom();
+      }
+
+      InboxController.instance.markConversationRead(widget.conversationId);
+    } catch (_) {
+      // Background refresh failures must not interrupt the visible chat.
     }
   }
 
@@ -513,15 +571,28 @@ class _ConversationPageState extends State<ConversationPage> {
 
   void _scrollToBottom({bool jump = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scroll.hasClients) return;
+      if (!mounted || !_scroll.hasClients) return;
+      final target = _scroll.position.maxScrollExtent;
       if (jump) {
-        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+        _scroll.jumpTo(target);
       } else {
         _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
+          target,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
         );
+        // Recheck after the list finishes laying out the newest bubble.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_scroll.hasClients) return;
+          final latest = _scroll.position.maxScrollExtent;
+          if ((_scroll.position.pixels - latest).abs() > 24) {
+            _scroll.animateTo(
+              latest,
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+            );
+          }
+        });
       }
     });
   }
@@ -529,19 +600,42 @@ class _ConversationPageState extends State<ConversationPage> {
   Future<void> _sendText() async {
     final body = _controller.text.trim();
     if (body.isEmpty || _sending) return;
-    setState(() => _sending = true);
+
+    final now = DateTime.now().toUtc();
+    final localId = 'local-${now.microsecondsSinceEpoch}';
+    final optimistic = <String, dynamic>{
+      'id': localId,
+      '_ui_id': localId,
+      'conversation_id': widget.conversationId,
+      'sender_id': _myId,
+      'body': body,
+      'media_url': null,
+      'media_type': null,
+      'created_at': now.toIso8601String(),
+    };
+
+    // Display and animate immediately; do not wait for Supabase.
+    setState(() {
+      _sending = true;
+      _messages = [..._messages, optimistic];
+    });
+    _scrollToBottom();
+    unawaited(SystemSound.play(SystemSoundType.click).catchError((_) {}));
+
     try {
-      // Lightweight native send feedback; uses Flutter's built-in sound API.
-      await SystemSound.play(SystemSoundType.click);
       await SocialRepository.instance.sendMessage(
         widget.conversationId,
         body,
       );
       if (!mounted) return;
       _controller.clear();
-      // Realtime will append; also force a quiet reload if needed.
+      // Confirm in the background; Realtime and this refresh are deduplicated.
+      unawaited(_refreshMessagesQuietly());
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _messages.removeWhere((m) => m['id'] == localId);
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Send failed: $e')),
         );
@@ -882,7 +976,9 @@ class _ConversationPageState extends State<ConversationPage> {
         final prevOwn = i > 0 &&
             (_messages[i - 1]['sender_id'] ?? '') == (m['sender_id'] ?? '');
         return TweenAnimationBuilder<double>(
-          key: ValueKey<String>('chat-message-${m['id'] ?? '${m['created_at'] ?? i}'}'),
+          key: ValueKey<String>(
+            'chat-message-${m['_ui_id'] ?? m['id'] ?? m['created_at'] ?? i}',
+          ),
           tween: Tween<double>(begin: 0, end: 1),
           duration: const Duration(milliseconds: 190),
           curve: Curves.easeOutCubic,

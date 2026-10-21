@@ -1,0 +1,18 @@
+TWICE ADS + HOME COMMENT REPLY PATCH
+
+Files included: lib/main.dart, lib/data/social_repository.dart, lib/videos_screen.dart,
+lib/ads/ad_config.dart.
+
+Changes:
+- Home-feed ad interval lowered from every 6 posts to every 4 posts.
+- Videos feed now interleaves native ad pages every 5 organic videos.
+- Home comments support reply selection, parent_id persistence, and nested replies.
+- Existing app colors and overall dark design are preserved.
+
+Requires existing comments.parent_id schema (already used by the video comments code).
+AdMob fill is not guaranteed. Debug builds use test ads; live ads require valid AdMob
+configuration, network, consent eligibility, and inventory. If an ad request gets no
+fill, the videos ad page may be empty until swiped away.
+
+Generated from the supplied TWICE source TXT. Not built/analyzed here. Back up files
+before installing, then validate using the existing GitHub Actions workflow.

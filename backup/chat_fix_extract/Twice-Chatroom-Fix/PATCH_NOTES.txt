@@ -1,0 +1,15 @@
+TWICE CHATROOM PATCH PACKAGE
+============================
+
+Included:
+- lib/messages_page.dart (extracted from the supplied TWICE_ALL_SOURCE_CODE.txt)
+- lib/data/social_repository_chat_patch.dart (reference patch from the supplied archive)
+- Supabase migration reference files copied from the supplied archive where available
+
+Important:
+1. The message screen preserves the existing dark UI and composer styling.
+2. Adds a subtle entry animation for message bubbles and a native click sound before text sends.
+3. The supplied archive's repository query orders messages by created_at ascending, which is the correct oldest-to-newest ordering for a conventional non-reversed chat list.
+4. This package has NOT been run through Flutter analyzer/build because this environment has no Flutter SDK. Please validate via your existing GitHub Actions workflow.
+5. Story replies in the supplied repository currently send only the text prefix "Replied to your story: ...". The archive does not contain a complete story metadata-to-message attachment implementation. This patch does NOT pretend that story thumbnail/title metadata is implemented. That requires changing the story viewer callback, messages schema/repository, and UI together.
+6. Make a backup before copying files. Do not apply the repository reference patch blindly; it is a reference file, not a complete replacement for social_repository.dart.

@@ -114,19 +114,20 @@ class _VideoFeedData {
         author['avatar_url'] = resolve(path);
         post['profiles'] = author;
       }
-      final media = (post['post_media'] as List? ?? const [])
-          .whereType<Map>()
-          .map((raw) => Map<String, dynamic>.from(raw))
-          .where(
-            (m) =>
-                (m['media_type'] ?? '').toString().toLowerCase() == 'video',
-          )
-          .toList()
-        ..sort(
-          (a, b) => (int.tryParse('${a['position']}') ?? 0).compareTo(
-            int.tryParse('${b['position']}') ?? 0,
-          ),
-        );
+      final media =
+          (post['post_media'] as List? ?? const [])
+              .whereType<Map>()
+              .map((raw) => Map<String, dynamic>.from(raw))
+              .where(
+                (m) =>
+                    (m['media_type'] ?? '').toString().toLowerCase() == 'video',
+              )
+              .toList()
+            ..sort(
+              (a, b) => (int.tryParse('${a['position']}') ?? 0).compareTo(
+                int.tryParse('${b['position']}') ?? 0,
+              ),
+            );
       post['media_resolved'] = media.map((item) {
         item['resolved_url'] = resolve(
           (item['media_url'] ?? '').toString().trim(),
@@ -137,7 +138,9 @@ class _VideoFeedData {
         return item;
       }).toList();
     }
-    return posts.where((p) => (p['media_resolved'] as List).isNotEmpty).toList();
+    return posts
+        .where((p) => (p['media_resolved'] as List).isNotEmpty)
+        .toList();
   }
 }
 
@@ -290,7 +293,9 @@ class _VideosPageState extends State<VideosPage> with WidgetsBindingObserver {
     final top = MediaQuery.paddingOf(context).top;
     final Widget body;
     if (_loading && _posts.isEmpty) {
-      body = const Center(child: CircularProgressIndicator(color: Colors.white));
+      body = const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
     } else if (_error != null && _posts.isEmpty) {
       body = _VideosMessage(
         icon: Icons.wifi_off_rounded,
@@ -594,13 +599,13 @@ class _VideoReelState extends State<_VideoReel> {
   int _burstSeq = 0;
   final List<_Burst> _bursts = <_Burst>[];
 
-  Map<String, dynamic> get _video => widget.post.media.isEmpty
-      ? <String, dynamic>{}
-      : widget.post.media.first;
+  Map<String, dynamic> get _video =>
+      widget.post.media.isEmpty ? <String, dynamic>{} : widget.post.media.first;
   String? _urlOverride; // fresh signed URL after a refresh
   String get _url =>
       _urlOverride ?? (_video['resolved_url'] ?? '').toString().trim();
-  String get _thumb => (_video['resolved_thumbnail_url'] ?? '').toString().trim();
+  String get _thumb =>
+      (_video['resolved_thumbnail_url'] ?? '').toString().trim();
   String get _authorId =>
       (widget.post.data['user_id'] ?? widget.post.author['id'] ?? '')
           .toString();
@@ -730,14 +735,16 @@ class _VideoReelState extends State<_VideoReel> {
       setState(() => _hasFrame = true);
     }
     if (_videoAutoNext.value && v.isInitialized && v.duration > Duration.zero) {
-      final nearEnd = v.position >= v.duration - const Duration(milliseconds: 250);
+      final nearEnd =
+          v.position >= v.duration - const Duration(milliseconds: 250);
       if (nearEnd && !_advanced && widget.playing) {
         _advanced = true;
         if (!widget.onNext()) {
           c.seekTo(Duration.zero);
           c.play();
         }
-      } else if (!nearEnd && v.position < v.duration - const Duration(seconds: 1)) {
+      } else if (!nearEnd &&
+          v.position < v.duration - const Duration(seconds: 1)) {
         _advanced = false;
       }
     }
@@ -818,7 +825,9 @@ class _VideoReelState extends State<_VideoReel> {
     final c = _c;
     if (value != null && c != null && c.value.isInitialized) {
       c.seekTo(
-        Duration(milliseconds: (c.value.duration.inMilliseconds * value).round()),
+        Duration(
+          milliseconds: (c.value.duration.inMilliseconds * value).round(),
+        ),
       );
     }
     if (mounted) setState(() => _scrubValue = null);
@@ -1046,6 +1055,7 @@ class _VideoReelState extends State<_VideoReel> {
     required VoidCallback onTap,
     Color color = Colors.white,
     bool pop = false,
+    Widget? customIcon,
   }) => Padding(
     padding: const EdgeInsets.only(bottom: 14),
     child: GestureDetector(
@@ -1059,7 +1069,9 @@ class _VideoReelState extends State<_VideoReel> {
             AnimatedScale(
               scale: pop ? 1.3 : 1,
               duration: const Duration(milliseconds: 150),
-              child: Icon(icon, color: color, size: 31, shadows: _reelShadow),
+              child:
+                  customIcon ??
+                  Icon(icon, color: color, size: 31, shadows: _reelShadow),
             ),
             if (label.isNotEmpty) ...[
               const SizedBox(height: 3),
@@ -1095,6 +1107,7 @@ class _VideoReelState extends State<_VideoReel> {
         ),
         _railButton(
           icon: Icons.mode_comment_outlined,
+          customIcon: IgComment(size: 31, color: Colors.white),
           label: post.data['comments_enabled'] == false
               ? ''
               : _compactCount(post.commentCount),
@@ -1102,6 +1115,7 @@ class _VideoReelState extends State<_VideoReel> {
         ),
         _railButton(
           icon: Icons.ios_share_rounded,
+          customIcon: IgShare(size: 31, color: Colors.white),
           label: 'Share',
           onTap: _share,
         ),
@@ -1252,16 +1266,26 @@ class _VideoReelState extends State<_VideoReel> {
             children: [
               Expanded(
                 child: Text(
-                  disabled ? 'Comments are turned off' : 'Add a comment as $myName',
+                  disabled
+                      ? 'Comments are turned off'
+                      : 'Add a comment as $myName',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white70, fontSize: 15),
                 ),
               ),
               if (!disabled) ...const [
-                Icon(Icons.alternate_email_rounded, size: 20, color: Colors.white70),
+                Icon(
+                  Icons.alternate_email_rounded,
+                  size: 20,
+                  color: Colors.white70,
+                ),
                 SizedBox(width: 12),
-                Icon(Icons.sentiment_satisfied_alt_rounded, size: 21, color: Colors.white70),
+                Icon(
+                  Icons.sentiment_satisfied_alt_rounded,
+                  size: 21,
+                  color: Colors.white70,
+                ),
               ],
             ],
           ),
@@ -1274,7 +1298,8 @@ class _VideoReelState extends State<_VideoReel> {
   Widget build(BuildContext context) {
     final c = _c;
     final buffering =
-        _initializing || (c != null && c.value.isInitialized && c.value.isBuffering);
+        _initializing ||
+        (c != null && c.value.isInitialized && c.value.isBuffering);
     final scrub = _scrubValue;
 
     final stage = LayoutBuilder(
@@ -1300,14 +1325,20 @@ class _VideoReelState extends State<_VideoReel> {
                 _scrubStart(
                   total <= 0
                       ? 0
-                      : (cc.value.position.inMilliseconds / total).clamp(0.0, 1.0),
+                      : (cc.value.position.inMilliseconds / total).clamp(
+                          0.0,
+                          1.0,
+                        ),
                 );
               },
               onHorizontalDragUpdate: (d) {
                 final current = _scrubValue;
                 if (current == null) return;
                 _scrubUpdate(
-                  (current + d.delta.dx / max(box.maxWidth * 0.9, 1)).clamp(0.0, 1.0),
+                  (current + d.delta.dx / max(box.maxWidth * 0.9, 1)).clamp(
+                    0.0,
+                    1.0,
+                  ),
                 );
               },
               onHorizontalDragEnd: (_) => _scrubEnd(),
@@ -1351,11 +1382,18 @@ class _VideoReelState extends State<_VideoReel> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.error_outline_rounded, color: Colors.white70, size: 44),
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    color: Colors.white70,
+                    size: 44,
+                  ),
                   const SizedBox(height: 8),
                   const Text(
                     'Couldn’t play this video',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   OutlinedButton(
@@ -1384,7 +1422,9 @@ class _VideoReelState extends State<_VideoReel> {
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    _userPaused ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    _userPaused
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
                     color: Colors.white,
                     size: 44,
                   ),
@@ -1397,9 +1437,7 @@ class _VideoReelState extends State<_VideoReel> {
               top: widget.topInset + 62,
               left: 0,
               right: 0,
-              child: const IgnorePointer(
-                child: Center(child: _SpeedChip()),
-              ),
+              child: const IgnorePointer(child: Center(child: _SpeedChip())),
             ),
           if (scrub != null && c != null && c.value.isInitialized)
             Positioned(
@@ -1454,7 +1492,9 @@ class _VideoReelState extends State<_VideoReel> {
                   tween: Tween<double>(begin: 0, end: 1),
                   duration: const Duration(milliseconds: 750),
                   builder: (context, t, child) {
-                    final scale = t < 0.3 ? 0.4 + (t / 0.3) * 0.9 : 1.3 - (t - 0.3) * 0.3;
+                    final scale = t < 0.3
+                        ? 0.4 + (t / 0.3) * 0.9
+                        : 1.3 - (t - 0.3) * 0.3;
                     final opacity = t < 0.6 ? 1.0 : (1 - (t - 0.6) / 0.4);
                     return Opacity(
                       opacity: opacity.clamp(0.0, 1.0),
@@ -1594,7 +1634,8 @@ class _ReelProgress extends StatelessWidget {
             onScrubEnd();
           },
           onHorizontalDragStart: (d) => onScrubStart(frac(d.localPosition.dx)),
-          onHorizontalDragUpdate: (d) => onScrubUpdate(frac(d.localPosition.dx)),
+          onHorizontalDragUpdate: (d) =>
+              onScrubUpdate(frac(d.localPosition.dx)),
           onHorizontalDragEnd: (_) => onScrubEnd(),
           onHorizontalDragCancel: onScrubEnd,
           child: SizedBox(
@@ -1609,7 +1650,10 @@ class _ReelProgress extends StatelessWidget {
                         final total = value.duration.inMilliseconds;
                         final played = total <= 0
                             ? 0.0
-                            : (value.position.inMilliseconds / total).clamp(0.0, 1.0);
+                            : (value.position.inMilliseconds / total).clamp(
+                                0.0,
+                                1.0,
+                              );
                         return track(scrubValue ?? played);
                       },
                     ),
@@ -1782,7 +1826,9 @@ class _ReelFollowButtonState extends State<_ReelFollowButton> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             minimumSize: const Size(0, 30),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
           child: Text(
             _label,
@@ -1918,7 +1964,8 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
       DateTime.tryParse('${row['created_at']}') ??
       DateTime.fromMillisecondsSinceEpoch(0);
 
-  int _likesOf(Map<String, dynamic> row) => _likeCounts[row['id'].toString()] ?? 0;
+  int _likesOf(Map<String, dynamic> row) =>
+      _likeCounts[row['id'].toString()] ?? 0;
 
   Future<void> _toggleLike(Map<String, dynamic> row) async {
     final uid = _uid;
@@ -1943,11 +1990,13 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
             .eq('comment_id', id)
             .eq('user_id', uid);
       } else {
-        await _db.from('comment_likes').upsert(
-          <String, dynamic>{'comment_id': id, 'user_id': uid},
-          onConflict: 'comment_id,user_id',
-          ignoreDuplicates: true,
-        );
+        await _db
+            .from('comment_likes')
+            .upsert(
+              <String, dynamic>{'comment_id': id, 'user_id': uid},
+              onConflict: 'comment_id,user_id',
+              ignoreDuplicates: true,
+            );
       }
     } catch (e) {
       if (!mounted) return;
@@ -1973,7 +2022,8 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
             orElse: () => row,
           );
     final p = _profileOf(row);
-    final name = (p['display_name'] ?? p['username'] ?? 'Twice user').toString();
+    final name = (p['display_name'] ?? p['username'] ?? 'Twice user')
+        .toString();
     setState(() {
       _replyTo = top;
       _replyName = name;
@@ -2033,7 +2083,10 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
         );
         if (mounted && !synced) {
           setState(() => optimistic['_queued'] = true);
-          _videoSnack(context, 'Saved offline. It will sync when you reconnect.');
+          _videoSnack(
+            context,
+            'Saved offline. It will sync when you reconnect.',
+          );
         }
       } else {
         await _db
@@ -2066,8 +2119,12 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
     for (final r in _rows) {
       if (r['parent_id']?.toString() == id) removedIds.add(r['id'].toString());
     }
-    final backup = _rows.where((r) => removedIds.contains(r['id'].toString())).toList();
-    setState(() => _rows.removeWhere((r) => removedIds.contains(r['id'].toString())));
+    final backup = _rows
+        .where((r) => removedIds.contains(r['id'].toString()))
+        .toList();
+    setState(
+      () => _rows.removeWhere((r) => removedIds.contains(r['id'].toString())),
+    );
     widget.onCountChanged(_rows.length);
     try {
       await _db.from('comments').delete().eq('id', id);
@@ -2100,7 +2157,9 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                 color: _reelHeart,
               ),
               title: Text(
-                _myLikes.contains(row['id'].toString()) ? 'Remove heart' : 'Heart',
+                _myLikes.contains(row['id'].toString())
+                    ? 'Remove heart'
+                    : 'Heart',
               ),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -2126,8 +2185,14 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
             ),
             if (mine)
               ListTile(
-                leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
-                title: const Text('Delete', style: TextStyle(color: Colors.red)),
+                leading: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.red,
+                ),
+                title: const Text(
+                  'Delete',
+                  style: TextStyle(color: Colors.red),
+                ),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   _delete(row);
@@ -2152,9 +2217,11 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
   Widget _tile(Map<String, dynamic> row, {required bool isReply}) {
     final p = _profileOf(row);
     final id = row['id'].toString();
-    final name = (p['display_name'] ?? p['username'] ?? 'Twice user').toString();
+    final name = (p['display_name'] ?? p['username'] ?? 'Twice user')
+        .toString();
     final avatar = (p['avatar_url'] ?? '').toString();
-    final isAuthor = row['user_id']?.toString() == widget.post.data['user_id']?.toString();
+    final isAuthor =
+        row['user_id']?.toString() == widget.post.data['user_id']?.toString();
     final liked = _myLikes.contains(id);
     final likes = _likesOf(row);
     final pending = row['_pending'] == true;
@@ -2175,7 +2242,11 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
         children: [
           GestureDetector(
             onTap: () => _openCommenter(row),
-            child: _UserAvatar(url: avatar, name: name, size: isReply ? 28 : 36),
+            child: _UserAvatar(
+              url: avatar,
+              name: name,
+              size: isReply ? 28 : 36,
+            ),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -2215,7 +2286,10 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                             if (isAuthor) ...[
                               const SizedBox(width: 6),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF363636),
                                   borderRadius: BorderRadius.circular(6),
@@ -2239,7 +2313,11 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                         const SizedBox(height: 3),
                         Text(
                           '${row['body']}',
-                          style: const TextStyle(fontSize: 15, height: 1.25, color: ink),
+                          style: const TextStyle(
+                            fontSize: 15,
+                            height: 1.25,
+                            color: ink,
+                          ),
                         ),
                       ],
                     ),
@@ -2295,7 +2373,9 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                       transitionBuilder: (child, anim) =>
                           ScaleTransition(scale: anim, child: child),
                       child: Icon(
-                        liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                        liked
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
                         key: ValueKey<bool>(liked),
                         size: 20,
                         color: liked ? _reelHeart : muted,
@@ -2358,7 +2438,11 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
               onTap: () => setState(() => _expanded.remove(id)),
               child: const Text(
                 'Hide replies',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: muted),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: muted,
+                ),
               ),
             ),
           ),
@@ -2466,7 +2550,10 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                     filled: true,
                     fillColor: _fbGrey,
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 11,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(22),
                       borderSide: BorderSide.none,
@@ -2529,19 +2616,31 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      _rows.length == 1 ? '1 comment' : '${_rows.length} comments',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                      _rows.length == 1
+                          ? '1 comment'
+                          : '${_rows.length} comments',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                   PopupMenuButton<bool>(
                     tooltip: 'Sort comments',
-                    onSelected: (newest) => setState(() => _newestFirst = newest),
+                    onSelected: (newest) =>
+                        setState(() => _newestFirst = newest),
                     itemBuilder: (_) => const [
-                      PopupMenuItem<bool>(value: false, child: Text('Most relevant')),
+                      PopupMenuItem<bool>(
+                        value: false,
+                        child: Text('Most relevant'),
+                      ),
                       PopupMenuItem<bool>(value: true, child: Text('Newest')),
                     ],
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 8,
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -2553,7 +2652,10 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                               color: muted,
                             ),
                           ),
-                          const Icon(Icons.arrow_drop_down_rounded, color: muted),
+                          const Icon(
+                            Icons.arrow_drop_down_rounded,
+                            color: muted,
+                          ),
                         ],
                       ),
                     ),
@@ -2583,9 +2685,15 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(color: muted, fontSize: 12),
+                              style: const TextStyle(
+                                color: muted,
+                                fontSize: 12,
+                              ),
                             ),
-                            TextButton(onPressed: _load, child: const Text('Retry')),
+                            TextButton(
+                              onPressed: _load,
+                              child: const Text('Retry'),
+                            ),
                           ],
                         ),
                       ),
@@ -2597,20 +2705,31 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.mode_comment_outlined, size: 44, color: muted),
+                            Icon(
+                              Icons.mode_comment_outlined,
+                              size: 44,
+                              color: muted,
+                            ),
                             SizedBox(height: 10),
                             Text(
                               'No comments yet',
-                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                             SizedBox(height: 4),
-                            Text('Be the first to comment.', style: TextStyle(color: muted)),
+                            Text(
+                              'Be the first to comment.',
+                              style: TextStyle(color: muted),
+                            ),
                           ],
                         ),
                       ),
                     )
                   : ListView(
-                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
                       padding: const EdgeInsets.fromLTRB(14, 14, 10, 8),
                       children: thread,
                     ),

@@ -4,7 +4,9 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
 import 'messages_page.dart' as messaging;
+
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -19,6 +21,7 @@ import 'data/social_repository.dart';
 import 'data/inbox_controller.dart';
 import 'data/local_cache.dart';
 import 'data/twice_media.dart';
+import 'widgets/ig_icons.dart';
 
 part 'videos_screen.dart';
 
@@ -35,7 +38,11 @@ ImageProvider<Object> _twiceImageProvider(
     );
   }
   if (value.startsWith('/')) {
-    return ResizeImage.resizeIfNeeded(maxDimension, null, FileImage(File(value)));
+    return ResizeImage.resizeIfNeeded(
+      maxDimension,
+      null,
+      FileImage(File(value)),
+    );
   }
   return TwiceNetworkImage(value, maxDimension: maxDimension);
 }
@@ -290,7 +297,9 @@ ThemeData _twiceDarkTheme() {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     ),
-    progressIndicatorTheme: const ProgressIndicatorThemeData(color: Colors.white),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(
+      color: Colors.white,
+    ),
     textSelectionTheme: const TextSelectionThemeData(
       cursorColor: Colors.white,
       selectionColor: Color(0x660095F6),
@@ -303,8 +312,7 @@ ThemeData _twiceDarkTheme() {
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.all(Colors.white),
       trackColor: WidgetStateProperty.resolveWith(
-        (states) =>
-            states.contains(WidgetState.selected) ? igBlue : igElevated,
+        (states) => states.contains(WidgetState.selected) ? igBlue : igElevated,
       ),
     ),
   );
@@ -893,6 +901,7 @@ class SocialPost {
     }
     return 0;
   }
+
   bool get saved =>
       ((data['saved_posts'] as List? ?? const []).cast<Map>()).any(
         (e) => e['user_id'] == Supabase.instance.client.auth.currentUser?.id,
@@ -1308,7 +1317,9 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
           IconButton(
             tooltip: 'Messages',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const messaging.MessagesPage()),
+              MaterialPageRoute<void>(
+                builder: (_) => const messaging.MessagesPage(),
+              ),
             ),
             icon: const Icon(Icons.send_outlined, size: 25),
           ),
@@ -1742,7 +1753,9 @@ class StoryStripState extends State<StoryStrip> {
                         const ThumbnailSize(240, 240),
                       ),
                       builder: (context, snapshot) => InkWell(
-                        onTap: tooLong ? null : () => Navigator.pop(sheetContext, item),
+                        onTap: tooLong
+                            ? null
+                            : () => Navigator.pop(sheetContext, item),
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
@@ -2290,9 +2303,8 @@ class _StoryViewerState extends State<StoryViewer>
     } catch (e) {
       if (!mounted) return;
       setState(() => _liked = !next);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not update like: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not update like: $e')));
     }
   }
 
@@ -2781,9 +2793,7 @@ class _StoryViewersSheetState extends State<_StoryViewersSheet> {
 
   Future<void> _load() async {
     try {
-      final data = await SocialRepository.instance.storyViewers(
-        widget.storyId,
-      );
+      final data = await SocialRepository.instance.storyViewers(widget.storyId);
       if (mounted) setState(() => rows = data);
     } catch (e) {
       if (mounted) setState(() => loadError = e.toString());
@@ -3662,9 +3672,7 @@ class _PostCardState extends State<PostCard>
     final post = widget.post;
     try {
       await SharePlus.instance.share(
-        ShareParams(
-          text: '${post.username} on Twice: ${post.caption}'.trim(),
-        ),
+        ShareParams(text: '${post.username} on Twice: ${post.caption}'.trim()),
       );
     } catch (e) {
       debugPrint('Share failed: $e');
@@ -3678,9 +3686,9 @@ class _PostCardState extends State<PostCard>
     if (uid == null) return;
 
     final rows = List<Map<String, dynamic>>.from(
-      (post.data['saved_posts'] as List? ?? const [])
-          .whereType<Map>()
-          .map((row) => Map<String, dynamic>.from(row)),
+      (post.data['saved_posts'] as List? ?? const []).whereType<Map>().map(
+        (row) => Map<String, dynamic>.from(row),
+      ),
     );
 
     // Update the bookmark immediately.
@@ -3699,17 +3707,16 @@ class _PostCardState extends State<PostCard>
       if (!mounted) return;
       // Roll back only this bookmark state.
       final current = List<Map<String, dynamic>>.from(
-        (post.data['saved_posts'] as List? ?? const [])
-            .whereType<Map>()
-            .map((row) => Map<String, dynamic>.from(row)),
+        (post.data['saved_posts'] as List? ?? const []).whereType<Map>().map(
+          (row) => Map<String, dynamic>.from(row),
+        ),
       );
       current.removeWhere((row) => row['user_id'] == uid);
       if (wasSaved) current.add({'user_id': uid});
       post.data['saved_posts'] = current;
       widget.onCommentChanged();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Save failed: $e')));
     });
   }
 
@@ -3911,10 +3918,7 @@ class _PostCardState extends State<PostCard>
                       IconButton(
                         tooltip: 'Comment',
                         onPressed: _openComments,
-                        icon: const _InstagramCommentIcon(
-                          size: 25,
-                          color: ink,
-                        ),
+                        icon: const _InstagramCommentIcon(size: 25, color: ink),
                       ),
                       IconButton(
                         tooltip: 'Share',
@@ -4107,9 +4111,7 @@ class _BookmarkButtonState extends State<_BookmarkButton>
       builder: (context, child) =>
           Transform.translate(offset: Offset(0, _dy.value), child: child),
       child: Icon(
-        widget.saved
-            ? Icons.bookmark_rounded
-            : Icons.bookmark_border_rounded,
+        widget.saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
         size: 27,
         color: Colors.white,
       ),
@@ -4167,11 +4169,7 @@ Future<List<AssetEntity>> _loadSelectableMedia({int size = 200}) async {
 }
 
 class CreatePage extends StatefulWidget {
-  const CreatePage({
-    super.key,
-    required this.onPost,
-    required this.profile,
-  });
+  const CreatePage({super.key, required this.onPost, required this.profile});
   final Map<String, dynamic> profile;
   final Future<void> Function(
     String caption,
@@ -4302,12 +4300,15 @@ class _CreatePageState extends State<CreatePage> {
               children: [
                 Builder(
                   builder: (context) {
-                    final avatar =
-                        (widget.profile['avatar_url'] ?? '').toString().trim();
-                    final displayName =
-                        (widget.profile['display_name'] ?? '').toString().trim();
-                    final username =
-                        (widget.profile['username'] ?? '').toString().trim();
+                    final avatar = (widget.profile['avatar_url'] ?? '')
+                        .toString()
+                        .trim();
+                    final displayName = (widget.profile['display_name'] ?? '')
+                        .toString()
+                        .trim();
+                    final username = (widget.profile['username'] ?? '')
+                        .toString()
+                        .trim();
                     final name = displayName.isNotEmpty
                         ? displayName
                         : (username.isNotEmpty ? username : 'Twice user');
@@ -4584,7 +4585,9 @@ class _CreatePageState extends State<CreatePage> {
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Music selection is not available yet.'),
+                          content: Text(
+                            'Music selection is not available yet.',
+                          ),
                         ),
                       );
                     },
@@ -5357,9 +5360,9 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Future<void> _openPost(SocialPost post) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => PostDetailPage(post: post)),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => PostDetailPage(post: post)));
     if (mounted) setState(() {});
   }
 
@@ -5551,7 +5554,8 @@ class _SearchPageState extends State<SearchPage> {
       return _SearchEmpty(
         icon: Icons.person_search_rounded,
         title: 'No people found',
-        subtitle: 'We couldn’t find anyone matching “$q”.\nCheck the spelling or try another name.',
+        subtitle:
+            'We couldn’t find anyone matching “$q”.\nCheck the spelling or try another name.',
       );
     }
     return ListView.builder(
@@ -5580,7 +5584,11 @@ class _SearchPageState extends State<SearchPage> {
           ? const _SkeletonGrid()
           : const _SkeletonPeople();
     }
-    final label = isVideos ? 'videos' : isPhotos ? 'photos' : 'posts';
+    final label = isVideos
+        ? 'videos'
+        : isPhotos
+        ? 'photos'
+        : 'posts';
     if (posts.isEmpty) {
       return _SearchEmpty(
         icon: isVideos
@@ -5775,9 +5783,8 @@ class _PersonTileState extends State<_PersonTile> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Follow action failed: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Follow action failed: $e')));
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -6139,9 +6146,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => item.data['post_likes'] = before);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Like failed: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Like failed: $e')));
     }
   }
 
@@ -6402,7 +6408,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
   bool get isPrivate => profile['is_private'] == true;
 
-  bool get isFollowing => followLabel == 'Following' || followLabel == 'Connected';
+  bool get isFollowing =>
+      followLabel == 'Following' || followLabel == 'Connected';
 
   bool get locked =>
       isPrivate && !isSelf && labelLoaded && !isFollowing && posts.isEmpty;
@@ -6526,11 +6533,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
           if (!priv) followers += 1;
         });
       }
-      await Future.wait<void>([
-        _loadFollowLabel(),
-        _loadStats(),
-        _loadPosts(),
-      ]);
+      await Future.wait<void>([_loadFollowLabel(), _loadStats(), _loadPosts()]);
     } catch (e) {
       if (mounted) {
         setState(() => followLabel = previous);
@@ -6561,9 +6564,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not start conversation: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not start conversation: $e')),
+        );
       }
     } finally {
       if (mounted) setState(() => messageBusy = false);
@@ -6572,11 +6575,12 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
   Future<void> _copyLink() async {
     if (username.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: 'https://twice.app/@$username'));
+    await Clipboard.setData(
+      ClipboardData(text: 'https://twice.app/@$username'),
+    );
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Profile link copied')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Profile link copied')));
   }
 
   void _openFollowList(bool showFollowers) {
@@ -6739,9 +6743,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
                   children: List.generate(
                     9,
                     (_) => DecoratedBox(
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF262626),
-                      ),
+                      decoration: const BoxDecoration(color: Color(0xFF262626)),
                     ),
                   ),
                 ),
@@ -6835,7 +6837,10 @@ class _UserProfilePageState extends State<UserProfilePage> {
               ),
               title: Text(
                 username.isEmpty ? 'Profile' : username,
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
               actions: [
                 IconButton(
@@ -7131,10 +7136,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
             Builder(
               builder: (context) {
                 final p = r['profiles'] as Map? ?? {};
-                final name =
-                    (p['username'] ?? p['display_name'] ?? 'user')
-                        .toString()
-                        .replaceFirst(RegExp(r'^@'), '');
+                final name = (p['username'] ?? p['display_name'] ?? 'user')
+                    .toString()
+                    .replaceFirst(RegExp(r'^@'), '');
                 return _commentRow(
                   p: p,
                   userId: (p['id'] ?? r['user_id'] ?? '').toString(),
@@ -7339,7 +7343,8 @@ class _ActivityPageState extends State<ActivityPage> {
       setState(() {
         for (final r in data) {
           final id = r['id'].toString();
-          if (r['is_read'] != true || (previous.isNotEmpty && !previous.contains(id))) {
+          if (r['is_read'] != true ||
+              (previous.isNotEmpty && !previous.contains(id))) {
             _newIds.add(id);
           }
         }
@@ -7377,7 +7382,9 @@ class _ActivityPageState extends State<ActivityPage> {
   }
 
   String _action(Map<String, dynamic> row) {
-    final comment = (row['body'] ?? row['comment_text'] ?? '').toString().trim();
+    final comment = (row['body'] ?? row['comment_text'] ?? '')
+        .toString()
+        .trim();
     final quoted = comment.isEmpty ? '' : ': “$comment”';
     switch ((row['type'] ?? '').toString()) {
       case 'like':
@@ -7431,22 +7438,25 @@ class _ActivityPageState extends State<ActivityPage> {
         );
         return;
       }
-      await Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => PostDetailPage(
-          post: SocialPost(data),
-          openCommentsOnOpen: type == 'comment' || type == 'reply',
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PostDetailPage(
+            post: SocialPost(data),
+            openCommentsOnOpen: type == 'comment' || type == 'reply',
+          ),
         ),
-      ));
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open post: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not open post: $e')));
     }
   }
 
   Widget _tile(Map<String, dynamic> row) {
-    final actor = Map<String, dynamic>.from(row['profiles'] as Map? ?? const {});
+    final actor = Map<String, dynamic>.from(
+      row['profiles'] as Map? ?? const {},
+    );
     final name = (actor['display_name'] ?? '').toString().trim().isNotEmpty
         ? actor['display_name'].toString()
         : (actor['username'] ?? 'Someone').toString();
@@ -7458,103 +7468,109 @@ class _ActivityPageState extends State<ActivityPage> {
       behavior: HitTestBehavior.opaque,
       onTap: () => _openNotificationTarget(row),
       child: Container(
-      color: isNew ? const Color(0xFF262626) : Colors.transparent,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Row(
-        children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _openActorProfile(actor, avatar),
-            child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              CircleAvatar(
-                radius: 25,
-                backgroundColor: const Color(0xFF262626),
-                backgroundImage: _isImageSource(avatar)
-                    ? _twiceAvatarProvider(avatar)
-                    : null,
-                child: _isImageSource(avatar)
-                    ? null
-                    : const Icon(Icons.person_rounded, color: muted),
-              ),
-              Positioned(
-                right: -4,
-                bottom: -4,
-                child: Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: tint,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: igBlack, width: 2),
+        color: isNew ? const Color(0xFF262626) : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _openActorProfile(actor, avatar),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  CircleAvatar(
+                    radius: 25,
+                    backgroundColor: const Color(0xFF262626),
+                    backgroundImage: _isImageSource(avatar)
+                        ? _twiceAvatarProvider(avatar)
+                        : null,
+                    child: _isImageSource(avatar)
+                        ? null
+                        : const Icon(Icons.person_rounded, color: muted),
                   ),
-                  child: Icon(icon, size: 12, color: Colors.white),
-                ),
+                  Positioned(
+                    right: -4,
+                    bottom: -4,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: tint,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: igBlack, width: 2),
+                      ),
+                      child: Icon(icon, size: 12, color: Colors.white),
+                    ),
+                  ),
+                ],
               ),
-            ],
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      WidgetSpan(
-                        alignment: PlaceholderAlignment.baseline,
-                        baseline: TextBaseline.alphabetic,
-                        child: GestureDetector(
-                          onTap: () => _openActorProfile(actor, avatar),
-                          child: Text(
-                            name,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.baseline,
+                          baseline: TextBaseline.alphabetic,
+                          child: GestureDetector(
+                            onTap: () => _openActorProfile(actor, avatar),
+                            child: Text(
+                              name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                      TextSpan(text: ' ${_action(row)}'),
-                    ],
+                        TextSpan(text: ' ${_action(row)}'),
+                      ],
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: ink,
+                      fontSize: 14.5,
+                      height: 1.3,
+                    ),
                   ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: ink, fontSize: 14.5, height: 1.3),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  _timeAgo(row['created_at']),
-                  style: TextStyle(
-                    color: isNew ? const Color(0xFF0095F6) : muted,
-                    fontSize: 12.5,
-                    fontWeight: isNew ? FontWeight.w700 : FontWeight.w400,
+                  const SizedBox(height: 3),
+                  Text(
+                    _timeAgo(row['created_at']),
+                    style: TextStyle(
+                      color: isNew ? const Color(0xFF0095F6) : muted,
+                      fontSize: 12.5,
+                      fontWeight: isNew ? FontWeight.w700 : FontWeight.w400,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          if (_isImageSource(thumb)) ...[
-            const SizedBox(width: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                width: 48,
-                height: 48,
-                child: Image(
-                  image: _twiceImageProvider(thumb, maxDimension: 200),
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, _, _) =>
-                      const ColoredBox(color: Color(0xFF262626)),
-                ),
+                ],
               ),
             ),
-          ] else if (isNew) ...[
-            const SizedBox(width: 10),
-            const CircleAvatar(radius: 5, backgroundColor: Color(0xFF0095F6)),
+            if (_isImageSource(thumb)) ...[
+              const SizedBox(width: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Image(
+                    image: _twiceImageProvider(thumb, maxDimension: 200),
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, _, _) =>
+                        const ColoredBox(color: Color(0xFF262626)),
+                  ),
+                ),
+              ),
+            ] else if (isNew) ...[
+              const SizedBox(width: 10),
+              const CircleAvatar(radius: 5, backgroundColor: Color(0xFF0095F6)),
+            ],
           ],
-        ],
-      ),
+        ),
       ),
     );
   }
@@ -7572,7 +7588,12 @@ class _ActivityPageState extends State<ActivityPage> {
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
             const SizedBox(height: 160),
-            Center(child: Text('Could not load inbox\n$loadError', textAlign: TextAlign.center)),
+            Center(
+              child: Text(
+                'Could not load inbox\n$loadError',
+                textAlign: TextAlign.center,
+              ),
+            ),
           ],
         ),
       );
@@ -7589,7 +7610,11 @@ class _ActivityPageState extends State<ActivityPage> {
             Center(
               child: Text(
                 'No notifications yet',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: ink),
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: ink,
+                ),
               ),
             ),
             SizedBox(height: 6),
@@ -7604,13 +7629,21 @@ class _ActivityPageState extends State<ActivityPage> {
         ),
       );
     }
-    final fresh = list.where((r) => _newIds.contains(r['id'].toString())).toList();
-    final earlier = list.where((r) => !_newIds.contains(r['id'].toString())).toList();
+    final fresh = list
+        .where((r) => _newIds.contains(r['id'].toString()))
+        .toList();
+    final earlier = list
+        .where((r) => !_newIds.contains(r['id'].toString()))
+        .toList();
     Widget header(String text) => Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
       child: Text(
         text,
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: ink),
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
+          color: ink,
+        ),
       ),
     );
     return RefreshIndicator(
@@ -8169,66 +8202,66 @@ class _FollowListPageState extends State<FollowListPage> {
                         profile: user,
                       ),
                       child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: igSurface,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFF363636)),
-                      ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 27,
-                            backgroundColor: const Color(0xFF262626),
-                            backgroundImage: avatar.isNotEmpty
-                                ? _twiceAvatarProvider(avatar)
-                                : null,
-                            child: avatar.isEmpty
-                                ? const Icon(
-                                    Icons.person_rounded,
-                                    color: violet,
-                                    size: 28,
-                                  )
-                                : null,
-                          ),
-                          const SizedBox(width: 13),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name.isEmpty ? username : name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  username.isEmpty ? '@user' : '@$username',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: muted,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: igSurface,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFF363636)),
+                        ),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 27,
+                              backgroundColor: const Color(0xFF262626),
+                              backgroundImage: avatar.isNotEmpty
+                                  ? _twiceAvatarProvider(avatar)
+                                  : null,
+                              child: avatar.isEmpty
+                                  ? const Icon(
+                                      Icons.person_rounded,
+                                      color: violet,
+                                      size: 28,
+                                    )
+                                  : null,
                             ),
-                          ),
-                          if (widget.followers &&
-                              user['is_current_user'] != true) ...[
-                            const SizedBox(width: 8),
-                            _followAction(user),
+                            const SizedBox(width: 13),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name.isEmpty ? username : name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    username.isEmpty ? '@user' : '@$username',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: muted,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (widget.followers &&
+                                user['is_current_user'] != true) ...[
+                              const SizedBox(width: 8),
+                              _followAction(user),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
                     );
                   },
                 ),
@@ -8626,7 +8659,9 @@ class _ProfilePageState extends State<ProfilePage> {
       onFollowers: () => _openFollowList(true),
       onFollowing: () => _openFollowList(false),
       actions: [
-        Expanded(child: _IgProfileButton(label: 'Edit profile', onPressed: _edit)),
+        Expanded(
+          child: _IgProfileButton(label: 'Edit profile', onPressed: _edit),
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: _IgProfileButton(
@@ -8685,9 +8720,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   children: List.generate(
                     9,
                     (_) => DecoratedBox(
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF262626),
-                      ),
+                      decoration: const BoxDecoration(color: Color(0xFF262626)),
                     ),
                   ),
                 ),
@@ -8776,135 +8809,137 @@ class _ProfilePageState extends State<ProfilePage> {
           SliverToBoxAdapter(
             child: Column(
               children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              18,
-              MediaQuery.of(context).padding.top + 8,
-              18,
-              12,
-            ),
-            child: Row(
-              children: [
-                Expanded(
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    18,
+                    MediaQuery.of(context).padding.top + 8,
+                    18,
+                    12,
+                  ),
                   child: Row(
                     children: [
-                      Flexible(
-                        child: Text(
-                          username.isEmpty ? 'Your profile' : username,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 21,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 3),
-                      Material(
-                        color: _accountMenuOpen
-                            ? const Color(0xFF262626)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => setState(
-                            () => _accountMenuOpen = !_accountMenuOpen,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(7),
-                            child: AnimatedRotation(
-                              turns: _accountMenuOpen ? 0.5 : 0,
-                              duration: const Duration(milliseconds: 220),
-                              child: const Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                size: 23,
-                                color: violet,
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                username.isEmpty ? 'Your profile' : username,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                             ),
-                          ),
+                            const SizedBox(width: 3),
+                            Material(
+                              color: _accountMenuOpen
+                                  ? const Color(0xFF262626)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => setState(
+                                  () => _accountMenuOpen = !_accountMenuOpen,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(7),
+                                  child: AnimatedRotation(
+                                    turns: _accountMenuOpen ? 0.5 : 0,
+                                    duration: const Duration(milliseconds: 220),
+                                    child: const Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      size: 23,
+                                      color: violet,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
+                      ),
+                      IconButton(
+                        tooltip: 'Share profile',
+                        onPressed: _shareProfile,
+                        icon: const Icon(Icons.qr_code_rounded),
+                      ),
+                      IconButton(
+                        tooltip: 'Edit profile',
+                        onPressed: _edit,
+                        icon: const Icon(Icons.edit_outlined),
                       ),
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Share profile',
-                  onPressed: _shareProfile,
-                  icon: const Icon(Icons.qr_code_rounded),
-                ),
-                IconButton(
-                  tooltip: 'Edit profile',
-                  onPressed: _edit,
-                  icon: const Icon(Icons.edit_outlined),
-                ),
-              ],
-            ),
-          ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeInOutCubic,
-            child: _accountMenuOpen
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: igElevated,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFF363636)),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x00000000),
-                            blurRadius: 18,
-                            offset: Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () {
-                            setState(() => _accountMenuOpen = false);
-                            _logout();
-                          },
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 13,
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.logout_rounded,
-                                  color: Color(0xFFD92D20),
-                                  size: 21,
-                                ),
-                                SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    'Log out',
-                                    style: TextStyle(
-                                      color: Color(0xFFD92D20),
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                                Icon(
-                                  Icons.arrow_forward_ios_rounded,
-                                  size: 14,
-                                  color: muted,
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeInOutCubic,
+                  child: _accountMenuOpen
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: igElevated,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: const Color(0xFF363636),
+                              ),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x00000000),
+                                  blurRadius: 18,
+                                  offset: Offset(0, 6),
                                 ),
                               ],
                             ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: () {
+                                  setState(() => _accountMenuOpen = false);
+                                  _logout();
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 13,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.logout_rounded,
+                                        color: Color(0xFFD92D20),
+                                        size: 21,
+                                      ),
+                                      SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          'Log out',
+                                          style: TextStyle(
+                                            color: Color(0xFFD92D20),
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_forward_ios_rounded,
+                                        size: 14,
+                                        color: muted,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    ),
-                  )
-                : const SizedBox(width: double.infinity, height: 0),
-          ),
+                        )
+                      : const SizedBox(width: double.infinity, height: 0),
+                ),
               ],
             ),
           ),
@@ -9106,7 +9141,6 @@ class _ConversationPageState extends State<ConversationPage> {
   );
 }
 
-
 class _ProfileNavAvatar extends StatelessWidget {
   const _ProfileNavAvatar({
     required this.url,
@@ -9132,9 +9166,7 @@ class _ProfileNavAvatar extends StatelessWidget {
       padding: EdgeInsets.all(selected ? 2 : 0),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: selected
-            ? Border.all(color: Colors.white, width: 1.5)
-            : null,
+        border: selected ? Border.all(color: Colors.white, width: 1.5) : null,
       ),
       child: ClipOval(
         child: hasImage
@@ -9168,14 +9200,10 @@ class _ProfileNavAvatar extends StatelessWidget {
   }
 }
 
-
 enum _SocialNavKind { home, search, create, activity, plus }
 
 class _SocialNavIcon extends StatelessWidget {
-  const _SocialNavIcon({
-    required this.kind,
-    this.selected = false,
-  });
+  const _SocialNavIcon({required this.kind, this.selected = false});
 
   final _SocialNavKind kind;
   final bool selected;
@@ -9306,8 +9334,16 @@ class _SocialNavPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = stroke
           ..strokeCap = StrokeCap.round;
-        canvas.drawLine(const Offset(13.5, 8.5), const Offset(13.5, 18.5), plusPaint);
-        canvas.drawLine(const Offset(8.5, 13.5), const Offset(18.5, 13.5), plusPaint);
+        canvas.drawLine(
+          const Offset(13.5, 8.5),
+          const Offset(13.5, 18.5),
+          plusPaint,
+        );
+        canvas.drawLine(
+          const Offset(8.5, 13.5),
+          const Offset(18.5, 13.5),
+          plusPaint,
+        );
 
       case _SocialNavKind.activity:
         final heart = Path()

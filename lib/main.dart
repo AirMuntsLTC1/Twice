@@ -1461,7 +1461,6 @@ class _TwiceLogo extends StatelessWidget {
       fontWeight: FontWeight.w700,
       fontSize: size,
       height: 1.1,
-      color: color,
     ),
   );
 }
@@ -7150,62 +7149,6 @@ class _CommentsSheetState extends State<CommentsSheet> {
       ),
     );
   }
-}
-
-/// Crisp bell icon (outline, or filled when selected) for the Inbox tab.
-class _InboxBellIcon extends StatelessWidget {
-  const _InboxBellIcon({
-    required this.size,
-    required this.color,
-    this.filled = false,
-  });
-
-  final double size;
-  final Color color;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) => CustomPaint(
-    size: Size.square(size),
-    painter: _InboxBellPainter(color, filled),
-  );
-}
-
-class _InboxBellPainter extends CustomPainter {
-  const _InboxBellPainter(this.color, this.filled);
-
-  final Color color;
-  final bool filled;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.scale(size.width / 24);
-    final body = Path()
-      ..moveTo(18, 8)
-      ..arcToPoint(const Offset(6, 8), radius: const Radius.circular(6), clockwise: false)
-      ..relativeCubicTo(0, 7, -3, 9, -3, 9)
-      ..relativeLineTo(18, 0)
-      ..relativeCubicTo(0, 0, -3, -2, -3, -9)
-      ..close();
-    final clapper = Path()
-      ..moveTo(13.73, 21)
-      ..arcToPoint(const Offset(10.27, 21), radius: const Radius.circular(2));
-    final stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..color = color;
-    if (filled) {
-      canvas.drawPath(body, Paint()..style = PaintingStyle.fill..color = color);
-    }
-    canvas.drawPath(body, stroke);
-    canvas.drawPath(clapper, stroke);
-  }
-
-  @override
-  bool shouldRepaint(covariant _InboxBellPainter old) =>
-      old.color != color || old.filled != filled;
 }
 
 class ActivityPage extends StatefulWidget {

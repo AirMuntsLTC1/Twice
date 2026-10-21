@@ -6090,14 +6090,32 @@ class PostDetailPage extends StatefulWidget {
     super.key,
     required this.post,
     this.authorTappable = true,
+    this.openCommentsOnOpen = false,
   });
   final SocialPost post;
   final bool authorTappable;
+  final bool openCommentsOnOpen;
   @override
   State<PostDetailPage> createState() => _PostDetailPageState();
 }
 
 class _PostDetailPageState extends State<PostDetailPage> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.openCommentsOnOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => CommentsSheet(post: widget.post),
+        );
+      });
+    }
+  }
+
   Future<void> _like(SocialPost item) async {
     final wasLiked = item.liked;
     final uid = Supabase.instance.client.auth.currentUser?.id;
@@ -7383,6 +7401,50 @@ class _ActivityPageState extends State<ActivityPage> {
     }
   }
 
+  void _openActorProfile(Map<String, dynamic> actor, String avatar) {
+    final id = (actor['id'] ?? '').toString();
+    if (id.isEmpty) return;
+    _openUserProfile(
+      context,
+      userId: id,
+      profile: {...actor, 'avatar_url': avatar},
+    );
+  }
+
+  Future<void> _openNotificationTarget(Map<String, dynamic> row) async {
+    final type = (row['type'] ?? '').toString();
+    final postId = (row['post_id'] ?? '').toString().trim();
+    final opensPost = {'like', 'comment', 'reply'}.contains(type);
+    if (!opensPost || postId.isEmpty) {
+      final actor = Map<String, dynamic>.from(
+        row['profiles'] as Map? ?? const {},
+      );
+      _openActorProfile(actor, (row['actor_avatar'] ?? '').toString());
+      return;
+    }
+    try {
+      final data = await SocialRepository.instance.postById(postId);
+      if (!mounted) return;
+      if (data == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This post is no longer available.')),
+        );
+        return;
+      }
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => PostDetailPage(
+          post: SocialPost(data),
+          openCommentsOnOpen: type == 'comment' || type == 'reply',
+        ),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open post: $e')),
+      );
+    }
+  }
+
   Widget _tile(Map<String, dynamic> row) {
     final actor = Map<String, dynamic>.from(row['profiles'] as Map? ?? const {});
     final name = (actor['display_name'] ?? '').toString().trim().isNotEmpty
@@ -7394,19 +7456,16 @@ class _ActivityPageState extends State<ActivityPage> {
     final (icon, tint) = _badgeFor((row['type'] ?? '').toString());
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _openUserProfile(
-        context,
-        userId: (actor['id'] ?? '').toString(),
-        profile: actor.isEmpty
-            ? null
-            : {...actor, 'avatar_url': avatar},
-      ),
+      onTap: () => _openNotificationTarget(row),
       child: Container(
       color: isNew ? const Color(0xFF262626) : Colors.transparent,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
         children: [
-          Stack(
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _openActorProfile(actor, avatar),
+            child: Stack(
             clipBehavior: Clip.none,
             children: [
               CircleAvatar(
@@ -7434,6 +7493,7 @@ class _ActivityPageState extends State<ActivityPage> {
                 ),
               ),
             ],
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -7443,9 +7503,16 @@ class _ActivityPageState extends State<ActivityPage> {
                 Text.rich(
                   TextSpan(
                     children: [
-                      TextSpan(
-                        text: name,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.baseline,
+                        baseline: TextBaseline.alphabetic,
+                        child: GestureDetector(
+                          onTap: () => _openActorProfile(actor, avatar),
+                          child: Text(
+                            name,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
                       ),
                       TextSpan(text: ' ${_action(row)}'),
                     ],

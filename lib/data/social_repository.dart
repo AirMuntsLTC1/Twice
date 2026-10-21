@@ -1289,6 +1289,23 @@ class SocialRepository {
     return _hydratePosts(posts.take(limit).toList());
   }
 
+  /// Loads and hydrates a single post by its database ID.
+  Future<Map<String, dynamic>?> postById(String id) async {
+    final key = id.trim();
+    if (key.isEmpty) return null;
+    final row = await _db
+        .from('posts')
+        .select(_postColumns)
+        .eq('id', key)
+        .maybeSingle()
+        .timeout(const Duration(seconds: 20));
+    if (row == null) return null;
+    final hydrated = await _hydratePosts(
+      [Map<String, dynamic>.from(row)],
+    );
+    return hydrated.isEmpty ? null : hydrated.first;
+  }
+
   /// Fresh profile row (avatar resolved) for any user.
   Future<Map<String, dynamic>?> profileById(String id) async {
     final row = await _db

@@ -12,11 +12,14 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'data/social_repository.dart';
 import 'data/inbox_controller.dart';
 import 'data/local_cache.dart';
 import 'data/twice_media.dart';
+
+part 'videos_screen.dart';
 
 ImageProvider<Object> _twiceImageProvider(
   String source, {
@@ -1177,12 +1180,12 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
     final title = [
       'Twice',
       'Search',
-      'Create',
+      'Videos',
       'Inbox',
       'Profile',
     ][selected];
     return Scaffold(
-      appBar: selected == 4
+      appBar: selected == 4 || selected == 2
           ? null
           : AppBar(
               title: title == 'Twice'
@@ -1246,7 +1249,11 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
                   },
                 ),
                 const SearchPage(),
-                const SizedBox.shrink(),
+                VideosPage(
+                  active: selected == 2,
+                  profile: profile,
+                  onCreate: _openComposer,
+                ),
                 ActivityPage(active: selected == 3),
                 ProfilePage(
                   profile: profile,
@@ -1279,11 +1286,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
             backgroundColor: Colors.white,
             indicatorColor: const Color(0xFFECE7FF),
             onDestinationSelected: (value) {
-              if (value == 2) {
-                _openComposer();
-              } else {
-                setState(() => selected = value);
-              }
+              setState(() => selected = value);
             },
             destinations: [
               NavigationDestination(
@@ -1308,7 +1311,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
                   kind: _SocialNavKind.create,
                   selected: true,
                 ),
-                label: 'Create',
+                label: 'Videos',
               ),
               const NavigationDestination(
             icon: _InboxNavIcon(selected: false),

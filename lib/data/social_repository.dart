@@ -1227,6 +1227,83 @@ class SocialRepository {
     }
   }
 
+  Future<List<Map<String, dynamic>>> inbox() async {
+    const base =
+        'id,type,is_read,created_at,post_id,story_id,'
+        'profiles!notifications_actor_id_fkey(id,username,display_name,avatar_url),'
+        'posts(caption,post_media(media_url,thumbnail_url,media_type,position)),'
+        'comments(body)';
+    dynamic rows;
+    try {
+      rows = await _db
+          .from('notifications')
+          .select('$base,body')
+          .eq('recipient_id', userId)
+          .order('created_at', ascending: false)
+          .limit(80)
+          .timeout(const Duration(seconds: 20));
+    } on PostgrestException {
+      // The inbox SQL migration has not been run yet: load without `body`.
+      rows = await _db
+          .from('notifications')
+          .select(base)
+          .eq('recipient_id', userId)
+          .order('created_at', ascending: false)
+          .limit(80)
+          .timeout(const Duration(seconds: 20));
+    }
+    final list = (rows as List)
+        .map((raw) => Map<String, dynamic>.from(raw as Map))
+        .toList();
+
+    String thumbPathOf(Map<String, dynamic> row) {
+      final post = row['posts'];
+      if (post is! Map) return '';
+      final media = (post['post_media'] as List? ?? const [])
+          .whereType<Map>()
+          .toList();
+      if (media.isEmpty) return '';
+      media.sort(
+        (a, b) => (int.tryParse('${a['position']}') ?? 0).compareTo(
+          int.tryParse('${b['position']}') ?? 0,
+        ),
+      );
+      final first = media.first;
+      final thumb = (first['thumbnail_url'] ?? '').toString().trim();
+      if (_isStoragePath(thumb)) return thumb;
+      final isVideo = (first['media_type'] ?? '').toString() == 'video';
+      final path = (first['media_url'] ?? '').toString().trim();
+      return (!isVideo && _isStoragePath(path)) ? path : '';
+    }
+
+    final needed = <String>{};
+    for (final row in list) {
+      final actor = row['profiles'];
+      if (actor is Map) {
+        final path = (actor['avatar_url'] ?? '').toString().trim();
+        if (_isStoragePath(path)) needed.add(path);
+      }
+      final t = thumbPathOf(row);
+      if (t.isNotEmpty) needed.add(t);
+    }
+    final urls = await _resolvePaths('post-media', needed);
+
+    for (final row in list) {
+      final actor = row['profiles'];
+      final path = actor is Map
+          ? (actor['avatar_url'] ?? '').toString().trim()
+          : '';
+      row['actor_avatar'] = _isStoragePath(path) ? (urls[path] ?? '') : path;
+      final t = thumbPathOf(row);
+      row['post_thumb'] = t.isEmpty ? '' : (urls[t] ?? '');
+      final comment = row['comments'];
+      row['comment_text'] = comment is Map
+          ? (comment['body'] ?? '').toString()
+          : '';
+    }
+    return list;
+  }
+
   Future<List<Map<String, dynamic>>> notifications() async {
     final rows = await _db
         .from('notifications')

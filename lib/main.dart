@@ -14,6 +14,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/social_repository.dart';
+import 'data/inbox_controller.dart';
 import 'data/local_cache.dart';
 import 'data/twice_media.dart';
 
@@ -807,6 +808,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    InboxController.instance.start();
     _loadAll();
   }
 
@@ -983,6 +985,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    InboxController.instance.stop();
     super.dispose();
   }
 
@@ -1175,7 +1178,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
       'Twice',
       'Search',
       'Create',
-      'Activity',
+      'Inbox',
       'Profile',
     ][selected];
     return Scaffold(
@@ -1244,7 +1247,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
                 ),
                 const SearchPage(),
                 const SizedBox.shrink(),
-                const ActivityPage(),
+                ActivityPage(active: selected == 3),
                 ProfilePage(
                   profile: profile,
                   posts: posts,
@@ -1308,13 +1311,10 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
                 label: 'Create',
               ),
               const NavigationDestination(
-                icon: _SocialNavIcon(kind: _SocialNavKind.activity),
-                selectedIcon: _SocialNavIcon(
-                  kind: _SocialNavKind.activity,
-                  selected: true,
-                ),
-                label: 'Activity',
-              ),
+            icon: _InboxNavIcon(selected: false),
+            selectedIcon: _InboxNavIcon(selected: true),
+            label: 'Inbox',
+          ),
               NavigationDestination(
                 icon: _ProfileNavAvatar(
                   url: (profile['avatar_url'] ?? '').toString(),
@@ -4711,79 +4711,380 @@ class _CommentsSheetState extends State<CommentsSheet> {
   );
 }
 
+/// Crisp bell icon (outline, or filled when selected) for the Inbox tab.
+class _InboxBellIcon extends StatelessWidget {
+  const _InboxBellIcon({
+    required this.size,
+    required this.color,
+    this.filled = false,
+  });
+
+  final double size;
+  final Color color;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    size: Size.square(size),
+    painter: _InboxBellPainter(color, filled),
+  );
+}
+
+class _InboxBellPainter extends CustomPainter {
+  const _InboxBellPainter(this.color, this.filled);
+
+  final Color color;
+  final bool filled;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.scale(size.width / 24);
+    final body = Path()
+      ..moveTo(18, 8)
+      ..arcToPoint(const Offset(6, 8), radius: const Radius.circular(6), clockwise: false)
+      ..relativeCubicTo(0, 7, -3, 9, -3, 9)
+      ..relativeLineTo(18, 0)
+      ..relativeCubicTo(0, 0, -3, -2, -3, -9)
+      ..close();
+    final clapper = Path()
+      ..moveTo(13.73, 21)
+      ..arcToPoint(const Offset(10.27, 21), radius: const Radius.circular(2));
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = color;
+    if (filled) {
+      canvas.drawPath(body, Paint()..style = PaintingStyle.fill..color = color);
+    }
+    canvas.drawPath(body, stroke);
+    canvas.drawPath(clapper, stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant _InboxBellPainter old) =>
+      old.color != color || old.filled != filled;
+}
+
+/// Bell + red unread counter, live from [InboxController].
+class _InboxNavIcon extends StatelessWidget {
+  const _InboxNavIcon({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: InboxController.instance,
+      builder: (context, _) {
+        final count = InboxController.instance.unread;
+        return Badge(
+          isLabelVisible: count > 0,
+          label: Text(count > 99 ? '99+' : '$count'),
+          backgroundColor: const Color(0xFFFF3040),
+          textColor: Colors.white,
+          offset: const Offset(4, -4),
+          child: _InboxBellIcon(
+            size: 25,
+            color: selected ? ink : const Color(0xFF5B5E6C),
+            filled: selected,
+          ),
+        );
+      },
+    );
+  }
+}
+
 class ActivityPage extends StatefulWidget {
-  const ActivityPage({super.key});
+  const ActivityPage({super.key, this.active = false});
+
+  final bool active;
 
   @override
   State<ActivityPage> createState() => _ActivityPageState();
 }
 
 class _ActivityPageState extends State<ActivityPage> {
-  late Future<List<Map<String, dynamic>>> future;
+  List<Map<String, dynamic>>? rows;
+  String? loadError;
+  Set<String> _newIds = {};
+  int _seenVersion = InboxController.instance.version;
+  Timer? _markTimer;
 
   @override
   void initState() {
     super.initState();
-    future = SocialRepository.instance.notifications();
-  }
-
-  Future<void> _refresh() async {
-    setState(() => future = SocialRepository.instance.notifications());
-    await future;
+    InboxController.instance.addListener(_onInbox);
+    if (widget.active) _activate();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+  void didUpdateWidget(covariant ActivityPage old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !old.active) {
+      _activate();
+    } else if (!widget.active && old.active) {
+      InboxController.instance.viewing = false;
+      _markTimer?.cancel();
+    }
+  }
+
+  Future<void> _activate() async {
+    InboxController.instance.viewing = true;
+    _newIds = {};
+    await _load();
+    _markTimer?.cancel();
+    _markTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted && widget.active) InboxController.instance.markAllRead();
+    });
+  }
+
+  void _onInbox() {
+    if (!mounted) return;
+    final v = InboxController.instance.version;
+    if (v != _seenVersion) {
+      _seenVersion = v;
+      if (widget.active || rows != null) _load();
+    }
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await SocialRepository.instance.inbox();
+      if (!mounted) return;
+      final previous = {for (final r in rows ?? const []) r['id'].toString()};
+      setState(() {
+        for (final r in data) {
+          final id = r['id'].toString();
+          if (r['is_read'] != true || (previous.isNotEmpty && !previous.contains(id))) {
+            _newIds.add(id);
+          }
         }
-        if (snapshot.hasError) {
-          return Center(
-            child: Text('Could not load activity: ${snapshot.error}'),
-          );
-        }
-        final rows = snapshot.data ?? [];
-        if (rows.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: const [
-                SizedBox(height: 180),
-                Center(
-                  child: Text(
-                    'No activity yet',
-                    style: TextStyle(color: muted),
+        rows = data;
+        loadError = null;
+      });
+    } catch (e) {
+      if (mounted && rows == null) setState(() => loadError = e.toString());
+    }
+  }
+
+  @override
+  void dispose() {
+    InboxController.instance.removeListener(_onInbox);
+    InboxController.instance.viewing = false;
+    _markTimer?.cancel();
+    super.dispose();
+  }
+
+  (IconData, Color) _badgeFor(String type) {
+    switch (type) {
+      case 'like':
+        return (Icons.favorite_rounded, const Color(0xFFFF2D55));
+      case 'story_reaction':
+        return (Icons.favorite_rounded, const Color(0xFFFF2D55));
+      case 'comment':
+      case 'reply':
+        return (Icons.mode_comment_rounded, const Color(0xFF2F80ED));
+      case 'story_reply':
+      case 'message':
+        return (Icons.reply_rounded, const Color(0xFF7C4DFF));
+      default:
+        return (Icons.person_add_alt_1_rounded, const Color(0xFF7C4DFF));
+    }
+  }
+
+  String _action(Map<String, dynamic> row) {
+    final comment = (row['body'] ?? row['comment_text'] ?? '').toString().trim();
+    final quoted = comment.isEmpty ? '' : ': “$comment”';
+    switch ((row['type'] ?? '').toString()) {
+      case 'like':
+        return 'liked your post.';
+      case 'comment':
+        return 'commented on your post$quoted';
+      case 'reply':
+        return 'replied to your comment$quoted';
+      case 'follow':
+        return 'started following you.';
+      case 'follow_request':
+        return 'requested to follow you.';
+      case 'story_reaction':
+        return 'liked your story.';
+      case 'story_reply':
+        return 'replied to your story$quoted';
+      case 'message':
+        return 'sent you a message.';
+      default:
+        return 'interacted with you.';
+    }
+  }
+
+  Widget _tile(Map<String, dynamic> row) {
+    final actor = Map<String, dynamic>.from(row['profiles'] as Map? ?? const {});
+    final name = (actor['display_name'] ?? '').toString().trim().isNotEmpty
+        ? actor['display_name'].toString()
+        : (actor['username'] ?? 'Someone').toString();
+    final avatar = (row['actor_avatar'] ?? '').toString();
+    final thumb = (row['post_thumb'] ?? '').toString();
+    final isNew = _newIds.contains(row['id'].toString());
+    final (icon, tint) = _badgeFor((row['type'] ?? '').toString());
+    return Container(
+      color: isNew ? const Color(0xFFF0EBFF) : Colors.transparent,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              CircleAvatar(
+                radius: 25,
+                backgroundColor: const Color(0xFFE9E7F5),
+                backgroundImage: _isImageSource(avatar)
+                    ? _twiceAvatarProvider(avatar)
+                    : null,
+                child: _isImageSource(avatar)
+                    ? null
+                    : const Icon(Icons.person_rounded, color: muted),
+              ),
+              Positioned(
+                right: -4,
+                bottom: -4,
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: tint,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: Icon(icon, size: 12, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: name,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      TextSpan(text: ' ${_action(row)}'),
+                    ],
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: ink, fontSize: 14.5, height: 1.3),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _timeAgo(row['created_at']),
+                  style: TextStyle(
+                    color: isNew ? const Color(0xFF6A3DF0) : muted,
+                    fontSize: 12.5,
+                    fontWeight: isNew ? FontWeight.w700 : FontWeight.w400,
                   ),
                 ),
               ],
             ),
-          );
-        }
-        return RefreshIndicator(
-          onRefresh: _refresh,
-          child: ListView.builder(
-            itemCount: rows.length,
-            itemBuilder: (context, index) {
-              final row = rows[index];
-              final actor = row['profiles'] as Map? ?? {};
-              return ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.notifications_none),
-                ),
-                title: Text(
-                  '${actor['display_name'] ?? actor['username'] ?? 'Someone'} '
-                  '${row['type'] ?? 'interacted'} with you',
-                ),
-                subtitle: Text(_timeAgo(row['created_at'])),
-              );
-            },
           ),
-        );
-      },
+          if (_isImageSource(thumb)) ...[
+            const SizedBox(width: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: 48,
+                height: 48,
+                child: Image(
+                  image: _twiceImageProvider(thumb, maxDimension: 200),
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, _, _) =>
+                      const ColoredBox(color: Color(0xFFE9E7F5)),
+                ),
+              ),
+            ),
+          ] else if (isNew) ...[
+            const SizedBox(width: 10),
+            const CircleAvatar(radius: 5, backgroundColor: Color(0xFF6A3DF0)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = rows;
+    if (list == null && loadError == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (list == null) {
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            const SizedBox(height: 160),
+            Center(child: Text('Could not load inbox\n$loadError', textAlign: TextAlign.center)),
+          ],
+        ),
+      );
+    }
+    if (list.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: const [
+            SizedBox(height: 150),
+            Icon(Icons.notifications_none_rounded, size: 64, color: muted),
+            SizedBox(height: 12),
+            Center(
+              child: Text(
+                'No notifications yet',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: ink),
+              ),
+            ),
+            SizedBox(height: 6),
+            Center(
+              child: Text(
+                'Likes, comments, follows and story\nreplies will show up here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: muted),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final fresh = list.where((r) => _newIds.contains(r['id'].toString())).toList();
+    final earlier = list.where((r) => !_newIds.contains(r['id'].toString())).toList();
+    Widget header(String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: ink),
+      ),
+    );
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          if (fresh.isNotEmpty) ...[header('New'), ...fresh.map(_tile)],
+          if (earlier.isNotEmpty) ...[
+            header(fresh.isEmpty ? 'Recent' : 'Earlier'),
+            ...earlier.map(_tile),
+          ],
+        ],
+      ),
     );
   }
 }

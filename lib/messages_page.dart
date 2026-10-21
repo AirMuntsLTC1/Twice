@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
@@ -530,6 +531,8 @@ class _ConversationPageState extends State<ConversationPage> {
     if (body.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
+      // Lightweight native send feedback; uses Flutter's built-in sound API.
+      await SystemSound.play(SystemSoundType.click);
       await SocialRepository.instance.sendMessage(
         widget.conversationId,
         body,
@@ -869,6 +872,7 @@ class _ConversationPageState extends State<ConversationPage> {
     }
 
     return ListView.builder(
+      key: PageStorageKey<String>('twice-chat-${widget.conversationId}'),
       controller: _scroll,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
       itemCount: _messages.length,
@@ -877,12 +881,25 @@ class _ConversationPageState extends State<ConversationPage> {
         final own = (m['sender_id'] ?? '') == _myId;
         final prevOwn = i > 0 &&
             (_messages[i - 1]['sender_id'] ?? '') == (m['sender_id'] ?? '');
-        return _Bubble(
-          message: m,
-          own: own,
-          showAvatar: !own && !prevOwn,
-          senderProfile: _senderCache[(m['sender_id'] ?? '').toString()],
-          fallbackAvatar: widget.otherAvatar,
+        return TweenAnimationBuilder<double>(
+          key: ValueKey<String>('chat-message-${m['id'] ?? '${m['created_at'] ?? i}'}'),
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 190),
+          curve: Curves.easeOutCubic,
+          builder: (context, value, child) => Opacity(
+            opacity: value,
+            child: Transform.translate(
+              offset: Offset(own ? 14 * (1 - value) : -8 * (1 - value), 8 * (1 - value)),
+              child: child,
+            ),
+          ),
+          child: _Bubble(
+            message: m,
+            own: own,
+            showAvatar: !own && !prevOwn,
+            senderProfile: _senderCache[(m['sender_id'] ?? '').toString()],
+            fallbackAvatar: widget.otherAvatar,
+          ),
         );
       },
     );
@@ -1290,4 +1307,3 @@ class _InlineVideoState extends State<_InlineVideo> {
     );
   }
 }
-

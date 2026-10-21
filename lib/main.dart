@@ -1273,23 +1273,36 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
               }
             },
             destinations: [
-              const NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home_rounded),
+              NavigationDestination(
+                icon: _SocialNavIcon(kind: _SocialNavKind.home),
+                selectedIcon: _SocialNavIcon(
+                  kind: _SocialNavKind.home,
+                  selected: true,
+                ),
                 label: 'Home',
               ),
               const NavigationDestination(
-                icon: Icon(Icons.search_rounded),
+                icon: _SocialNavIcon(kind: _SocialNavKind.search),
+                selectedIcon: _SocialNavIcon(
+                  kind: _SocialNavKind.search,
+                  selected: true,
+                ),
                 label: 'Search',
               ),
               const NavigationDestination(
-                icon: Icon(Icons.video_library_outlined),
-                selectedIcon: Icon(Icons.video_library_rounded),
+                icon: _SocialNavIcon(kind: _SocialNavKind.create),
+                selectedIcon: _SocialNavIcon(
+                  kind: _SocialNavKind.create,
+                  selected: true,
+                ),
                 label: 'Create',
               ),
               const NavigationDestination(
-                icon: Icon(Icons.notifications_none_rounded),
-                selectedIcon: Icon(Icons.notifications_rounded),
+                icon: _SocialNavIcon(kind: _SocialNavKind.activity),
+                selectedIcon: _SocialNavIcon(
+                  kind: _SocialNavKind.activity,
+                  selected: true,
+                ),
                 label: 'Activity',
               ),
               NavigationDestination(
@@ -5707,10 +5720,11 @@ class _ProfileNavAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = url.trim();
+    final imageSource = url.trim();
     final initial = fallback.trim().isNotEmpty
         ? fallback.trim().characters.first.toUpperCase()
         : 'U';
+    final hasImage = _isImageSource(imageSource);
 
     return Container(
       width: 29,
@@ -5719,18 +5733,18 @@ class _ProfileNavAvatar extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: selected
-            ? Border.all(color: const Color(0xFF6C4AE8), width: 2)
+            ? Border.all(color: const Color(0xFF262626), width: 1.8)
             : null,
       ),
       child: ClipOval(
-        child: imageUrl.startsWith('https://') ||
-                imageUrl.startsWith('http://')
-            ? Image.network(
-                imageUrl,
+        child: hasImage
+            ? Image(
+                image: _twiceAvatarProvider(imageSource),
                 fit: BoxFit.cover,
                 width: 29,
                 height: 29,
-                errorBuilder: (context, error, stackTrace) => _fallback(initial),
+                errorBuilder: (context, error, stackTrace) =>
+                    _fallback(initial),
               )
             : _fallback(initial),
       ),
@@ -5752,4 +5766,147 @@ class _ProfileNavAvatar extends StatelessWidget {
       ),
     );
   }
+}
+
+
+enum _SocialNavKind { home, search, create, activity }
+
+class _SocialNavIcon extends StatelessWidget {
+  const _SocialNavIcon({
+    required this.kind,
+    this.selected = false,
+  });
+
+  final _SocialNavKind kind;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = const Color(0xFF262626);
+    final stroke = selected ? 2.35 : 1.75;
+
+    return SizedBox(
+      width: 27,
+      height: 27,
+      child: CustomPaint(
+        painter: _SocialNavPainter(
+          kind: kind,
+          color: color,
+          stroke: stroke,
+          selected: selected,
+        ),
+      ),
+    );
+  }
+}
+
+class _SocialNavPainter extends CustomPainter {
+  const _SocialNavPainter({
+    required this.kind,
+    required this.color,
+    required this.stroke,
+    required this.selected,
+  });
+
+  final _SocialNavKind kind;
+  final Color color;
+  final double stroke;
+  final bool selected;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = selected ? PaintingStyle.fill : PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final outline = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    switch (kind) {
+      case _SocialNavKind.home:
+        final path = Path()
+          ..moveTo(3, 12)
+          ..lineTo(13.5, 3.5)
+          ..lineTo(24, 12)
+          ..lineTo(22, 12)
+          ..lineTo(22, 23)
+          ..lineTo(15.8, 23)
+          ..lineTo(15.8, 16.5)
+          ..lineTo(11.2, 16.5)
+          ..lineTo(11.2, 23)
+          ..lineTo(5, 23)
+          ..lineTo(5, 12)
+          ..close();
+        if (selected) {
+          canvas.drawPath(path, paint);
+          canvas.drawRect(
+            const Rect.fromLTWH(11.2, 16.5, 4.6, 6.5),
+            Paint()..color = Colors.white,
+          );
+        } else {
+          canvas.drawPath(path, outline);
+        }
+
+      case _SocialNavKind.search:
+        canvas.drawCircle(const Offset(11, 11), 7, outline);
+        canvas.drawLine(
+          const Offset(16.2, 16.2),
+          const Offset(23, 23),
+          outline,
+        );
+
+      case _SocialNavKind.create:
+        final back = RRect.fromRectAndRadius(
+          const Rect.fromLTWH(3, 2.5, 17, 19),
+          const Radius.circular(3.5),
+        );
+        final front = RRect.fromRectAndRadius(
+          const Rect.fromLTWH(7, 5.5, 17, 19),
+          const Radius.circular(3.5),
+        );
+        canvas.drawRRect(back, outline);
+        if (selected) {
+          canvas.drawRRect(front, paint);
+          final cutout = Paint()..color = Colors.white;
+          final triangle = Path()
+            ..moveTo(13, 11)
+            ..lineTo(13, 19)
+            ..lineTo(19, 15)
+            ..close();
+          canvas.drawPath(triangle, cutout);
+        } else {
+          canvas.drawRRect(front, outline);
+          final triangle = Path()
+            ..moveTo(13, 11)
+            ..lineTo(13, 19)
+            ..lineTo(19, 15)
+            ..close();
+          canvas.drawPath(triangle, outline);
+        }
+
+      case _SocialNavKind.activity:
+        final heart = Path()
+          ..moveTo(13.5, 23)
+          ..cubicTo(11.5, 21, 3, 15, 3, 9)
+          ..cubicTo(3, 3, 10, 2, 13.5, 7)
+          ..cubicTo(17, 2, 24, 3, 24, 9)
+          ..cubicTo(24, 15, 15.5, 21, 13.5, 23)
+          ..close();
+        canvas.drawPath(heart, selected ? paint : outline);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SocialNavPainter oldDelegate) =>
+      oldDelegate.kind != kind ||
+      oldDelegate.color != color ||
+      oldDelegate.stroke != stroke ||
+      oldDelegate.selected != selected;
 }

@@ -1487,7 +1487,7 @@ class _InboxHeartButton extends StatelessWidget {
             backgroundColor: igRed,
             textColor: Colors.white,
             offset: const Offset(5, -5),
-            child: const Icon(Icons.favorite_border_rounded, size: 27),
+            child: const Icon(Icons.inbox_outlined, size: 27),
           ),
         );
       },

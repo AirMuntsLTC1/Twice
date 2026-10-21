@@ -717,7 +717,116 @@ class SocialRepository {
     return stories;
   }
 
+  // ---- Story views, likes and replies ----
+  Future<void> recordStoryView(String storyId) async {
+    try {
+      await _db.from('story_views').upsert({
+        'story_id': storyId,
+        'viewer_id': userId,
+      }, onConflict: 'story_id,viewer_id', ignoreDuplicates: true);
+    } catch (_) {}
+  }
+
+  Future<int> storyViewCount(String storyId) async {
+    final rows = await _db
+        .from('story_views')
+        .select('viewer_id')
+        .eq('story_id', storyId)
+        .timeout(const Duration(seconds: 15));
+    return (rows as List).length;
+  }
+
+  Future<bool> myStoryLike(String storyId) async {
+    final rows = await _db
+        .from('story_reactions')
+        .select('story_id')
+        .eq('story_id', storyId)
+        .eq('user_id', userId)
+        .limit(1)
+        .timeout(const Duration(seconds: 15));
+    return (rows as List).isNotEmpty;
+  }
+
+  Future<void> setStoryLike(String storyId, bool liked) async {
+    if (liked) {
+      await _db.from('story_reactions').upsert({
+        'story_id': storyId,
+        'user_id': userId,
+        'reaction': '❤️',
+      }, onConflict: 'story_id,user_id', ignoreDuplicates: true);
+    } else {
+      await _db
+          .from('story_reactions')
+          .delete()
+          .eq('story_id', storyId)
+          .eq('user_id', userId);
+    }
+  }
+
+  /// Sends the reply as a direct message to the story owner.
+  Future<void> replyToStory(String ownerId, String text) async {
+    final conversationId = await createConversation(ownerId);
+    await sendMessage(conversationId, 'Replied to your story: ${text.trim()}');
+  }
+
+  Future<List<Map<String, dynamic>>> storyViewers(String storyId) async {
+    final views = await _db
+        .from('story_views')
+        .select('viewer_id,viewed_at')
+        .eq('story_id', storyId)
+        .order('viewed_at', ascending: false)
+        .limit(300)
+        .timeout(const Duration(seconds: 15));
+    final viewRows = (views as List)
+        .map((raw) => Map<String, dynamic>.from(raw as Map))
+        .toList();
+    if (viewRows.isEmpty) return [];
+    final ids = viewRows.map((v) => v['viewer_id'].toString()).toList();
+
+    final profileRows = await _db
+        .from('profiles')
+        .select('id,username,display_name,avatar_url')
+        .inFilter('id', ids)
+        .timeout(const Duration(seconds: 15));
+    final reactions = await _db
+        .from('story_reactions')
+        .select('user_id')
+        .eq('story_id', storyId)
+        .timeout(const Duration(seconds: 15));
+    final likedBy = {
+      for (final r in reactions as List) (r as Map)['user_id'].toString(),
+    };
+
+    final profiles = {
+      for (final raw in profileRows as List)
+        (raw as Map)['id'].toString(): Map<String, dynamic>.from(raw),
+    };
+    final avatarUrls = await _resolvePaths('post-media', [
+      for (final p in profiles.values)
+        if (_isStoragePath((p['avatar_url'] ?? '').toString().trim()))
+          (p['avatar_url'] ?? '').toString().trim(),
+    ]);
+    return [
+      for (final v in viewRows)
+        () {
+          final profile = Map<String, dynamic>.from(
+            profiles[v['viewer_id'].toString()] ?? const {},
+          );
+          final path = (profile['avatar_url'] ?? '').toString().trim();
+          if (_isStoragePath(path)) profile['avatar_url'] = avatarUrls[path] ?? '';
+          return <String, dynamic>{
+            'profile': profile,
+            'viewed_at': v['viewed_at'],
+            'liked': likedBy.contains(v['viewer_id'].toString()),
+          };
+        }(),
+    ];
+  }
+
   Future<void> publishStory(AssetEntity asset, String caption) async {
+    if (asset.type == AssetType.video && asset.duration > 60) {
+      throw Exception('Stories can be up to 60 seconds long.');
+    }
     final file = await asset.file;
     if (file == null) {
       throw Exception('Could not read the selected story media.');

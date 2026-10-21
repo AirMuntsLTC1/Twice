@@ -38,6 +38,9 @@ ImageProvider<Object> _twiceImageProvider(
 ImageProvider<Object> _twiceAvatarProvider(String source) =>
     _twiceImageProvider(source, maxDimension: 256);
 
+String _formatClock(int seconds) =>
+    '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+
 // A usable image source is a network URL OR a saved local copy (file:// or a
 // device path). Saved avatars become file:// after they are cached.
 bool _isImageSource(String value) {
@@ -1452,7 +1455,7 @@ class StoryStripState extends State<StoryStrip> {
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'Choose one photo or video',
+                  'Choose a photo or video (videos up to 1 min)',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
               ),
@@ -1467,12 +1470,14 @@ class StoryStripState extends State<StoryStrip> {
                   itemCount: assets.length,
                   itemBuilder: (context, index) {
                     final item = assets[index];
+                    final tooLong =
+                        item.type == AssetType.video && item.duration > 60;
                     return FutureBuilder<Uint8List?>(
                       future: item.thumbnailDataWithSize(
                         const ThumbnailSize(240, 240),
                       ),
                       builder: (context, snapshot) => InkWell(
-                        onTap: () => Navigator.pop(sheetContext, item),
+                        onTap: tooLong ? null : () => Navigator.pop(sheetContext, item),
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
@@ -1484,12 +1489,40 @@ class StoryStripState extends State<StoryStrip> {
                                 child: Icon(Icons.image_outlined),
                               ),
                             if (item.type == AssetType.video)
-                              const Positioned(
+                              Positioned(
                                 right: 6,
                                 bottom: 6,
-                                child: Icon(
-                                  Icons.play_circle_fill,
-                                  color: Colors.white,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    _formatClock(item.duration),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            if (tooLong)
+                              const ColoredBox(
+                                color: Color(0xB3000000),
+                                child: Center(
+                                  child: Text(
+                                    'Max 1 min',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
                                 ),
                               ),
                           ],
@@ -1755,27 +1788,74 @@ class StoryViewer extends StatefulWidget {
 }
 
 class _StoryViewerState extends State<StoryViewer>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  static const int _maxVideoSeconds = 60;
+
   late final AnimationController _progress;
+  late final AnimationController _burst;
+  final TextEditingController _reply = TextEditingController();
+  final FocusNode _replyFocus = FocusNode();
   VideoPlayerController? _video;
   int _index = 0;
   bool _paused = false;
   bool _videoReady = false;
+  bool _holdForInput = false;
+  bool _sheetOpen = false;
+  bool _sending = false;
+  bool _liked = false;
+  int _viewerCount = 0;
+  final Set<String> _recorded = {};
 
   Map<String, dynamic> get _story => widget.stories[_index];
+  String get _storyId => (_story['id'] ?? '').toString();
   String get _url => (_story['resolved_url'] ?? '').toString();
   bool get _isVideo => _story['media_type'] == 'video';
+  String get _ownerId => (_story['user_id'] ?? '').toString();
+  bool get _isOwner =>
+      _ownerId.isNotEmpty &&
+      _ownerId == (Supabase.instance.client.auth.currentUser?.id ?? '');
+
   @override
   void initState() {
     super.initState();
     _progress =
         AnimationController(vsync: this, duration: const Duration(seconds: 5))
           ..addStatusListener((status) {
-            if (status == AnimationStatus.completed && mounted) {
+            if (status == AnimationStatus.completed && mounted && !_isVideo) {
               _next(completed: true);
             }
           });
+    _burst = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    );
+    _replyFocus.addListener(() {
+      _holdForInput = _replyFocus.hasFocus;
+      if (_holdForInput) {
+        _pause();
+      } else if (!_sheetOpen) {
+        _resume();
+      }
+    });
     _loadCurrent();
+  }
+
+  Future<void> _loadStoryMeta() async {
+    final id = _storyId;
+    if (id.isEmpty) return;
+    final repo = SocialRepository.instance;
+    if (_isOwner) {
+      try {
+        final count = await repo.storyViewCount(id);
+        if (mounted && id == _storyId) setState(() => _viewerCount = count);
+      } catch (_) {}
+    } else {
+      if (_recorded.add(id)) unawaited(repo.recordStoryView(id));
+      try {
+        final liked = await repo.myStoryLike(id);
+        if (mounted && id == _storyId) setState(() => _liked = liked);
+      } catch (_) {}
+    }
   }
 
   Future<void> _loadCurrent() async {
@@ -1784,15 +1864,19 @@ class _StoryViewerState extends State<StoryViewer>
     final previous = _video;
     _video = null;
     _videoReady = false;
+    _liked = false;
+    _viewerCount = 0;
     if (previous != null) {
+      previous.removeListener(_onVideoTick);
       await previous.pause();
       await previous.dispose();
     }
     if (!mounted) return;
+    unawaited(_loadStoryMeta());
 
     if (_url.isEmpty) {
       _progress.duration = const Duration(seconds: 5);
-      _progress.forward();
+      if (!_paused) _progress.forward();
       setState(() {});
       return;
     }
@@ -1806,7 +1890,6 @@ class _StoryViewerState extends State<StoryViewer>
         await controller.initialize();
         if (!mounted || _video != controller) return;
         _videoReady = true;
-        _progress.duration = controller.value.duration;
         controller.addListener(_onVideoTick);
         if (!_paused) await controller.play();
       } catch (_) {
@@ -1816,18 +1899,26 @@ class _StoryViewerState extends State<StoryViewer>
     if (!mounted) return;
     if (!_isVideo || !_videoReady) {
       _progress.duration = const Duration(seconds: 5);
+      if (!_paused) _progress.forward();
     }
-    if (!_paused) _progress.forward();
     setState(() {});
   }
 
+  // The top bar for a video follows the real playback position, so its length
+  // matches the length of the story (like Facebook), capped at 60 seconds.
   void _onVideoTick() {
     final controller = _video;
     if (controller == null || !controller.value.isInitialized) return;
-    if (controller.value.position >= controller.value.duration &&
-        controller.value.duration > Duration.zero) {
-      _next(completed: true);
-    }
+    final total = controller.value.duration;
+    if (total <= Duration.zero) return;
+    final cap = Duration(seconds: _maxVideoSeconds);
+    final limit = total > cap ? cap : total;
+    final position = controller.value.position;
+    _progress.value = (position.inMilliseconds / limit.inMilliseconds).clamp(
+      0.0,
+      1.0,
+    );
+    if (position >= limit && mounted) _next(completed: true);
   }
 
   Future<void> _pause() async {
@@ -1841,15 +1932,18 @@ class _StoryViewerState extends State<StoryViewer>
   Future<void> _resume() async {
     if (!_paused) return;
     _paused = false;
-    if (_videoReady) await _video?.play();
-    _progress.forward();
+    if (_videoReady) {
+      await _video?.play();
+    } else {
+      _progress.forward();
+    }
     if (mounted) setState(() {});
   }
 
   void _next({bool completed = false}) {
     if (completed) {
-      final storyId = (_story['id'] ?? '').toString();
-      if (storyId.isNotEmpty) widget.onStoryViewed(storyId);
+      final id = _storyId;
+      if (id.isNotEmpty) widget.onStoryViewed(id);
     }
     if (_index + 1 >= widget.stories.length) {
       Navigator.of(context).pop();
@@ -1866,7 +1960,7 @@ class _StoryViewerState extends State<StoryViewer>
         _video?.seekTo(Duration.zero);
         if (!_paused) _video?.play();
       } else if (!_paused) {
-        _progress.forward();
+        _progress.forward(from: 0);
       }
       return;
     }
@@ -1878,12 +1972,167 @@ class _StoryViewerState extends State<StoryViewer>
     }
   }
 
+  Future<void> _toggleLike() async {
+    final id = _storyId;
+    if (id.isEmpty || _isOwner) return;
+    final next = !_liked;
+    setState(() => _liked = next);
+    if (next) _burst.forward(from: 0);
+    try {
+      await SocialRepository.instance.setStoryLike(id, next);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _liked = !next);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not update like: $e')));
+    }
+  }
+
+  Future<void> _sendReply() async {
+    final text = _reply.text.trim();
+    if (text.isEmpty || _sending || _ownerId.isEmpty) return;
+    setState(() => _sending = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await SocialRepository.instance.replyToStory(_ownerId, text);
+      if (!mounted) return;
+      _reply.clear();
+      _replyFocus.unfocus();
+      messenger.showSnackBar(const SnackBar(content: Text('Reply sent')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not send: $e')));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _openViewers() async {
+    final id = _storyId;
+    if (id.isEmpty) return;
+    _sheetOpen = true;
+    await _pause();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) => _StoryViewersSheet(storyId: id),
+    );
+    _sheetOpen = false;
+    if (!mounted) return;
+    unawaited(_loadStoryMeta());
+    if (!_holdForInput) _resume();
+  }
+
   @override
   void dispose() {
     _progress.dispose();
+    _burst.dispose();
+    _reply.dispose();
+    _replyFocus.dispose();
     _video?.removeListener(_onVideoTick);
     _video?.dispose();
     super.dispose();
+  }
+
+  Widget _bottomBar(BuildContext context) {
+    if (_isOwner) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: _openViewers,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white12,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.remove_red_eye_outlined,
+                  color: Colors.white,
+                  size: 22,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _viewerCount == 1 ? '1 viewer' : '$_viewerCount viewers',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    final hasText = _reply.text.trim().isNotEmpty;
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _reply,
+            focusNode: _replyFocus,
+            minLines: 1,
+            maxLines: 3,
+            textInputAction: TextInputAction.send,
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => _sendReply(),
+            style: const TextStyle(color: Colors.white),
+            cursorColor: Colors.white,
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Reply…',
+              hintStyle: const TextStyle(color: Colors.white70),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 12,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(30),
+                borderSide: const BorderSide(color: Colors.white54),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(30),
+                borderSide: const BorderSide(color: Colors.white),
+              ),
+              suffixIcon: hasText
+                  ? (_sending
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                          )
+                        : IconButton(
+                            onPressed: _sendReply,
+                            icon: const Icon(
+                              Icons.send_rounded,
+                              color: Colors.white,
+                            ),
+                          ))
+                  : null,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        _StoryHeartButton(liked: _liked, onTap: _toggleLike),
+      ],
+    );
   }
 
   @override
@@ -1893,152 +2142,402 @@ class _StoryViewerState extends State<StoryViewer>
     );
     final avatar = (user['avatar_url'] ?? '').toString();
     final url = _url;
+    final keyboard = MediaQuery.of(context).viewInsets.bottom;
     return Scaffold(
       backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onLongPressStart: (_) => _pause(),
-          onLongPressEnd: (_) => _resume(),
-          onTapUp: (details) {
-            final width = MediaQuery.of(context).size.width;
-            if (details.localPosition.dx < width * .35) {
-              _previous();
-            } else if (details.localPosition.dx > width * .65) {
-              _next();
-            } else if (_paused) {
-              _resume();
-            }
-          },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Center(
-                child: _isVideo
-                    ? (_videoReady && _video != null
-                          ? AspectRatio(
-                              aspectRatio: _video!.value.aspectRatio > 0
-                                  ? _video!.value.aspectRatio
-                                  : 9 / 16,
-                              child: VideoPlayer(_video!),
-                            )
-                          : const CircularProgressIndicator(
-                              color: Colors.white,
-                            ))
-                    : ((url.startsWith('http') ||
-                              url.startsWith('file://') ||
-                              url.startsWith('/'))
-                          ? Image(
-                              image: _twiceImageProvider(url),
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, _, _) => const Icon(
-                                Icons.broken_image_outlined,
-                                color: Colors.white,
-                                size: 52,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.broken_image_outlined,
-                              color: Colors.white,
-                              size: 52,
-                            )),
-              ),
-              Positioned(
-                top: 8,
-                left: 10,
-                right: 10,
-                child: Row(
-                  children: List.generate(widget.stories.length, (i) {
-                    return Expanded(
-                      child: Container(
-                        height: 3,
-                        margin: const EdgeInsets.symmetric(horizontal: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: FractionallySizedBox(
-                            widthFactor: i < _index
-                                ? 1
-                                : i == _index
-                                ? _progress.value
-                                : 0,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onLongPressStart: (_) => _pause(),
+              onLongPressEnd: (_) {
+                if (!_holdForInput && !_sheetOpen) _resume();
+              },
+              onTapUp: (details) {
+                if (_holdForInput) {
+                  _replyFocus.unfocus();
+                  return;
+                }
+                final width = MediaQuery.of(context).size.width;
+                if (details.localPosition.dx < width * .35) {
+                  _previous();
+                } else if (details.localPosition.dx > width * .65) {
+                  _next();
+                } else if (_paused) {
+                  _resume();
+                }
+              },
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Center(
+                    child: _isVideo
+                        ? (_videoReady && _video != null
+                              ? AspectRatio(
+                                  aspectRatio: _video!.value.aspectRatio > 0
+                                      ? _video!.value.aspectRatio
+                                      : 9 / 16,
+                                  child: VideoPlayer(_video!),
+                                )
+                              : const CircularProgressIndicator(
+                                  color: Colors.white,
+                                ))
+                        : (_isImageSource(url)
+                              ? Image(
+                                  image: _twiceImageProvider(url),
+                                  fit: BoxFit.contain,
+                                  gaplessPlayback: true,
+                                  errorBuilder: (_, _, _) => const Icon(
+                                    Icons.broken_image_outlined,
+                                    color: Colors.white,
+                                    size: 52,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.broken_image_outlined,
+                                  color: Colors.white,
+                                  size: 52,
+                                )),
+                  ),
+                  Positioned(
+                    top: 8,
+                    left: 10,
+                    right: 10,
+                    child: AnimatedBuilder(
+                      animation: _progress,
+                      builder: (context, _) => Row(
+                        children: List.generate(widget.stories.length, (i) {
+                          return Expanded(
                             child: Container(
+                              height: 3,
+                              margin: const EdgeInsets.symmetric(horizontal: 2),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: Colors.white24,
                                 borderRadius: BorderRadius.circular(5),
                               ),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: FractionallySizedBox(
+                                  widthFactor: i < _index
+                                      ? 1
+                                      : i == _index
+                                      ? _progress.value.clamp(0.0, 1.0)
+                                      : 0,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 22,
+                    left: 12,
+                    right: 8,
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 17,
+                          backgroundImage: _isImageSource(avatar)
+                              ? _twiceAvatarProvider(avatar)
+                              : null,
+                          child: _isImageSource(avatar)
+                              ? null
+                              : const Icon(Icons.person, size: 18),
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            (user['display_name'] ??
+                                    user['username'] ??
+                                    'Twice user')
+                                .toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-              Positioned(
-                top: 22,
-                left: 12,
-                right: 8,
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 17,
-                      backgroundImage: _isImageSource(avatar)
-                          ? _twiceAvatarProvider(avatar)
-                          : null,
-                      child: _isImageSource(avatar)
-                          ? null
-                          : const Icon(Icons.person, size: 18),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close, color: Colors.white),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 9),
-                    Expanded(
+                  ),
+                  if ((_story['caption'] ?? '').toString().trim().isNotEmpty)
+                    Positioned(
+                      left: 24,
+                      right: 24,
+                      bottom: 96 + keyboard,
                       child: Text(
-                        (user['display_name'] ??
-                                user['username'] ??
-                                'Twice user')
-                            .toString(),
+                        _story['caption'].toString(),
+                        textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          shadows: [Shadow(blurRadius: 8, color: Colors.black)],
                         ),
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close, color: Colors.white),
+                  if (_paused && !_holdForInput && !_sheetOpen)
+                    const Center(
+                      child: Icon(
+                        Icons.pause_circle_filled,
+                        color: Colors.white70,
+                        size: 60,
+                      ),
                     ),
-                  ],
+                ],
+              ),
+            ),
+            // Floating hearts when you like a story.
+            Positioned(
+              right: 12,
+              bottom: 70 + keyboard,
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _burst,
+                  builder: (context, _) {
+                    if (!_burst.isAnimating && _burst.value == 0) {
+                      return const SizedBox.shrink();
+                    }
+                    final t = _burst.value;
+                    const dx = [-14.0, 10.0, -30.0, 24.0, -2.0];
+                    const delay = [0.0, 0.08, 0.16, 0.05, 0.22];
+                    return SizedBox(
+                      width: 70,
+                      height: 260,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          for (var i = 0; i < dx.length; i++)
+                            Builder(
+                              builder: (context) {
+                                final p = ((t - delay[i]) / (1 - delay[i]))
+                                    .clamp(0.0, 1.0);
+                                return Positioned(
+                                  right: 18 - dx[i] * p,
+                                  bottom: 220 * Curves.easeOut.transform(p),
+                                  child: Opacity(
+                                    opacity: (1 - p).clamp(0.0, 1.0),
+                                    child: Transform.scale(
+                                      scale: 0.7 + 0.7 * (1 - p),
+                                      child: const Icon(
+                                        Icons.favorite_rounded,
+                                        color: Color(0xFFFF2D55),
+                                        size: 28,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
-              if ((_story['caption'] ?? '').toString().trim().isNotEmpty)
-                Positioned(
-                  left: 24,
-                  right: 24,
-                  bottom: 32,
-                  child: Text(
-                    _story['caption'].toString(),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      shadows: [Shadow(blurRadius: 8, color: Colors.black)],
-                    ),
-                  ),
+            ),
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: 12 + keyboard,
+              child: _bottomBar(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StoryHeartButton extends StatefulWidget {
+  const _StoryHeartButton({required this.liked, required this.onTap});
+
+  final bool liked;
+  final VoidCallback onTap;
+
+  @override
+  State<_StoryHeartButton> createState() => _StoryHeartButtonState();
+}
+
+class _StoryHeartButtonState extends State<_StoryHeartButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pop = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+  );
+
+  @override
+  void didUpdateWidget(covariant _StoryHeartButton old) {
+    super.didUpdateWidget(old);
+    if (widget.liked && !old.liked) _pop.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _pop.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _pop,
+            builder: (context, _) {
+              final t = _pop.value;
+              final scale = widget.liked && _pop.isAnimating
+                  ? 1 + 0.45 * sin(t * pi)
+                  : 1.0;
+              return Transform.scale(
+                scale: scale,
+                child: Icon(
+                  widget.liked
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  color: widget.liked ? const Color(0xFFFF2D55) : Colors.white,
+                  size: 32,
                 ),
-              if (_paused)
-                const Center(
-                  child: Icon(
-                    Icons.pause_circle_filled,
-                    color: Colors.white70,
-                    size: 60,
-                  ),
-                ),
-            ],
+              );
+            },
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StoryViewersSheet extends StatefulWidget {
+  const _StoryViewersSheet({required this.storyId});
+
+  final String storyId;
+
+  @override
+  State<_StoryViewersSheet> createState() => _StoryViewersSheetState();
+}
+
+class _StoryViewersSheetState extends State<_StoryViewersSheet> {
+  List<Map<String, dynamic>>? rows;
+  String? loadError;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await SocialRepository.instance.storyViewers(
+        widget.storyId,
+      );
+      if (mounted) setState(() => rows = data);
+    } catch (e) {
+      if (mounted) setState(() => loadError = e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = rows;
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * .6,
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Icon(Icons.remove_red_eye_outlined, color: ink),
+                const SizedBox(width: 8),
+                Text(
+                  list == null ? 'Viewers' : 'Viewers · ${list.length}',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: ink,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: loadError != null
+                ? Center(child: Text('Could not load viewers\n$loadError'))
+                : list == null
+                ? const Center(child: CircularProgressIndicator())
+                : list.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No one has viewed this story yet.',
+                      style: TextStyle(color: muted),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: list.length,
+                    itemBuilder: (context, i) {
+                      final row = list[i];
+                      final profile = Map<String, dynamic>.from(
+                        row['profile'] as Map? ?? const {},
+                      );
+                      final avatar = (profile['avatar_url'] ?? '').toString();
+                      final name =
+                          (profile['display_name'] ??
+                                  profile['username'] ??
+                                  'Twice user')
+                              .toString();
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundImage: _isImageSource(avatar)
+                              ? _twiceAvatarProvider(avatar)
+                              : null,
+                          child: _isImageSource(avatar)
+                              ? null
+                              : const Icon(Icons.person),
+                        ),
+                        title: Text(
+                          name,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: Text(_timeAgo(row['viewed_at'])),
+                        trailing: row['liked'] == true
+                            ? const Icon(
+                                Icons.favorite_rounded,
+                                color: Color(0xFFFF2D55),
+                              )
+                            : null,
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }

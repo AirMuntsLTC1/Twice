@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'messages_page.dart' as messaging;
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -1307,7 +1308,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
           IconButton(
             tooltip: 'Messages',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const MessagesPage()),
+              MaterialPageRoute<void>(builder: (_) => const messaging.MessagesPage()),
             ),
             icon: const Icon(Icons.send_outlined, size: 25),
           ),

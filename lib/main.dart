@@ -1447,10 +1447,9 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
 
 /// "Twice" script logo shown top-left on the home feed.
 class _TwiceLogo extends StatelessWidget {
-  const _TwiceLogo({this.size = 30, this.color = Colors.white});
+  const _TwiceLogo({this.size = 30});
 
   final double size;
-  final Color color;
 
   @override
   Widget build(BuildContext context) => Text(
@@ -6932,7 +6931,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                     style: const TextStyle(color: muted, fontSize: 12),
                   ),
                 ],
-                if (status != null) status,
+                ?status,
               ],
             ),
           ),
@@ -7207,35 +7206,6 @@ class _InboxBellPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _InboxBellPainter old) =>
       old.color != color || old.filled != filled;
-}
-
-/// Bell + red unread counter, live from [InboxController].
-class _InboxNavIcon extends StatelessWidget {
-  const _InboxNavIcon({required this.selected});
-
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: InboxController.instance,
-      builder: (context, _) {
-        final count = InboxController.instance.unread;
-        return Badge(
-          isLabelVisible: count > 0,
-          label: Text(count > 99 ? '99+' : '$count'),
-          backgroundColor: const Color(0xFFFF3040),
-          textColor: Colors.white,
-          offset: const Offset(4, -4),
-          child: _InboxBellIcon(
-            size: 25,
-            color: selected ? ink : const Color(0xFFA8A8A8),
-            filled: selected,
-          ),
-        );
-      },
-    );
-  }
 }
 
 class ActivityPage extends StatefulWidget {

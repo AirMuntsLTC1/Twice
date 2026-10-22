@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "647902172263",
+    "project_id": "twice-8a9d7",
+    "storage_bucket": "twice-8a9d7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:647902172263:android:bc9f0ab85b01dc4a6430c2",
+        "android_client_info": {
+          "package_name": "com.twice.twice"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBuP23a7a4uhSNqectckETPkUstC4ratjc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

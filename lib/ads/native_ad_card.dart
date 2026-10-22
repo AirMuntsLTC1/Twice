@@ -274,7 +274,11 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
   @override
   Widget build(BuildContext context) {
     if (widget.fullPage) return _buildFullPage();
-    if (_failed) return const SizedBox(width: double.infinity);
+    if (_failed) {
+      return TwiceAdConfig.showDiagnostics
+          ? _buildDiagnostic()
+          : const SizedBox(width: double.infinity);
+    }
     return VisibilityDetector(
       key: ValueKey<String>('twice-ad-${widget.placement.name}-${widget.slot}'),
       onVisibilityChanged: _onVisibility,
@@ -301,6 +305,25 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
     );
   }
 
+  /// Temporary: tells you WHY an ad slot is empty.
+  Widget _buildDiagnostic() {
+    final reason =
+        TwiceAds.lastError(widget.placement, widget.slot) ?? 'unknown reason';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121212),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        'Ad slot ${widget.slot} not shown: $reason',
+        style: const TextStyle(color: Color(0xFFA8A8A8), fontSize: 12),
+      ),
+    );
+  }
+
   Widget _buildFullPage() {
     if (_failed) return const ColoredBox(color: Colors.black);
     return ColoredBox(
@@ -314,7 +337,7 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
               bottomInset -
               120;
           final boxHeight =
-              room.clamp(280.0, TwiceAdConfig.adHeight).toDouble();
+              room.clamp(300.0, TwiceAdConfig.adHeightFullPage).toDouble();
           return Padding(
             padding: EdgeInsets.only(top: widget.topInset, bottom: bottomInset),
             child: Center(

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ad_config.dart';
@@ -42,6 +41,22 @@ class TwiceAds {
   static final Map<String, Future<_AdSlot?>> _loading =
       <String, Future<_AdSlot?>>{};
   static final Map<String, DateTime> _failedAt = <String, DateTime>{};
+  static final Map<String, String> _lastError = <String, String>{};
+
+  /// Human-readable reason the last request for this slot failed (or null).
+  static String? lastError(AdPlacement placement, int slot) =>
+      _lastError[_key(placement, slot)];
+
+  static String _describe(LoadAdError e) {
+    final reason = switch (e.code) {
+      3 => 'no fill - AdMob has no ad to serve for this unit right now',
+      2 => 'network error',
+      1 => 'invalid request / ad unit id',
+      0 => 'internal error',
+      _ => e.message,
+    };
+    return '$reason (code ${e.code})';
+  }
 
   static bool get supported =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
@@ -202,16 +217,22 @@ class TwiceAds {
   }
 
   static Future<_AdSlot?> _load(AdPlacement placement, int slot) async {
-    if (!await _ensureInit()) return null;
-
     final key = _key(placement, slot);
+    if (!await _ensureInit()) {
+      _lastError[key] =
+          'ads SDK not started (consent declined or initialisation failed)';
+      _failedAt[key] = DateTime.now();
+      return null;
+    }
     final done = Completer<_AdSlot?>();
 
     final ad = NativeAd(
       adUnitId: TwiceAdConfig.nativeUnitId,
       request: const AdRequest(),
-      nativeTemplateStyle: _darkTemplate(),
+      // Custom Instagram-style layout drawn by TwiceNativeAdFactory.kt.
+      factoryId: TwiceAdConfig.factoryId,
       nativeAdOptions: NativeAdOptions(
+        adChoicesPlacement: AdChoicesPlacement.topRightCorner,
         videoOptions: VideoOptions(
           startMuted: true,
           clickToExpandRequested: false,
@@ -232,6 +253,7 @@ class TwiceAds {
           if (old != null) _safeDispose(old.ad);
           _slots[key] = slotEntry;
           _failedAt.remove(key);
+          _lastError.remove(key);
           if (!done.isCompleted) done.complete(slotEntry);
           _evict(placement);
         },
@@ -242,6 +264,7 @@ class TwiceAds {
           );
           _safeDispose(failedAd);
           _failedAt[key] = DateTime.now();
+          _lastError[key] = _describe(error);
           if (!done.isCompleted) done.complete(null);
         },
       ),
@@ -253,6 +276,7 @@ class TwiceAds {
       debugPrint('TwiceAds $key load threw: $e');
       _safeDispose(ad);
       _failedAt[key] = DateTime.now();
+      _lastError[key] = 'load error: $e';
       if (!done.isCompleted) done.complete(null);
     }
 
@@ -261,6 +285,8 @@ class TwiceAds {
       onTimeout: () {
         debugPrint('TwiceAds $key timed out');
         _failedAt[key] = DateTime.now();
+        _lastError[key] =
+            'timed out after ${TwiceAdConfig.loadTimeout.inSeconds}s';
         return null;
       },
     );
@@ -286,41 +312,5 @@ class TwiceAds {
     try {
       ad.dispose();
     } catch (_) {}
-  }
-
-  /// Black / white / blue styling that matches Twice's dark UI.
-  static NativeTemplateStyle _darkTemplate() {
-    const black = Color(0xFF000000);
-    const blue = Color(0xFF0095F6);
-    const muted = Color(0xFFA8A8A8);
-    return NativeTemplateStyle(
-      templateType: TemplateType.medium,
-      mainBackgroundColor: black,
-      cornerRadius: 8,
-      callToActionTextStyle: NativeTemplateTextStyle(
-        textColor: Colors.white,
-        backgroundColor: blue,
-        style: NativeTemplateFontStyle.bold,
-        size: 14,
-      ),
-      primaryTextStyle: NativeTemplateTextStyle(
-        textColor: Colors.white,
-        backgroundColor: black,
-        style: NativeTemplateFontStyle.bold,
-        size: 14,
-      ),
-      secondaryTextStyle: NativeTemplateTextStyle(
-        textColor: muted,
-        backgroundColor: black,
-        style: NativeTemplateFontStyle.normal,
-        size: 12,
-      ),
-      tertiaryTextStyle: NativeTemplateTextStyle(
-        textColor: muted,
-        backgroundColor: black,
-        style: NativeTemplateFontStyle.normal,
-        size: 12,
-      ),
-    );
   }
 }

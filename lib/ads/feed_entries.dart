@@ -36,5 +36,15 @@ List<FeedEntry<T>> interleaveAds<T>(
       if (!skipSlots.contains(current)) out.add(FeedEntry<T>.ad(current));
     }
   }
+  // A short feed (fewer items than [interval]) still gets one ad after its
+  // last item, so a small or new account can show its first ad.
+  if (TwiceAdConfig.showAdWhenFeedIsShort &&
+      slot == 0 &&
+      maxAds > 0 &&
+      items.length >= 2 &&
+      !skipSlots.contains(0)) {
+    final at = items.length < interval ? items.length : interval;
+    out.insert(at, FeedEntry<T>.ad(0));
+  }
   return out;
 }

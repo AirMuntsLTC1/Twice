@@ -32,9 +32,25 @@ class TwiceAdConfig {
   /// Give up on a single ad request after this long.
   static const Duration loadTimeout = Duration(seconds: 12);
 
-  /// Height reserved for the native ad (skeleton and ad share it, so nothing
-  /// jumps when the ad appears).
-  static const double adHeight = 380;
+  /// Id of the Android NativeAdFactory (MainActivity.kt) that draws the
+  /// Instagram-style sponsored post.
+  static const String factoryId = 'twiceInstagramAd';
+
+  /// Height reserved for the ad in the Home feed (header + media + CTA +
+  /// caption). Skeleton and ad share it, so nothing jumps when the ad appears.
+  static const double adHeight = 540;
+
+  /// Height of the ad on a full Videos-tab page.
+  static const double adHeightFullPage = 600;
+
+  /// Short feeds (fewer posts than [feedInterval]) still get ONE ad, placed
+  /// after the last post / video, so a small test app can show its first ad.
+  static const bool showAdWhenFeedIsShort = true;
+
+  /// While true, a Home-feed ad that cannot load shows a small grey line with
+  /// the reason (no fill, network, ...) instead of silently disappearing.
+  /// Set to false once ads are confirmed working.
+  static const bool showDiagnostics = true;
 
   /// The native view is only attached to the screen while the card is within
   /// this many viewport-heights of the visible area. Keeps the number of live

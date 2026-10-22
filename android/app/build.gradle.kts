@@ -66,6 +66,12 @@ kotlin {
 
 }
 
+dependencies {
+    // Compiles the custom Instagram-style native ad layout (NativeAdView / MediaView).
+    // Gradle still picks the newer version the google_mobile_ads plugin uses.
+    implementation("com.google.android.gms:play-services-ads:23.0.0")
+}
+
 flutter {
     source = "../.."
 }

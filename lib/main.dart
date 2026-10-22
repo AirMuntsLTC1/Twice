@@ -19,6 +19,8 @@ import 'package:share_plus/share_plus.dart';
 
 import 'data/social_repository.dart';
 import 'data/inbox_controller.dart';
+import 'data/notification_service.dart';
+import 'widgets/in_app_notification_banner.dart';
 import 'data/local_cache.dart';
 import 'data/twice_media.dart';
 import 'ads/ad_config.dart';
@@ -343,6 +345,9 @@ class TwiceApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Twice',
+      builder: (context, child) => InAppNotificationHost(
+        child: child ?? const SizedBox.shrink(),
+      ),
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       darkTheme: _twiceDarkTheme(),
@@ -981,11 +986,13 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     InboxController.instance.start();
+    unawaited(NotificationService.instance.init());
     _loadAll();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    NotificationService.instance.setLifecycle(state);
     if (state != AppLifecycleState.resumed || !mounted) return;
 
     final now = DateTime.now();

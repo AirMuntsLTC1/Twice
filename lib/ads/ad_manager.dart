@@ -7,159 +7,127 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ad_config.dart';
 
-class _PoolEntry {
-  _PoolEntry(this.ad) : loadedAt = DateTime.now();
+/// Where an ad is shown. Each placement has its OWN ads: the Home feed and the
+/// Videos tab can never fight over the same native view (the old shared pool
+/// did exactly that and left blank / stuck ads).
+enum AdPlacement { feed, videos }
+
+class _AdSlot {
+  _AdSlot(this.ad) : loadedAt = DateTime.now();
   final NativeAd ad;
   final DateTime loadedAt;
-  int refs = 0;
-  bool isMounted = false;
+
+  /// Number of widgets currently holding this ad. A NativeAd can be attached
+  /// to exactly ONE AdWidget, so this is 0 or 1.
+  int leases = 0;
+
   bool get stale => DateTime.now().difference(loadedAt) > TwiceAdConfig.adTtl;
 }
 
-/// Loads, preloads, pools and manages native ads for the feed.
+/// Loads, preloads and leases native ads.
 ///
-/// Features:
-///  * UMP Consent flow initialization with graceful offline fallback.
-///  * Robust error diagnostics with human-readable error names without credential exposure.
-///  * Duplicate-mount prevention for AdWidget in scrolling lists.
-///  * Safe disposal and memory bounds.
+/// Architecture:
+///  * [prefetch]    loads an ad in the background and keeps it ready.
+///  * [obtainLease] hands the ad to ONE widget; nobody else can mount it.
+///  * [release]     gives it back; idle ads are evicted oldest-first.
+/// The widget decides WHEN the native view is attached (only near the
+/// viewport); the manager only decides WHAT ad it gets.
 class TwiceAds {
   TwiceAds._();
 
-  static const int _maxPooled = 6;
-
   static bool _initialized = false;
   static Future<bool>? _initFuture;
-  static final Map<int, _PoolEntry> _pool = {};
-  static final Map<int, Future<_PoolEntry?>> _pending = {};
-  static final Map<int, DateTime> _failedAt = {};
+
+  static final Map<String, _AdSlot> _slots = <String, _AdSlot>{};
+  static final Map<String, Future<_AdSlot?>> _loading =
+      <String, Future<_AdSlot?>>{};
+  static final Map<String, DateTime> _failedAt = <String, DateTime>{};
 
   static bool get supported =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
-  /// Human-readable AdMob error codes for safe diagnostic logging.
-  static String _adErrorCodeName(int code) {
-    switch (code) {
-      case 0:
-        return 'INTERNAL_ERROR';
-      case 1:
-        return 'INVALID_REQUEST';
-      case 2:
-        return 'NETWORK_ERROR';
-      case 3:
-        return 'NO_FILL';
-      default:
-        return 'CODE_$code';
-    }
-  }
+  static String _key(AdPlacement p, int slot) => '${p.name}:$slot';
 
-  /// Call once at startup (fire and forget). Also warms slot 0 so the first ad
-  /// is already loaded by the time the user scrolls to it.
+  // ------------------------------------------------------------------ init
+
+  /// Call once at startup (fire and forget). Also warms feed slot 0.
   static Future<void> init() async {
     if (!await _ensureInit()) return;
-    unawaited(prefetch(0));
+    unawaited(prefetch(AdPlacement.feed, 0));
   }
 
   static Future<bool> _ensureInit() {
-    if (!supported) return Future.value(false);
-    if (_initialized) return Future.value(true);
-    if (_initFuture != null) return _initFuture!;
+    if (!supported) return Future<bool>.value(false);
+    if (_initialized) return Future<bool>.value(true);
+    final existing = _initFuture;
+    if (existing != null) return existing;
 
     final completer = Completer<bool>();
     _initFuture = completer.future;
-
     () async {
+      var ok = false;
       try {
-        final success = await _updateConsentAndInitialize();
-        _initialized = success;
-        completer.complete(success);
+        ok = await _updateConsentAndInitialize();
       } catch (e) {
         debugPrint('TwiceAds initialization error: $e');
-        _initialized = false;
-        completer.complete(false);
-      } finally {
-        if (!_initialized) {
-          // Allow retrying initialization on subsequent requests if it failed.
-          _initFuture = null;
-        }
       }
+      _initialized = ok;
+      if (!ok) _initFuture = null; // allow a retry later
+      completer.complete(ok);
     }();
-
     return completer.future;
   }
 
-  /// Requests UMP consent update, displays consent form if required, and then
-  /// initializes the MobileAds SDK if allowed.
+  /// UMP consent (EEA/UK etc.), then MobileAds.initialize.
   static Future<bool> _updateConsentAndInitialize() async {
-    final consentCompleter = Completer<void>();
-    final params = ConsentRequestParameters();
-
+    final consentDone = Completer<void>();
     try {
       ConsentInformation.instance.requestConsentInfoUpdate(
-        params,
+        ConsentRequestParameters(),
         () async {
           try {
-            ConsentForm.loadAndShowConsentFormIfRequired((formError) async {
+            ConsentForm.loadAndShowConsentFormIfRequired((formError) {
               if (formError != null) {
-                debugPrint(
-                  'TwiceAds UMP form dismissed: code=${formError.errorCode}, message=${formError.message}',
-                );
+                debugPrint('TwiceAds UMP form: ${formError.message}');
               }
-              if (!consentCompleter.isCompleted) consentCompleter.complete();
+              if (!consentDone.isCompleted) consentDone.complete();
             });
           } catch (e) {
-            debugPrint('TwiceAds UMP form show threw: $e');
-            if (!consentCompleter.isCompleted) consentCompleter.complete();
+            debugPrint('TwiceAds UMP form threw: $e');
+            if (!consentDone.isCompleted) consentDone.complete();
           }
         },
         (FormError error) {
-          debugPrint(
-            'TwiceAds UMP update failed (offline or unconfigured): code=${error.errorCode}, message=${error.message}',
-          );
-          if (!consentCompleter.isCompleted) consentCompleter.complete();
+          debugPrint('TwiceAds UMP update failed: ${error.message}');
+          if (!consentDone.isCompleted) consentDone.complete();
         },
       );
     } catch (e) {
-      debugPrint('TwiceAds UMP requestConsentInfoUpdate threw: $e');
-      if (!consentCompleter.isCompleted) consentCompleter.complete();
+      debugPrint('TwiceAds UMP request threw: $e');
+      if (!consentDone.isCompleted) consentDone.complete();
     }
 
-    // Never block initialization indefinitely on consent network requests.
-    await consentCompleter.future.timeout(
-      const Duration(seconds: 5),
-      onTimeout: () {
-        debugPrint('TwiceAds UMP consent flow timed out; proceeding safely');
-      },
+    await consentDone.future.timeout(
+      const Duration(seconds: 6),
+      onTimeout: () {},
     );
 
-    // Check if ads can be requested according to user consent or platform default.
-    bool canRequest = true;
+    var canRequest = true;
     try {
       canRequest = await ConsentInformation.instance.canRequestAds();
     } catch (_) {
-      // Offline fallback: allow standard/non-personalized ad requests.
       canRequest = true;
     }
-
     if (!canRequest) {
-      debugPrint('TwiceAds: Ads cannot be requested per UMP consent status.');
+      debugPrint('TwiceAds: consent does not allow ad requests.');
       return false;
     }
 
-    return _initMobileAds();
-  }
-
-  static Future<bool> _initMobileAds() async {
     try {
       await MobileAds.instance.updateRequestConfiguration(
         RequestConfiguration(testDeviceIds: TwiceAdConfig.testDeviceIds),
       );
-      final status = await MobileAds.instance.initialize();
-      for (final entry in status.adapterStatuses.entries) {
-        debugPrint(
-          'TwiceAds adapter: ${entry.key} => ${entry.value.state.name} (${entry.value.description})',
-        );
-      }
+      await MobileAds.instance.initialize();
       return true;
     } catch (e) {
       debugPrint('TwiceAds MobileAds.initialize failed: $e');
@@ -167,76 +135,82 @@ class TwiceAds {
     }
   }
 
-  /// Start loading the ad for [slot] in the background (no-op if it exists).
-  static Future<void> prefetch(int slot) async {
-    if (slot < 0 || slot >= TwiceAdConfig.maxAdSlots) return;
-    await _obtain(slot);
+  // ----------------------------------------------------------- public API
+
+  /// Loads the ad for [slot] in the background. Returns true when an ad is
+  /// ready (or already held), false when there is no fill / no network.
+  static Future<bool> prefetch(AdPlacement placement, int slot) async {
+    if (slot < 0 || slot >= TwiceAdConfig.maxAdSlots) return false;
+    return (await _obtain(placement, slot)) != null;
   }
 
-  /// Notifies the pool whether an ad is currently mounted in an AdWidget.
-  static void markMounted(int slot, bool mounted) {
-    final entry = _pool[slot];
-    if (entry != null) {
-      entry.isMounted = mounted;
-    }
+  /// True when the last request for this slot failed recently.
+  static bool recentlyFailed(AdPlacement placement, int slot) {
+    final t = _failedAt[_key(placement, slot)];
+    return t != null &&
+        DateTime.now().difference(t) < TwiceAdConfig.failureBackoff;
   }
 
-  /// Returns a loaded ad for [slot] and increments ref count.
-  /// If the pooled ad is currently mounted in another active widget, returns a fresh
-  /// ad to prevent 'This AdWidget is already in the Widget tree' crashes.
-  static Future<NativeAd?> acquire(int slot) async {
-    final entry = await _obtain(slot);
-    if (entry == null) return null;
-    entry.refs++;
-    return entry.ad;
+  /// Gives ONE widget exclusive use of the ad for [slot].
+  /// Returns null when there is no ad (the caller should collapse / skip).
+  static Future<NativeAd?> obtainLease(AdPlacement placement, int slot) async {
+    final now = _tryLease(placement, slot);
+    if (now != null) return now;
+    final loaded = await _obtain(placement, slot);
+    if (loaded == null) return null;
+    return _tryLease(placement, slot);
   }
 
-  static void release(int slot) {
-    final entry = _pool[slot];
-    if (entry == null) return;
-    entry.refs = entry.refs > 0 ? entry.refs - 1 : 0;
-    _evict();
+  static void release(AdPlacement placement, int slot) {
+    final s = _slots[_key(placement, slot)];
+    if (s == null) return;
+    if (s.leases > 0) s.leases--;
+    _evict(placement);
   }
 
-  static Future<_PoolEntry?> _obtain(int slot) {
-    final cached = _pool[slot];
-    if (cached != null && !cached.stale && !cached.isMounted) {
-      return Future.value(cached);
-    }
-    if (cached != null && cached.stale && cached.refs == 0 && !cached.isMounted) {
-      _pool.remove(slot);
-      try {
-        cached.ad.dispose();
-      } catch (_) {}
-    } else if (cached != null && !cached.isMounted) {
-      return Future.value(cached);
-    }
+  // ------------------------------------------------------------- internals
 
-    final failed = _failedAt[slot];
-    if (failed != null &&
-        DateTime.now().difference(failed) < TwiceAdConfig.failureBackoff) {
-      return Future.value(null);
+  static NativeAd? _tryLease(AdPlacement placement, int slot) {
+    final key = _key(placement, slot);
+    final s = _slots[key];
+    if (s == null || s.leases > 0) return null;
+    if (s.stale) {
+      _slots.remove(key);
+      _safeDispose(s.ad);
+      return null;
     }
+    s.leases++;
+    return s.ad;
+  }
 
-    return _pending[slot] ??= _load(slot).whenComplete(() {
-      _pending.remove(slot);
+  static Future<_AdSlot?> _obtain(AdPlacement placement, int slot) {
+    final key = _key(placement, slot);
+    final existing = _slots[key];
+    if (existing != null && (!existing.stale || existing.leases > 0)) {
+      return Future<_AdSlot?>.value(existing);
+    }
+    if (existing != null) {
+      _slots.remove(key);
+      _safeDispose(existing.ad);
+    }
+    if (recentlyFailed(placement, slot)) return Future<_AdSlot?>.value(null);
+    // Block body on purpose: an arrow function would return the removed
+    // future itself and make whenComplete() wait on itself forever.
+    return _loading[key] ??= _load(placement, slot).whenComplete(() {
+      _loading.remove(key);
     });
   }
 
-  static Future<_PoolEntry?> _load(
-    int slot, {
-    String? overrideUnitId,
-    bool isFallback = false,
-  }) async {
+  static Future<_AdSlot?> _load(AdPlacement placement, int slot) async {
     if (!await _ensureInit()) return null;
 
-    final unitId = overrideUnitId ?? TwiceAdConfig.nativeUnitId;
-    final done = Completer<_PoolEntry?>();
+    final key = _key(placement, slot);
+    final done = Completer<_AdSlot?>();
 
     final ad = NativeAd(
-      adUnitId: unitId,
+      adUnitId: TwiceAdConfig.nativeUnitId,
       request: const AdRequest(),
-      nativeTemplateStyle: _instagramDarkStyle(),
+      nativeTemplateStyle: _darkTemplate(),
       nativeAdOptions: NativeAdOptions(
         videoOptions: VideoOptions(
           startMuted: true,
@@ -247,42 +221,27 @@ class TwiceAds {
       ),
       listener: NativeAdListener(
         onAdLoaded: (loaded) {
-          debugPrint('TwiceAds: Slot $slot loaded successfully ($unitId)');
-          final entry = _PoolEntry(loaded as NativeAd);
-          _pool[slot] = entry;
-          _failedAt.remove(slot);
-          if (!done.isCompleted) done.complete(entry);
-        },
-        onAdFailedToLoad: (failedAd, error) {
-          final codeName = _adErrorCodeName(error.code);
-          debugPrint(
-            'TwiceAds: Slot $slot failed to load [code=${error.code} ($codeName), '
-            'domain=${error.domain}, message=${error.message}]',
-          );
-          try {
-            failedAd.dispose();
-          } catch (_) {}
-
-          // If testing in debug mode and video unit returned NO_FILL, fall back to
-          // official standard Native Advanced test unit before giving up.
-          if (!kReleaseMode &&
-              !isFallback &&
-              error.code == 3 &&
-              unitId != TwiceAdConfig.testNativeUnitId) {
-            debugPrint(
-              'TwiceAds: Slot $slot trying fallback test unit ${TwiceAdConfig.testNativeUnitId}',
-            );
-            _load(
-              slot,
-              overrideUnitId: TwiceAdConfig.testNativeUnitId,
-              isFallback: true,
-            ).then((fallbackEntry) {
-              if (!done.isCompleted) done.complete(fallbackEntry);
-            });
+          final slotEntry = _AdSlot(loaded as NativeAd);
+          final old = _slots[key];
+          if (old != null && old.leases > 0) {
+            // Someone is already showing an ad in this slot; keep theirs.
+            _safeDispose(loaded);
+            if (!done.isCompleted) done.complete(old);
             return;
           }
-
-          _failedAt[slot] = DateTime.now();
+          if (old != null) _safeDispose(old.ad);
+          _slots[key] = slotEntry;
+          _failedAt.remove(key);
+          if (!done.isCompleted) done.complete(slotEntry);
+          _evict(placement);
+        },
+        onAdFailedToLoad: (failedAd, error) {
+          debugPrint(
+            'TwiceAds $key failed: code=${error.code} '
+            'domain=${error.domain} message=${error.message}',
+          );
+          _safeDispose(failedAd);
+          _failedAt[key] = DateTime.now();
           if (!done.isCompleted) done.complete(null);
         },
       ),
@@ -291,40 +250,46 @@ class TwiceAds {
     try {
       await ad.load();
     } catch (e) {
-      debugPrint('TwiceAds: Slot $slot load threw: $e');
-      try {
-        ad.dispose();
-      } catch (_) {}
+      debugPrint('TwiceAds $key load threw: $e');
+      _safeDispose(ad);
+      _failedAt[key] = DateTime.now();
       if (!done.isCompleted) done.complete(null);
     }
 
     return done.future.timeout(
-      const Duration(seconds: 10),
+      TwiceAdConfig.loadTimeout,
       onTimeout: () {
-        debugPrint('TwiceAds: Slot $slot load timed out');
-        _failedAt[slot] = DateTime.now();
+        debugPrint('TwiceAds $key timed out');
+        _failedAt[key] = DateTime.now();
         return null;
       },
     );
   }
 
-  static void _evict() {
-    if (_pool.length <= _maxPooled) return;
-    final idle = _pool.entries
-        .where((e) => e.value.refs == 0 && !e.value.isMounted)
-        .toList()
+  static void _evict(AdPlacement placement) {
+    final mine = _slots.entries
+        .where((e) => e.key.startsWith('${placement.name}:'))
+        .toList();
+    if (mine.length <= TwiceAdConfig.maxPooledPerPlacement) return;
+    final idle = mine.where((e) => e.value.leases == 0).toList()
       ..sort((a, b) => a.value.loadedAt.compareTo(b.value.loadedAt));
+    var count = mine.length;
     for (final e in idle) {
-      if (_pool.length <= _maxPooled) break;
-      _pool.remove(e.key);
-      try {
-        e.value.ad.dispose();
-      } catch (_) {}
+      if (count <= TwiceAdConfig.maxPooledPerPlacement) break;
+      _slots.remove(e.key);
+      _safeDispose(e.value.ad);
+      count--;
     }
   }
 
-  /// Black / white / blue styling that matches Twice's Instagram-style dark UI.
-  static NativeTemplateStyle _instagramDarkStyle() {
+  static void _safeDispose(Ad ad) {
+    try {
+      ad.dispose();
+    } catch (_) {}
+  }
+
+  /// Black / white / blue styling that matches Twice's dark UI.
+  static NativeTemplateStyle _darkTemplate() {
     const black = Color(0xFF000000);
     const blue = Color(0xFF0095F6);
     const muted = Color(0xFFA8A8A8);

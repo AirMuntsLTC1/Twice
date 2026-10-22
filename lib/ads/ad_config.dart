@@ -1,52 +1,50 @@
-import 'package:flutter/foundation.dart';
-
 /// Central AdMob configuration for Twice.
 ///
-/// Debug / profile builds ALWAYS use Google's official test ad unit so your own
-/// account is never at risk of invalid-traffic flags. Release builds use your
-/// real native ad unit. To force live ads in a debug build (not recommended):
-///   flutter run --dart-define=TWICE_LIVE_ADS=true
+/// LIVE ADS ONLY. There are no Google test ad units anywhere in this app any
+/// more: debug, profile and release builds all request your real native unit.
+///
+/// Policy reminder: never tap your own live ads. AdMob counts that as invalid
+/// traffic and can suspend the account.
 class TwiceAdConfig {
   TwiceAdConfig._();
 
   /// AdMob App ID (also declared in AndroidManifest.xml).
   static const String appId = 'ca-app-pub-2388362234538140~1307597758';
 
-  /// Your real native ad unit.
-  static const String liveNativeUnitId =
-      'ca-app-pub-2388362234538140/2313557661';
+  /// Your real native ad unit (used for the feed AND the Videos tab).
+  static const String nativeUnitId = 'ca-app-pub-2388362234538140/2313557661';
 
-  /// Google's official "Native Advanced Video" test unit (Android).
-  static const String testNativeVideoUnitId =
-      'ca-app-pub-3940256099942544/1044960115';
-
-  /// Google's official "Native Advanced" test unit for Native Templates (Android).
-  static const String testNativeUnitId =
-      'ca-app-pub-3940256099942544/2247696110';
-
-  static const bool _forceLive = bool.fromEnvironment('TWICE_LIVE_ADS');
-
-  static String get nativeUnitId =>
-      (kReleaseMode || _forceLive) ? liveNativeUnitId : testNativeUnitId;
-
-  /// One ad after every [feedInterval] organic posts (recommended 5 to 7).
+  /// One ad after every N organic posts in the Home feed.
   static const int feedInterval = 4;
 
-  /// Hard cap so a very long feed never builds unlimited ad slots.
+  /// One ad after every N videos in the Videos tab.
+  static const int videoInterval = 5;
+
+  /// Hard cap on ad slots per placement.
   static const int maxAdSlots = 12;
 
-  /// An ad that has been loaded this long is considered stale and re-requested.
+  /// A loaded ad older than this is re-requested the next time it is needed.
   static const Duration adTtl = Duration(minutes: 50);
 
-  /// After a failed request, wait this long before asking again for that slot.
+  /// After a failed request (no fill / network), wait before asking again.
   static const Duration failureBackoff = Duration(seconds: 60);
 
-  /// Height reserved for the native ad media block (skeleton and ad share it,
-  /// so nothing jumps when the ad fades in).
+  /// Give up on a single ad request after this long.
+  static const Duration loadTimeout = Duration(seconds: 12);
+
+  /// Height reserved for the native ad (skeleton and ad share it, so nothing
+  /// jumps when the ad appears).
   static const double adHeight = 380;
 
-  /// Add your phone's test-device hash here (it is printed in logcat as
-  /// "Use RequestConfiguration.Builder().setTestDeviceIds(...)") if you ever
-  /// need to tap live ads on your own device safely.
+  /// The native view is only attached to the screen while the card is within
+  /// this many viewport-heights of the visible area. Keeps the number of live
+  /// platform views (the main cause of scroll jank) at one or two.
+  static const double mountLookahead = 0.75;
+
+  /// Most preloaded-but-unused ads kept in memory per placement.
+  static const int maxPooledPerPlacement = 5;
+
+  /// Optional: device hashes that should receive Google test creatives.
+  /// Leave EMPTY for real ads on every device.
   static const List<String> testDeviceIds = <String>[];
 }

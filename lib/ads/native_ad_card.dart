@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
@@ -8,22 +10,110 @@ import '../widgets/skeleton.dart';
 import 'ad_config.dart';
 import 'ad_manager.dart';
 
-/// In-feed native video ad that sits in the same list as organic posts.
+/// Forwards vertical drags that start ON a native view to the surrounding
+/// scrollable (ListView / PageView).
 ///
-/// Behaviour:
-///  * Starts loading while it is still well off-screen (the feed's cache extent
-///    builds it ~2 posts early) and warms the NEXT ad slot once this one is
-///    mostly visible, so ads are ready before they scroll in.
-///  * Shows a post-shaped skeleton, then cross-fades to the ad. Nothing
-///    jumps: skeleton and ad share the same fixed height.
-///  * If there is no fill, the row collapses smoothly to nothing.
-///  * Video starts muted (set in the ad request). Sound only turns on if the
-///    user taps the unmute control on the ad itself.
-///  * "Sponsored" label + AdMob's own "Ad" badge stay visible (policy).
+/// Android platform views (AdMob native ads) can swallow touches, which is
+/// what made the feed and the Videos pager feel "stuck" while an ad was under
+/// the finger. This wrapper sits above the native view: taps still reach the
+/// ad (so clicks and the mute button work), but a vertical drag scrolls the
+/// list like it does everywhere else.
+class ScrollThrough extends StatefulWidget {
+  const ScrollThrough({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<ScrollThrough> createState() => _ScrollThroughState();
+}
+
+class _ScrollThroughState extends State<ScrollThrough> {
+  Drag? _drag;
+
+  void _onStart(DragStartDetails details) {
+    final scrollable = Scrollable.maybeOf(context);
+    if (scrollable == null) return;
+    _drag = scrollable.position.drag(details, () => _drag = null);
+  }
+
+  void _onUpdate(DragUpdateDetails details) => _drag?.update(details);
+
+  void _onEnd(DragEndDetails details) {
+    _drag?.end(details);
+    _drag = null;
+  }
+
+  void _onCancel() {
+    _drag?.cancel();
+    _drag = null;
+  }
+
+  @override
+  void dispose() {
+    _drag?.cancel();
+    _drag = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RawGestureDetector(
+      behavior: HitTestBehavior.translucent,
+      gestures: <Type, GestureRecognizerFactory>{
+        VerticalDragGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
+              () => VerticalDragGestureRecognizer(),
+              (VerticalDragGestureRecognizer recognizer) {
+                recognizer
+                  ..onStart = _onStart
+                  ..onUpdate = _onUpdate
+                  ..onEnd = _onEnd
+                  ..onCancel = _onCancel;
+              },
+            ),
+      },
+      child: widget.child,
+    );
+  }
+}
+
+/// Native ad that lives in a feed.
+///
+/// * Inline mode (default, Home feed): "Sponsored" header + fixed-height ad.
+/// * [fullPage] mode (Videos tab): a full-screen black page with the ad
+///   centred and a "Next video" button, so the user can never get stuck.
+///
+/// The card OWNS the ad while it exists (lease). The native view is attached
+/// only while the card is [active] and near the viewport, so at most one or
+/// two platform views are alive at any time.
 class FeedNativeAdCard extends StatefulWidget {
-  const FeedNativeAdCard({super.key, required this.slot});
+  const FeedNativeAdCard({
+    super.key,
+    required this.slot,
+    this.placement = AdPlacement.feed,
+    this.active = true,
+    this.fullPage = false,
+    this.topInset = 0,
+    this.onUnavailable,
+    this.onContinue,
+  });
 
   final int slot;
+  final AdPlacement placement;
+
+  /// False while the tab that contains this card is not on screen.
+  final bool active;
+
+  final bool fullPage;
+
+  /// Space to keep clear at the top of a full-page ad (overlay headers).
+  final double topInset;
+
+  /// Called once when no ad could be loaded for this slot.
+  final VoidCallback? onUnavailable;
+
+  /// Full-page mode: user pressed "Next video".
+  final VoidCallback? onContinue;
 
   @override
   State<FeedNativeAdCard> createState() => _FeedNativeAdCardState();
@@ -32,73 +122,209 @@ class FeedNativeAdCard extends StatefulWidget {
 class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
   NativeAd? _ad;
   bool _failed = false;
+  bool _requested = false;
+  bool _near = false;
   bool _revealed = false;
   bool _warmedNext = false;
   Timer? _revealTimer;
+  ScrollPosition? _position;
+
+  bool get _attached =>
+      widget.active && _ad != null && (_near || widget.fullPage);
 
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.active) _acquire();
   }
 
-  Future<void> _load() async {
-    final ad = await TwiceAds.acquire(widget.slot);
-    if (!mounted) {
-      if (ad != null) TwiceAds.release(widget.slot);
-      return;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final position = Scrollable.maybeOf(context)?.position;
+    if (!identical(position, _position)) {
+      _position?.removeListener(_checkNear);
+      _position = position;
+      _position?.addListener(_checkNear);
     }
-    if (ad == null) {
-      setState(() => _failed = true);
-      return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkNear());
+  }
+
+  @override
+  void didUpdateWidget(covariant FeedNativeAdCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) {
+      _acquire();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkNear());
     }
-    TwiceAds.markMounted(widget.slot, true);
-    setState(() => _ad = ad);
-    // Give the platform view a moment to draw its first frame, then fade the
-    // skeleton away. Avoids a white flash.
-    _revealTimer = Timer(const Duration(milliseconds: 220), () {
-      if (mounted) setState(() => _revealed = true);
-    });
+    _syncReveal();
   }
 
   @override
   void dispose() {
     _revealTimer?.cancel();
+    _position?.removeListener(_checkNear);
     if (_ad != null) {
-      TwiceAds.markMounted(widget.slot, false);
-      TwiceAds.release(widget.slot);
+      TwiceAds.release(widget.placement, widget.slot);
       _ad = null;
     }
     super.dispose();
   }
 
+  Future<void> _acquire() async {
+    if (_requested) return;
+    _requested = true;
+    final ad = await TwiceAds.obtainLease(widget.placement, widget.slot);
+    if (!mounted) {
+      if (ad != null) TwiceAds.release(widget.placement, widget.slot);
+      return;
+    }
+    if (ad == null) {
+      setState(() => _failed = true);
+      widget.onUnavailable?.call();
+      return;
+    }
+    setState(() => _ad = ad);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkNear());
+    _syncReveal();
+  }
+
+  /// Is this card within [TwiceAdConfig.mountLookahead] viewports of the
+  /// visible area? Only then is the native view attached.
+  bool _isNear() {
+    if (widget.fullPage) return true;
+    try {
+      final ro = context.findRenderObject();
+      final pos = _position;
+      if (ro is! RenderBox || !ro.attached || !ro.hasSize || pos == null) {
+        return true;
+      }
+      if (!pos.hasPixels || !pos.hasViewportDimension) return true;
+      final viewport = RenderAbstractViewport.maybeOf(ro);
+      if (viewport == null) return true;
+      final start = viewport.getOffsetToReveal(ro, 0.0).offset;
+      final end = start + ro.size.height;
+      final top = pos.pixels;
+      final bottom = pos.pixels + pos.viewportDimension;
+      final margin = pos.viewportDimension * TwiceAdConfig.mountLookahead;
+      return end > top - margin && start < bottom + margin;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  void _checkNear() {
+    if (!mounted) return;
+    final near = _isNear();
+    if (near != _near) {
+      setState(() => _near = near);
+      _syncReveal();
+    }
+  }
+
+  /// Hide the skeleton shortly after the native view is attached, never while
+  /// it is detached (so a re-attached ad never flashes an empty box).
+  void _syncReveal() {
+    if (_attached) {
+      if (!_revealed && _revealTimer == null) {
+        _revealTimer = Timer(const Duration(milliseconds: 260), () {
+          _revealTimer = null;
+          if (mounted && _attached) setState(() => _revealed = true);
+        });
+      }
+    } else {
+      _revealTimer?.cancel();
+      _revealTimer = null;
+      _revealed = false; // a rebuild always follows the callers of this
+    }
+  }
+
   void _onVisibility(VisibilityInfo info) {
     if (!mounted) return;
-    // Once this ad is mostly on screen, warm the next slot in the background.
     if (!_warmedNext && info.visibleFraction >= 0.5) {
       _warmedNext = true;
-      unawaited(TwiceAds.prefetch(widget.slot + 1));
+      unawaited(TwiceAds.prefetch(widget.placement, widget.slot + 1));
     }
+  }
+
+  Widget _adBox(double height) {
+    final Widget content;
+    if (_attached) {
+      content = Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          AdWidget(ad: _ad!),
+          // Removed (not faded) once the ad has drawn: fading a Flutter layer
+          // on top of a native view forces an expensive offscreen pass.
+          if (!_revealed) const _AdSkeleton(),
+        ],
+      );
+    } else if (_ad == null && widget.active && !_failed) {
+      content = const _AdSkeleton();
+    } else {
+      content = const ColoredBox(color: Colors.black);
+    }
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: ScrollThrough(child: content),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.fullPage) return _buildFullPage();
+    if (_failed) return const SizedBox(width: double.infinity);
     return VisibilityDetector(
-      key: ValueKey('twice-native-ad-${widget.slot}'),
+      key: ValueKey<String>('twice-ad-${widget.placement.name}-${widget.slot}'),
       onVisibilityChanged: _onVisibility,
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-        alignment: Alignment.topCenter,
-        child: _failed
-            ? const SizedBox(width: double.infinity)
-            : Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 6, 12, 6),
+              child: Text(
+                'Sponsored',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFA8A8A8),
+                ),
+              ),
+            ),
+            _adBox(TwiceAdConfig.adHeight),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFullPage() {
+    if (_failed) return const ColoredBox(color: Colors.black);
+    return ColoredBox(
+      color: Colors.black,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bottomInset = MediaQuery.paddingOf(context).bottom;
+          // Leave room for the label, the "Next video" button and the header.
+          final room = constraints.maxHeight -
+              widget.topInset -
+              bottomInset -
+              120;
+          final boxHeight =
+              room.clamp(280.0, TwiceAdConfig.adHeight).toDouble();
+          return Padding(
+            padding: EdgeInsets.only(top: widget.topInset, bottom: bottomInset),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
                       child: Text(
                         'Sponsored',
                         style: TextStyle(
@@ -108,37 +334,53 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
                         ),
                       ),
                     ),
-                    SizedBox(
-                      height: TwiceAdConfig.adHeight,
-                      width: double.infinity,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          if (_ad != null) AdWidget(ad: _ad!),
-                          // Skeleton sits ON TOP and fades out. (Fading the
-                          // Flutter skeleton is smooth; fading a native
-                          // platform view directly is not.)
-                          IgnorePointer(
-                            ignoring: _revealed,
-                            child: AnimatedOpacity(
-                              opacity: _revealed ? 0 : 1,
-                              duration: const Duration(milliseconds: 380),
-                              curve: Curves.easeOut,
-                              child: const _AdSkeleton(),
+                  ),
+                  _adBox(boxHeight),
+                  const SizedBox(height: 14),
+                  GestureDetector(
+                    onTap: widget.onContinue,
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF262626),
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            Icons.keyboard_arrow_up_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'Next video',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+            ),
+          );
+        },
       ),
     );
   }
 }
 
-/// Post-shaped placeholder: avatar + name line, big media block, text lines.
+/// Post-shaped placeholder: avatar + name line, big media block, text line.
 class _AdSkeleton extends StatelessWidget {
   const _AdSkeleton();
 
@@ -148,11 +390,11 @@ class _AdSkeleton extends StatelessWidget {
       color: Color(0xFF000000),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+        children: <Widget>[
           Padding(
             padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
             child: Row(
-              children: [
+              children: <Widget>[
                 TwiceSkeleton(width: 32, height: 32, borderRadius: 16),
                 SizedBox(width: 10),
                 TwiceSkeleton(width: 120, height: 12),
@@ -160,10 +402,7 @@ class _AdSkeleton extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: TwiceSkeleton(
-              height: double.infinity,
-              borderRadius: 0,
-            ),
+            child: TwiceSkeleton(height: double.infinity, borderRadius: 0),
           ),
           Padding(
             padding: EdgeInsets.fromLTRB(12, 10, 12, 8),

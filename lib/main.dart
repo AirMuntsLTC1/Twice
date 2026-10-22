@@ -1425,6 +1425,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
                   onCommentChanged: () {
                     if (mounted) setState(() {});
                   },
+                  adsActive: selected == 0,
                 ),
                 const SearchPage(),
                 VideosPage(
@@ -2963,7 +2964,11 @@ class FeedPage extends StatelessWidget {
     required this.onRefresh,
     required this.onCommentChanged,
     required this.onOpenComposer,
+    this.adsActive = true,
   });
+
+  /// False while another tab is on screen, so native ad views are detached.
+  final bool adsActive;
 
   final GlobalKey<StoryStripState> storyStripKey;
   final Map<String, dynamic> profile;
@@ -3017,7 +3022,9 @@ class FeedPage extends StatelessWidget {
             (entry) => entry.isAd
                 ? FeedNativeAdCard(
                     key: ValueKey('ad-slot-${entry.adSlot}'),
+                    placement: AdPlacement.feed,
                     slot: entry.adSlot!,
+                    active: adsActive,
                   )
                 : PostCard(
                     key: ValueKey('post-${entry.item!.id}'),

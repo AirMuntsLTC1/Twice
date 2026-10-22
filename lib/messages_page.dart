@@ -5,14 +5,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:video_player/video_player.dart';
 
 import 'data/inbox_controller.dart';
+import 'data/chat_controller.dart';
 import 'data/social_repository.dart';
 import 'widgets/skeleton.dart';
 
@@ -369,6 +367,15 @@ class _ConversationTile extends StatelessWidget {
 // CONVERSATION THREAD — Instagram style bubbles + media
 // =============================================================================
 
+// =============================================================================
+// CONVERSATION THREAD — Instagram style bubbles + media
+// =============================================================================
+
+
+// =============================================================================
+// CONVERSATION (Messenger-style chat room)
+// =============================================================================
+
 class ConversationPage extends StatefulWidget {
   const ConversationPage({
     super.key,
@@ -389,295 +396,92 @@ class ConversationPage extends StatefulWidget {
   State<ConversationPage> createState() => _ConversationPageState();
 }
 
-class _ConversationPageState extends State<ConversationPage> {
-  final _controller = TextEditingController();
+class _ConversationPageState extends State<ConversationPage>
+    with WidgetsBindingObserver {
+  final _text = TextEditingController();
   final _scroll = ScrollController();
-  List<Map<String, dynamic>> _messages = [];
-  bool _loading = true;
-  bool _sending = false;
-  String? _error;
-  RealtimeChannel? _channel;
-  final Map<String, Map<String, dynamic>> _senderCache = {};
-  bool _attachmentRefreshScheduled = false;
+  late final ChatController _chat;
+  bool _stickToBottom = true;
+  int _lastCount = 0;
 
-  void _scheduleAttachmentRefresh() {
-    if (_attachmentRefreshScheduled) return;
-    _attachmentRefreshScheduled = true;
-    Future<void>.delayed(const Duration(milliseconds: 300), () {
-      _attachmentRefreshScheduled = false;
-      if (mounted) unawaited(_refreshMessagesQuietly());
-    });
-  }
-
-  String get _myId => Supabase.instance.client.auth.currentUser?.id ?? '';
 
   @override
   void initState() {
     super.initState();
-    _load();
-    _subscribe();
+    WidgetsBinding.instance.addObserver(this);
+    _chat = ChatController(widget.conversationId);
+    _chat.addListener(_onChatChanged);
+    _scroll.addListener(_onScroll);
     InboxController.instance.markConversationRead(widget.conversationId);
+    unawaited(
+      _chat.start(
+        peerUserId:
+            widget.otherUserId.isEmpty ? null : widget.otherUserId,
+      ),
+    );
   }
 
   @override
-  void dispose() {
-    _controller.dispose();
-    _scroll.dispose();
-    final ch = _channel;
-    if (ch != null) {
-      unawaited(Supabase.instance.client.removeChannel(ch));
-    }
-    super.dispose();
-  }
-
-  void _subscribe() {
-    _channel = Supabase.instance.client
-        .channel('chat-${widget.conversationId}')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'messages',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'conversation_id',
-            value: widget.conversationId,
-          ),
-          callback: (payload) {
-            final row = Map<String, dynamic>.from(payload.newRecord);
-            if (_messages.any((m) => m['id'] == row['id'])) return;
-            unawaited(_refreshMessagesQuietly());
-          },
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'message_attachments',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'conversation_id',
-            value: widget.conversationId,
-          ),
-          callback: (_) => _scheduleAttachmentRefresh(),
-        )
-        .subscribe();
-  }
-
-  Future<void> _refreshMessagesQuietly() async {
-    try {
-      final rows = await SocialRepository.instance
-          .messagesDetailed(widget.conversationId);
-      if (!mounted) return;
-
-      for (final r in rows) {
-        final sid = (r['sender_id'] ?? '').toString();
-        final profile = r['sender_profile'];
-        if (sid.isNotEmpty && profile is Map) {
-          _senderCache[sid] = Map<String, dynamic>.from(profile);
-        }
-      }
-
-      // Merge server rows with pending local bubbles. Never show the loading
-      // skeleton during a background refresh.
-      final merged = List<Map<String, dynamic>>.from(rows);
-      final pending = _messages.where(
-        (m) => (m['id'] ?? '').toString().startsWith('local-'),
-      );
-
-      for (final local in pending) {
-        final localId = (local['id'] ?? '').toString();
-        final localTime = DateTime.tryParse(
-          (local['created_at'] ?? '').toString(),
-        );
-        final confirmed = merged.any((m) {
-          final serverTime = DateTime.tryParse(
-            (m['created_at'] ?? '').toString(),
-          );
-          return (m['sender_id'] ?? '').toString() ==
-                  (local['sender_id'] ?? '').toString() &&
-              (m['body'] ?? '').toString() ==
-                  (local['body'] ?? '').toString() &&
-              serverTime != null &&
-              localTime != null &&
-              serverTime.difference(localTime).inSeconds.abs() < 120;
-        });
-
-        if (confirmed) {
-          final matchIndex = merged.indexWhere((m) {
-            final serverTime = DateTime.tryParse(
-              (m['created_at'] ?? '').toString(),
-            );
-            return (m['sender_id'] ?? '').toString() ==
-                    (local['sender_id'] ?? '').toString() &&
-                (m['body'] ?? '').toString() ==
-                    (local['body'] ?? '').toString() &&
-                serverTime != null &&
-                localTime != null &&
-                serverTime.difference(localTime).inSeconds.abs() < 120;
-          });
-          if (matchIndex >= 0) {
-            merged[matchIndex]['_ui_id'] = localId;
-          }
-        } else if (!merged.any((m) => (m['id'] ?? '').toString() == localId)) {
-          merged.add(local);
-        }
-      }
-
-      merged.sort((a, b) {
-        final at = DateTime.tryParse((a['created_at'] ?? '').toString()) ??
-            DateTime(1970);
-        final bt = DateTime.tryParse((b['created_at'] ?? '').toString()) ??
-            DateTime(1970);
-        return at.compareTo(bt);
-      });
-
-      final oldIds = _messages.map((m) => '${m['id']}').join('|');
-      final newIds = merged.map((m) => '${m['id']}').join('|');
-      if (oldIds != newIds) {
-        setState(() => _messages = merged);
-        _scrollToBottom();
-      }
-
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_chat.load(initial: false));
       InboxController.instance.markConversationRead(widget.conversationId);
-    } catch (_) {
-      // Background refresh failures must not interrupt the visible chat.
     }
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final rows = await SocialRepository.instance
-          .messagesDetailed(widget.conversationId);
-      if (!mounted) return;
-      // Pre-cache sender profiles that came back
-      for (final r in rows) {
-        final sid = (r['sender_id'] ?? '').toString();
-        final p = r['sender_profile'];
-        if (sid.isNotEmpty && p is Map) {
-          _senderCache[sid] = Map<String, dynamic>.from(p);
-        }
-      }
-      setState(() {
-        _messages = rows;
-        _loading = false;
-      });
-      _scrollToBottom(jump: true);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
-    }
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    // With reverse:true, pixels near 0 means user is at the newest messages.
+    _stickToBottom = _scroll.position.pixels < 80;
   }
 
-  void _scrollToBottom({bool jump = false}) {
+  void _onChatChanged() {
+    if (!mounted) return;
+    final count = _chat.messages.length;
+    final grew = count > _lastCount;
+    setState(() {});
+    if (grew && _stickToBottom) {
+      _scrollToNewest();
+    }
+    _lastCount = count;
+  }
+
+  void _scrollToNewest({bool jump = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;
-      final target = _scroll.position.maxScrollExtent;
+      // reverse:true → newest at offset 0
       if (jump) {
-        _scroll.jumpTo(target);
+        _scroll.jumpTo(0);
       } else {
         _scroll.animateTo(
-          target,
-          duration: const Duration(milliseconds: 320),
+          0,
+          duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
         );
-        // Recheck after the list finishes laying out the newest bubble.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_scroll.hasClients) return;
-          final latest = _scroll.position.maxScrollExtent;
-          if ((_scroll.position.pixels - latest).abs() > 24) {
-            _scroll.animateTo(
-              latest,
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-            );
-          }
-        });
       }
     });
   }
 
   Future<void> _sendText() async {
-    final body = _controller.text.trim();
-    if (body.isEmpty || _sending) return;
-
-    final now = DateTime.now().toUtc();
-    final localId = 'local-${now.microsecondsSinceEpoch}';
-    final optimistic = <String, dynamic>{
-      'id': localId,
-      '_ui_id': localId,
-      'conversation_id': widget.conversationId,
-      'sender_id': _myId,
-      'body': body,
-      'media_url': null,
-      'media_type': null,
-      'created_at': now.toIso8601String(),
-    };
-
-    // Display and animate immediately; do not wait for Supabase.
-    setState(() {
-      _sending = true;
-      _messages = [..._messages, optimistic];
-    });
-    _scrollToBottom();
+    final body = _text.text.trim();
+    if (body.isEmpty || _chat.sending) return;
+    _text.clear();
+    _stickToBottom = true;
+    unawaited(HapticFeedback.lightImpact());
     unawaited(SystemSound.play(SystemSoundType.click).catchError((_) {}));
-
     try {
-      await SocialRepository.instance.sendMessage(
-        widget.conversationId,
-        body,
-      );
+      await _chat.sendText(body);
+      _scrollToNewest();
+    } catch (e) {
       if (!mounted) return;
-      _controller.clear();
-      // Confirm in the background; Realtime and this refresh are deduplicated.
-      unawaited(_refreshMessagesQuietly());
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _messages.removeWhere((m) => m['id'] == localId);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Send failed: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-
-  Future<void> _captureFromCamera() async {
-    if (_sending) return;
-    try {
-      final picked = await ImagePicker().pickImage(
-        source: ImageSource.camera,
-        imageQuality: 92,
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not send: $e')),
       );
-      if (picked == null || !mounted) return;
-      setState(() => _sending = true);
-      await SocialRepository.instance.sendMediaMessage(
-        conversationId: widget.conversationId,
-        file: File(picked.path),
-        mediaType: 'image',
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Camera failed: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
     }
   }
 
   Future<void> _openGifPicker() async {
-    if (_sending) return;
+    if (_chat.sending) return;
     final gif = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -685,22 +489,18 @@ class _ConversationPageState extends State<ConversationPage> {
       builder: (_) => const _TwiceGifPicker(),
     );
     if (gif == null || !mounted) return;
-    setState(() => _sending = true);
     try {
       final file = await _TwiceGifCache.instance.downloadGif(gif);
-      await SocialRepository.instance.sendMediaMessage(
-        conversationId: widget.conversationId,
-        file: file,
-        mediaType: 'image',
-      );
+      _stickToBottom = true;
+      unawaited(SystemSound.play(SystemSoundType.click).catchError((_) {}));
+      await _chat.sendMediaFile(file: file, mediaType: 'image');
+      _scrollToNewest();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not send GIF: $e')),
         );
       }
-    } finally {
-      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -721,7 +521,7 @@ class _ConversationPageState extends State<ConversationPage> {
     );
     if (paths.isEmpty) return;
 
-    final assets = await paths.first.getAssetListPaged(page: 0, size: 100);
+    final assets = await paths.first.getAssetListPaged(page: 0, size: 120);
     if (!mounted || assets.isEmpty) return;
 
     final selected = <AssetEntity>[];
@@ -746,20 +546,16 @@ class _ConversationPageState extends State<ConversationPage> {
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
-                    if (!video)
-                      TextButton(
-                        onPressed: selected.isEmpty
-                            ? null
-                            : () => Navigator.pop(
-                                  sheetContext,
-                                  List<AssetEntity>.from(selected),
-                                ),
-                        child: const Text('Next'),
-                      ),
+                    TextButton(
+                      onPressed: selected.isEmpty
+                          ? null
+                          : () => Navigator.pop(sheetContext, List.of(selected)),
+                      child: const Text('Send'),
+                    ),
                   ],
                 ),
               ),
@@ -769,71 +565,52 @@ class _ConversationPageState extends State<ConversationPage> {
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 3,
-                    mainAxisSpacing: 4,
                     crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
                   ),
                   itemCount: assets.length,
                   itemBuilder: (_, index) {
-                    final asset = assets[index];
-                    final isSelected =
-                        selected.any((item) => item.id == asset.id);
-
-                    return FutureBuilder<File?>(
-                      future: asset.file,
-                      builder: (_, snapshot) {
-                        final file = snapshot.data;
-                        return GestureDetector(
+                    final item = assets[index];
+                    final isSelected = selected.contains(item);
+                    return FutureBuilder<Uint8List?>(
+                      future: item.thumbnailDataWithSize(
+                        const ThumbnailSize(240, 240),
+                      ),
+                      builder: (context, snapshot) {
+                        return InkWell(
                           onTap: () {
                             if (video) {
-                              Navigator.pop(sheetContext, [asset]);
+                              Navigator.pop(sheetContext, [item]);
                               return;
                             }
-
                             setSheetState(() {
                               if (isSelected) {
-                                selected.removeWhere(
-                                  (item) => item.id == asset.id,
-                                );
+                                selected.remove(item);
                               } else if (selected.length < 10) {
-                                selected.add(asset);
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'You can select up to 10 photos.',
-                                    ),
-                                  ),
-                                );
+                                selected.add(item);
                               }
                             });
                           },
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              if (file == null)
-                                Container(color: _igElevated)
+                              if (snapshot.data != null)
+                                Image.memory(
+                                  snapshot.data!,
+                                  fit: BoxFit.cover,
+                                )
                               else
-                                Image.file(file, fit: BoxFit.cover),
+                                const ColoredBox(color: Color(0xFF1A1A1A)),
                               if (isSelected)
                                 Container(
-                                  color: Colors.black.withValues(alpha: 0.35),
-                                  alignment: Alignment.topRight,
-                                  padding: const EdgeInsets.all(6),
-                                  child: CircleAvatar(
-                                    radius: 12,
-                                    backgroundColor: _igBlue,
-                                    child: Text(
-                                      '${selected.indexWhere(
-                                            (item) => item.id == asset.id,
-                                          ) + 1}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                      ),
-                                    ),
+                                  color: Colors.black38,
+                                  alignment: Alignment.center,
+                                  child: const Icon(
+                                    Icons.check_circle,
+                                    color: _igBlue,
                                   ),
                                 ),
-                              if (video)
+                              if (item.type == AssetType.video)
                                 const Positioned(
                                   right: 6,
                                   bottom: 6,
@@ -850,22 +627,6 @@ class _ConversationPageState extends State<ConversationPage> {
                   },
                 ),
               ),
-              if (!video)
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: selected.isEmpty
-                          ? null
-                          : () => Navigator.pop(
-                                sheetContext,
-                                List<AssetEntity>.from(selected),
-                              ),
-                      child: Text('Send ${selected.length} photo(s)'),
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
@@ -873,44 +634,56 @@ class _ConversationPageState extends State<ConversationPage> {
     );
 
     if (chosen == null || chosen.isEmpty || !mounted) return;
+    _stickToBottom = true;
+    unawaited(SystemSound.play(SystemSoundType.click).catchError((_) {}));
 
-    setState(() => _sending = true);
     try {
-      final files = <File>[];
-      for (final asset in chosen) {
-        final file = await asset.file;
-        if (file != null) files.add(file);
-      }
-      if (files.isEmpty) {
-        throw StateError('Could not read the selected media.');
-      }
-
-      if (!video && files.length > 1) {
-        await SocialRepository.instance.sendMediaAlbum(
-          conversationId: widget.conversationId,
-          files: files,
-        );
+      if (video) {
+        final file = await chosen.first.file;
+        if (file == null) throw StateError('Could not open video file');
+        await _chat.sendMediaFile(file: file, mediaType: 'video');
+      } else if (chosen.length == 1) {
+        final file = await chosen.first.file;
+        if (file == null) throw StateError('Could not open photo');
+        await _chat.sendMediaFile(file: file, mediaType: 'image');
       } else {
-        await SocialRepository.instance.sendMediaMessage(
-          conversationId: widget.conversationId,
-          file: files.first,
-          mediaType: video ? 'video' : 'image',
-        );
+        final files = <File>[];
+        for (final a in chosen) {
+          final f = await a.file;
+          if (f != null) files.add(f);
+        }
+        if (files.isEmpty) throw StateError('Could not open photos');
+        await _chat.sendMediaAlbum(files);
       }
+      _scrollToNewest();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $e')),
+          SnackBar(content: Text('Could not send media: $e')),
         );
       }
-    } finally {
-      if (mounted) setState(() => _sending = false);
     }
   }
 
   @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _chat.removeListener(_onChatChanged);
+    _chat.dispose();
+    _text.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final otherProv = _avatarProvider(widget.otherAvatar);
+    final subtitle = _chat.otherOnline
+        ? 'Active now'
+        : (_chat.otherLastSeen != null
+            ? 'Active ${_relativeTime(_chat.otherLastSeen)}'
+            : (widget.otherUsername.isNotEmpty
+                ? '@${widget.otherUsername}'
+                : ''));
 
     return Scaffold(
       backgroundColor: _igBlack,
@@ -925,19 +698,11 @@ class _ConversationPageState extends State<ConversationPage> {
         title: Row(
           children: [
             CircleAvatar(
-              radius: 20,
+              radius: 18,
               backgroundColor: _igElevated,
-              backgroundImage: otherProv,
-              onBackgroundImageError: otherProv == null
-                  ? null
-                  : (exception, stackTrace) {},
-              child: otherProv == null
-                  ? Text(
-                      widget.title.isNotEmpty
-                          ? widget.title[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(fontSize: 13, color: Colors.white),
-                    )
+              backgroundImage: _avatarProvider(widget.otherAvatar),
+              child: _avatarProvider(widget.otherAvatar) == null
+                  ? const Icon(Icons.person, size: 18, color: _igMuted)
                   : null,
             ),
             const SizedBox(width: 10),
@@ -951,14 +716,19 @@ class _ConversationPageState extends State<ConversationPage> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                       fontSize: 16,
                     ),
                   ),
-                  if (widget.otherUsername.isNotEmpty)
+                  if (subtitle.isNotEmpty)
                     Text(
-                      '@${widget.otherUsername}',
-                      style: const TextStyle(color: _igMuted, fontSize: 12),
+                      subtitle,
+                      style: TextStyle(
+                        color: _chat.otherOnline
+                            ? const Color(0xFF31A24C)
+                            : _igMuted,
+                        fontSize: 12,
+                      ),
                     ),
                 ],
               ),
@@ -967,32 +737,51 @@ class _ConversationPageState extends State<ConversationPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.phone_outlined, color: Colors.white),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.videocam_outlined, color: Colors.white),
-            onPressed: () {},
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
+            tooltip: 'Refresh',
+            onPressed: () => _chat.load(initial: false),
           ),
         ],
       ),
       body: Column(
         children: [
-          Expanded(child: _thread()),
+          Expanded(child: _buildMessageList()),
           _composer(),
         ],
       ),
     );
   }
 
-  Widget _thread() {
-    if (_loading) return const ChatSkeleton();
-    if (_error != null) {
-      return Center(
-        child: TextButton(onPressed: _load, child: Text('Retry\n$_error')),
+  Widget _buildMessageList() {
+    if (_chat.loading && _chat.messages.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: _igBlue, strokeWidth: 2),
       );
     }
-    if (_messages.isEmpty) {
+    if (_chat.error != null && _chat.messages.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Could not load messages\n${_chat.error}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: _igMuted),
+              ),
+              TextButton(
+                onPressed: () => _chat.load(initial: true),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final msgs = _chat.messages;
+    if (msgs.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1015,46 +804,35 @@ class _ConversationPageState extends State<ConversationPage> {
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
-              'Say hello 👋',
-              style: TextStyle(color: _igMuted),
-            ),
+            const Text('Say hello 👋', style: TextStyle(color: _igMuted)),
           ],
         ),
       );
     }
 
+    // reverse:true keeps newest messages pinned to the bottom without jumping
+    // the list to the top when new rows are appended.
     return ListView.builder(
       key: PageStorageKey<String>('twice-chat-${widget.conversationId}'),
       controller: _scroll,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-      itemCount: _messages.length,
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      itemCount: msgs.length,
       itemBuilder: (_, i) {
-        final m = _messages[i];
-        final own = (m['sender_id'] ?? '') == _myId;
-        final prevOwn = i > 0 &&
-            (_messages[i - 1]['sender_id'] ?? '') == (m['sender_id'] ?? '');
-        return TweenAnimationBuilder<double>(
-          key: ValueKey<String>(
-            'chat-message-${m['_ui_id'] ?? m['id'] ?? m['created_at'] ?? i}',
-          ),
-          tween: Tween<double>(begin: 0, end: 1),
-          duration: const Duration(milliseconds: 190),
-          curve: Curves.easeOutCubic,
-          builder: (context, value, child) => Opacity(
-            opacity: value,
-            child: Transform.translate(
-              offset: Offset(own ? 14 * (1 - value) : -8 * (1 - value), 8 * (1 - value)),
-              child: child,
-            ),
-          ),
-          child: _Bubble(
-            message: m,
-            own: own,
-            showAvatar: !own && !prevOwn,
-            senderProfile: _senderCache[(m['sender_id'] ?? '').toString()],
-            fallbackAvatar: widget.otherAvatar,
-          ),
+        // i=0 is newest
+        final index = msgs.length - 1 - i;
+        final m = msgs[index];
+        final prev = index > 0 ? msgs[index - 1] : null;
+        final showAvatar = !m.isMine &&
+            (prev == null || prev.senderId != m.senderId);
+        return _ChatBubble(
+          key: ValueKey<String>('bubble-${m.clientId}'),
+          message: m,
+          showAvatar: showAvatar,
+          fallbackAvatar: widget.otherAvatar,
+          onRetry: m.status == ChatSendStatus.failed
+              ? () => unawaited(_chat.retry(m))
+              : null,
         );
       },
     );
@@ -1064,22 +842,24 @@ class _ConversationPageState extends State<ConversationPage> {
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+        padding: const EdgeInsets.fromLTRB(10, 8, 8, 10),
         decoration: const BoxDecoration(
           color: _igBlack,
           border: Border(top: BorderSide(color: _igElevated, width: 0.5)),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             IconButton(
-              icon: const Icon(Icons.camera_alt, color: _igBlue),
-              onPressed: _sending ? null : _captureFromCamera,
+              icon: const Icon(Icons.camera_alt_outlined, color: _igMuted),
+              onPressed:
+                  _chat.sending ? null : () => _pickAndSendMedia(video: false),
             ),
             Expanded(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 15),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1D1D1D),
+                  color: _igSurface,
                   border: Border.all(color: const Color(0xFF303030), width: 0.7),
                   borderRadius: BorderRadius.circular(28),
                 ),
@@ -1087,8 +867,9 @@ class _ConversationPageState extends State<ConversationPage> {
                   children: [
                     Expanded(
                       child: TextField(
-                        controller: _controller,
-                        style: const TextStyle(color: Colors.white, fontSize: 15),
+                        controller: _text,
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 15),
                         minLines: 1,
                         maxLines: 5,
                         textInputAction: TextInputAction.send,
@@ -1103,15 +884,27 @@ class _ConversationPageState extends State<ConversationPage> {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.image_outlined, color: _igMuted, size: 22),
-                      onPressed:
-                          _sending ? null : () => _pickAndSendMedia(video: false),
+                      icon: const Icon(Icons.image_outlined,
+                          color: _igMuted, size: 22),
+                      onPressed: _chat.sending
+                          ? null
+                          : () => _pickAndSendMedia(video: false),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      tooltip: 'Video',
+                      icon: const Icon(Icons.videocam_outlined,
+                          color: _igMuted, size: 22),
+                      onPressed: _chat.sending
+                          ? null
+                          : () => _pickAndSendMedia(video: true),
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
                       tooltip: 'GIF',
-                      icon: const Icon(Icons.gif_box_outlined, color: _igMuted, size: 24),
-                      onPressed: _sending ? null : _openGifPicker,
+                      icon: const Icon(Icons.gif_box_outlined,
+                          color: _igMuted, size: 24),
+                      onPressed: _chat.sending ? null : _openGifPicker,
                       visualDensity: VisualDensity.compact,
                     ),
                   ],
@@ -1120,7 +913,7 @@ class _ConversationPageState extends State<ConversationPage> {
             ),
             const SizedBox(width: 4),
             IconButton(
-              icon: _sending
+              icon: _chat.sending
                   ? const SizedBox(
                       width: 22,
                       height: 22,
@@ -1130,7 +923,7 @@ class _ConversationPageState extends State<ConversationPage> {
                       ),
                     )
                   : const Icon(Icons.send_rounded, color: _igBlue),
-              onPressed: _sending ? null : _sendText,
+              onPressed: _chat.sending ? null : _sendText,
             ),
           ],
         ),
@@ -1139,10 +932,268 @@ class _ConversationPageState extends State<ConversationPage> {
   }
 }
 
+// =============================================================================
+// Messenger-style bubble with send animation + status
+// =============================================================================
 
-// =============================================================================
-// GIPHY picker + persistent offline-first cache
-// =============================================================================
+class _ChatBubble extends StatelessWidget {
+  const _ChatBubble({
+    super.key,
+    required this.message,
+    required this.showAvatar,
+    this.fallbackAvatar = '',
+    this.onRetry,
+  });
+
+  final ChatMessage message;
+  final bool showAvatar;
+  final String fallbackAvatar;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final own = message.isMine;
+    final body = message.body;
+    final mediaUrl = (message.resolvedMediaUrl ??
+            (message.localFilePath != null
+                ? 'file://${message.localFilePath}'
+                : message.mediaUrl) ??
+            '')
+        .toString();
+    final mediaType = (message.mediaType ?? '').toString();
+    final createdAt = message.createdAt.toLocal();
+    final timeLabel =
+        '${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}';
+    final isRead = own && message.readAt != null;
+    final hasMedia = mediaUrl.isNotEmpty &&
+        (mediaUrl.startsWith('http') || mediaUrl.startsWith('file'));
+    final attachments = message.resolvedAttachments.where((a) {
+      final url = (a['resolved_media_url'] ?? a['local_file_path'] ?? '')
+          .toString();
+      return url.startsWith('http') ||
+          url.startsWith('file') ||
+          url.startsWith('/');
+    }).toList();
+    final hasAlbum = attachments.length > 1;
+
+    final avatarUrl =
+        (message.senderProfile?['avatar_url'] ?? fallbackAvatar).toString();
+    final prov = _avatarProvider(avatarUrl);
+
+    final statusIcon = !own
+        ? null
+        : message.status == ChatSendStatus.sending
+            ? const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.4,
+                  color: Colors.white70,
+                ),
+              )
+            : message.status == ChatSendStatus.failed
+                ? GestureDetector(
+                    onTap: onRetry,
+                    child: const Icon(Icons.error_outline,
+                        size: 14, color: Colors.redAccent),
+                  )
+                : Icon(
+                    isRead ? Icons.done_all : Icons.done,
+                    size: 14,
+                    color: isRead ? const Color(0xFF34B7F1) : Colors.white70,
+                  );
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(
+            own ? 16 * (1 - value) : -10 * (1 - value),
+            10 * (1 - value),
+          ),
+          child: child,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(
+          top: showAvatar ? 10 : 2,
+          bottom: 2,
+          left: own ? 48 : 0,
+          right: own ? 0 : 48,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisAlignment:
+              own ? MainAxisAlignment.end : MainAxisAlignment.start,
+          children: [
+            if (!own) ...[
+              if (showAvatar)
+                CircleAvatar(
+                  radius: 14,
+                  backgroundColor: _igElevated,
+                  backgroundImage: prov,
+                  child: prov == null
+                      ? const Icon(Icons.person, size: 14, color: _igMuted)
+                      : null,
+                )
+              else
+                const SizedBox(width: 28),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Column(
+                crossAxisAlignment:
+                    own ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: hasMedia || hasAlbum
+                        ? const EdgeInsets.all(4)
+                        : const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: own ? _igBubbleMe : _igBubbleThem,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(18),
+                        topRight: const Radius.circular(18),
+                        bottomLeft: Radius.circular(own ? 18 : 4),
+                        bottomRight: Radius.circular(own ? 4 : 18),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (hasAlbum)
+                          _AlbumGrid(attachments: attachments)
+                        else if (hasMedia)
+                          _MediaThumb(
+                            url: mediaUrl,
+                            isVideo: mediaType == 'video',
+                          ),
+                        if (body.trim().isNotEmpty) ...[
+                          if (hasMedia || hasAlbum) const SizedBox(height: 6),
+                          Padding(
+                            padding: (hasMedia || hasAlbum)
+                                ? const EdgeInsets.fromLTRB(8, 0, 8, 6)
+                                : EdgeInsets.zero,
+                            child: Text(
+                              body,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        timeLabel,
+                        style: const TextStyle(color: _igMuted, fontSize: 10),
+                      ),
+                      if (statusIcon != null) ...[
+                        const SizedBox(width: 4),
+                        statusIcon,
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MediaThumb extends StatelessWidget {
+  const _MediaThumb({required this.url, required this.isVideo});
+  final String url;
+  final bool isVideo;
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = _avatarProvider(url);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        children: [
+          SizedBox(
+            width: 220,
+            height: 280,
+            child: provider != null
+                ? Image(
+                    image: provider,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      color: _igElevated,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.broken_image, color: _igMuted),
+                    ),
+                  )
+                : Container(color: _igElevated),
+          ),
+          if (isVideo)
+            const Positioned.fill(
+              child: Center(
+                child: Icon(Icons.play_circle_fill,
+                    color: Colors.white, size: 48),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AlbumGrid extends StatelessWidget {
+  const _AlbumGrid({required this.attachments});
+  final List<Map<String, dynamic>> attachments;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = attachments.length.clamp(1, 4);
+    return SizedBox(
+      width: 220,
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: count == 1 ? 1 : 2,
+          crossAxisSpacing: 2,
+          mainAxisSpacing: 2,
+        ),
+        itemCount: count,
+        itemBuilder: (_, i) {
+          final a = attachments[i];
+          var url = (a['resolved_media_url'] ?? '').toString();
+          if (url.isEmpty) {
+            final local = (a['local_file_path'] ?? '').toString();
+            if (local.isNotEmpty) {
+              url = local.startsWith('file:') ? local : 'file://$local';
+            }
+          }
+          final prov = _avatarProvider(url);
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: prov != null
+                ? Image(image: prov, fit: BoxFit.cover)
+                : Container(color: _igElevated),
+          );
+        },
+      ),
+    );
+  }
+}
 
 const _giphyApiKey = 'RTUwFs8WOiFqRq0K9UBkWS0OlUy3tVza';
 
@@ -1373,330 +1424,6 @@ class _TwiceGifPickerState extends State<_TwiceGifPicker> {
               child: Text('Powered by GIPHY', style: TextStyle(color: _igMuted, fontSize: 11)),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Bubble extends StatelessWidget {
-  const _Bubble({
-    required this.message,
-    required this.own,
-    required this.showAvatar,
-    this.senderProfile,
-    this.fallbackAvatar = '',
-  });
-
-  final Map<String, dynamic> message;
-  final bool own;
-  final bool showAvatar;
-  final Map<String, dynamic>? senderProfile;
-  final String fallbackAvatar;
-
-  @override
-  Widget build(BuildContext context) {
-    final body = (message['body'] ?? '').toString();
-    final mediaUrl = (message['resolved_media_url'] ??
-            message['media_url'] ??
-            '')
-        .toString();
-    final mediaType = (message['media_type'] ?? '').toString();
-    final createdAt = DateTime.tryParse(
-      (message['created_at'] ?? '').toString(),
-    )?.toLocal();
-    final timeLabel = createdAt == null
-        ? ''
-        : '${createdAt.hour.toString().padLeft(2, '0')}:'
-          '${createdAt.minute.toString().padLeft(2, '0')}';
-    final isRead = own && message['read_at'] != null;
-    final hasMedia = mediaUrl.isNotEmpty &&
-        (mediaUrl.startsWith('http') || mediaUrl.startsWith('file'));
-    final rawAttachments = message['resolved_attachments'];
-    final attachments = rawAttachments is List
-        ? rawAttachments
-            .whereType<Map>()
-            .map((a) => Map<String, dynamic>.from(a))
-            .where((a) {
-              final url = (a['resolved_media_url'] ?? '').toString();
-              return url.startsWith('http') || url.startsWith('file');
-            })
-            .toList()
-        : <Map<String, dynamic>>[];
-    final hasAlbum = attachments.length > 1;
-
-    final avatarUrl = (senderProfile?['avatar_url'] ?? fallbackAvatar).toString();
-    final prov = _avatarProvider(avatarUrl);
-
-    return Padding(
-      padding: EdgeInsets.only(
-        top: showAvatar ? 10 : 2,
-        bottom: 2,
-        left: own ? 48 : 0,
-        right: own ? 0 : 48,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment:
-            own ? MainAxisAlignment.end : MainAxisAlignment.start,
-        children: [
-          if (!own) ...[
-            if (showAvatar)
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: _igElevated,
-                backgroundImage: prov,
-                onBackgroundImageError: prov == null
-                    ? null
-                    : (exception, stackTrace) {},
-                child: prov == null
-                    ? const Icon(Icons.person, size: 14, color: _igMuted)
-                    : null,
-              )
-            else
-              const SizedBox(width: 28),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.sizeOf(context).width * 0.72,
-              ),
-              padding: hasMedia
-                  ? EdgeInsets.zero
-                  : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: own ? _igBubbleMe : _igBubbleThem,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(20),
-                  topRight: const Radius.circular(20),
-                  bottomLeft: Radius.circular(own ? 20 : 5),
-                  bottomRight: Radius.circular(own ? 5 : 20),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (hasAlbum)
-                    _AlbumGrid(attachments: attachments)
-                  else if (hasMedia)
-                    _media(mediaUrl, mediaType),
-                  if (body.isNotEmpty)
-                    Padding(
-                      padding: hasMedia
-                          ? const EdgeInsets.fromLTRB(12, 8, 12, 10)
-                          : EdgeInsets.zero,
-                      child: Text(
-                        body,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          height: 1.35,
-                        ),
-                      ),
-                    ),
-                  if (timeLabel.isNotEmpty || isRead)
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        hasMedia ? 8 : 0,
-                        6,
-                        hasMedia ? 8 : 0,
-                        2,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          if (timeLabel.isNotEmpty)
-                            Text(
-                              timeLabel,
-                              style: const TextStyle(
-                                color: Colors.white60,
-                                fontSize: 10,
-                              ),
-                            ),
-                          if (isRead) ...[
-                            const SizedBox(width: 6),
-                            const Text(
-                              'Seen',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _media(String url, String type) {
-    if (type == 'video') {
-      return _InlineVideo(url: url);
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: Image(
-        image: _avatarProvider(url) ?? const NetworkImage(''),
-        fit: BoxFit.cover,
-        width: 220,
-        height: 280,
-        errorBuilder: (_, _, _) => Container(
-          width: 220,
-          height: 160,
-          color: _igElevated,
-          alignment: Alignment.center,
-          child: const Icon(Icons.broken_image, color: _igMuted),
-        ),
-      ),
-    );
-  }
-}
-
-class _AlbumGrid extends StatelessWidget {
-  const _AlbumGrid({required this.attachments});
-
-  final List<Map<String, dynamic>> attachments;
-
-  @override
-  Widget build(BuildContext context) {
-    final visible = attachments.take(4).toList();
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: SizedBox(
-        width: 240,
-        height: visible.length == 2 ? 132 : 220,
-        child: GridView.builder(
-          physics: const NeverScrollableScrollPhysics(),
-          padding: EdgeInsets.zero,
-          itemCount: visible.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 2,
-            crossAxisSpacing: 2,
-          ),
-          itemBuilder: (_, index) {
-            final item = visible[index];
-            final url = (item['resolved_media_url'] ?? '').toString();
-            final remaining = attachments.length - 4;
-
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                Image(
-                  image: _avatarProvider(url) ?? const NetworkImage(''),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    color: _igElevated,
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.broken_image_outlined,
-                      color: _igMuted,
-                    ),
-                  ),
-                ),
-                if (index == 3 && remaining > 0)
-                  Container(
-                    color: Colors.black.withValues(alpha: 0.58),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '+$remaining',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _InlineVideo extends StatefulWidget {
-  const _InlineVideo({required this.url});
-  final String url;
-
-  @override
-  State<_InlineVideo> createState() => _InlineVideoState();
-}
-
-class _InlineVideoState extends State<_InlineVideo> {
-  VideoPlayerController? _c;
-
-  @override
-  void initState() {
-    super.initState();
-    final uri = Uri.parse(widget.url);
-    _c = widget.url.startsWith('file')
-        ? VideoPlayerController.file(File.fromUri(uri))
-        : VideoPlayerController.networkUrl(uri);
-    _c!.initialize().then((_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _c?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = _c;
-    if (c == null || !c.value.isInitialized) {
-      return Container(
-        width: 220,
-        height: 280,
-        color: _igElevated,
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-        ),
-      );
-    }
-    return GestureDetector(
-      onTap: () {
-        if (c.value.isPlaying) {
-          c.pause();
-        } else {
-          c.play();
-        }
-        setState(() {});
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: SizedBox(
-          width: 220,
-          height: 280,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: c.value.size.width,
-                  height: c.value.size.height,
-                  child: VideoPlayer(c),
-                ),
-              ),
-              if (!c.value.isPlaying)
-                const Icon(Icons.play_circle_fill, color: Colors.white70, size: 48),
-            ],
-          ),
         ),
       ),
     );

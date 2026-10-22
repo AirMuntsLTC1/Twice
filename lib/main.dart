@@ -6547,8 +6547,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
   bool get isFollowing =>
       followLabel == 'Following' || followLabel == 'Connected';
 
-  bool get locked =>
-      isPrivate && !isSelf && labelLoaded && !isFollowing && posts.isEmpty;
+  bool get locked => isPrivate && !isSelf && labelLoaded && !isFollowing;
 
   String get username => (profile['username'] ?? '').toString();
   String get displayName => (profile['display_name'] ?? '').toString().trim();
@@ -6692,10 +6691,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => ConversationPage(
-            id: id,
-            title: shownName.isEmpty ? 'Message' : shownName,
-          ),
+          builder: (_) => messaging.MessagesPage(initialConversationId: id),
         ),
       );
     } catch (e) {

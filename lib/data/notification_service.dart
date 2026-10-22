@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'twice_native_notifications.dart';
+
 /// One in-app / system notification event.
 class TwiceNotificationEvent {
   TwiceNotificationEvent({
@@ -203,6 +205,26 @@ class NotificationService extends ChangeNotifier {
     if (previous != null && now.difference(previous) <= _dedupeWindow) return;
     _recentEvents[semanticKey] = now;
     _queue.add(event);
+    final foreground = lifecycle == AppLifecycleState.resumed;
+    int ageSeconds(TwiceNotificationEvent item) {
+      final createdAt = item.createdAt;
+      if (createdAt == null) return 0;
+      return now.difference(createdAt).inSeconds.clamp(0, 2147483647).toInt();
+    }
+
+    _queue.sort((a, b) {
+      final aPriority = TwiceNativeNotifications.instance.priorityFor(
+        a.type,
+        foreground,
+        ageSeconds(a),
+      );
+      final bPriority = TwiceNativeNotifications.instance.priorityFor(
+        b.type,
+        foreground,
+        ageSeconds(b),
+      );
+      return bPriority.compareTo(aPriority);
+    });
     unawaited(_drain());
     // System notification when app is not actively focused.
     if (lifecycle != AppLifecycleState.resumed) {

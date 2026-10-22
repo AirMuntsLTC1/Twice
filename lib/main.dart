@@ -20,6 +20,7 @@ import 'package:share_plus/share_plus.dart';
 import 'data/social_repository.dart';
 import 'data/inbox_controller.dart';
 import 'data/notification_service.dart';
+import 'data/push_notification_service.dart';
 import 'widgets/in_app_notification_banner.dart';
 import 'data/local_cache.dart';
 import 'data/twice_media.dart';
@@ -106,8 +107,9 @@ const violet = igBlue; // accent (was purple) -> Instagram blue
 const canvas = igBlack; // page background
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-const supabasePublishableKey =
-    String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+const supabasePublishableKey = String.fromEnvironment(
+  'SUPABASE_PUBLISHABLE_KEY',
+);
 
 bool get supabaseConfigured =>
     supabaseUrl.startsWith('https://') && supabasePublishableKey.isNotEmpty;
@@ -345,9 +347,8 @@ class TwiceApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Twice',
-      builder: (context, child) => InAppNotificationHost(
-        child: child ?? const SizedBox.shrink(),
-      ),
+      builder: (context, child) =>
+          InAppNotificationHost(child: child ?? const SizedBox.shrink()),
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       darkTheme: _twiceDarkTheme(),
@@ -870,7 +871,8 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                       child: const Text('Resend code'),
                     ),
                   ],
-                  if (widget.configurationMissing || widget.startupError != null) ...[
+                  if (widget.configurationMissing ||
+                      widget.startupError != null) ...[
                     const SizedBox(height: 18),
                     _ErrorPanel(
                       message: widget.startupError ?? 'Supabase configuration is missing. Check the GitHub Actions build secrets.',
@@ -987,7 +989,22 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     InboxController.instance.start();
     unawaited(NotificationService.instance.init());
+    NotificationService.instance.onTap = _handleNotificationTap;
+    unawaited(_startPushNotifications());
     _loadAll();
+  }
+
+  Future<void> _startPushNotifications() async {
+    try {
+      await _bootSupabase();
+      if (!mounted || !supabaseReady) {
+        debugPrint('Twice push deferred: Supabase is not ready');
+        return;
+      }
+      await PushNotificationService.instance.init();
+    } catch (error) {
+      debugPrint('Twice push startup failed: $error');
+    }
   }
 
   @override
@@ -1355,6 +1372,17 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
         },
       ),
     );
+  }
+
+  void _handleNotificationTap(TwiceNotificationEvent event) {
+    if (!mounted) return;
+    if (event.type == "message") {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const messaging.MessagesPage()),
+      );
+    } else {
+      setState(() => selected = 3);
+    }
   }
 
   void _message(String message) =>
@@ -7085,10 +7113,16 @@ class _CommentsSheetState extends State<CommentsSheet> {
     }
     final result = <Widget>[];
     for (final row in roots) {
-      result.add(_buildOneComment(row, onReply: () {
-        setState(() => replyingTo = row);
-      }));
-      final replies = children[row['id']?.toString() ?? ''] ?? <Map<String, dynamic>>[];
+      result.add(
+        _buildOneComment(
+          row,
+          onReply: () {
+            setState(() => replyingTo = row);
+          },
+        ),
+      );
+      final replies =
+          children[row['id']?.toString() ?? ''] ?? <Map<String, dynamic>>[];
       for (final reply in replies) {
         result.add(_buildOneComment(reply, isReply: true));
       }
@@ -7096,12 +7130,15 @@ class _CommentsSheetState extends State<CommentsSheet> {
     return result;
   }
 
-  Widget _buildOneComment(Map<String, dynamic> row, {
-    bool isReply = false, VoidCallback? onReply,
+  Widget _buildOneComment(
+    Map<String, dynamic> row, {
+    bool isReply = false,
+    VoidCallback? onReply,
   }) {
     final profile = row['profiles'] as Map? ?? {};
     final name = (profile['username'] ?? profile['display_name'] ?? 'user')
-        .toString().replaceFirst(RegExp(r'^@'), '');
+        .toString()
+        .replaceFirst(RegExp(r'^@'), '');
     return _commentRow(
       p: profile,
       userId: (profile['id'] ?? row['user_id'] ?? '').toString(),
@@ -7111,14 +7148,22 @@ class _CommentsSheetState extends State<CommentsSheet> {
       isReply: isReply,
       onReply: isReply ? null : onReply,
       status: row['_queued'] == true
-          ? const Padding(padding: EdgeInsets.only(top: 4), child: Text(
-              'Saved offline · waiting to sync',
-              style: TextStyle(fontSize: 11, color: muted)))
+          ? const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'Saved offline · waiting to sync',
+                style: TextStyle(fontSize: 11, color: muted),
+              ),
+            )
           : row['_failed'] == true
-              ? const Padding(padding: EdgeInsets.only(top: 4), child: Text(
-                  'Not synced · check connection and retry',
-                  style: TextStyle(fontSize: 11, color: igRed)))
-              : null,
+          ? const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'Not synced · check connection and retry',
+                style: TextStyle(fontSize: 11, color: igRed),
+              ),
+            )
+          : null,
     );
   }
 
@@ -7205,9 +7250,14 @@ class _CommentsSheetState extends State<CommentsSheet> {
                     onTap: onReply,
                     child: const Padding(
                       padding: EdgeInsets.symmetric(vertical: 3),
-                      child: Text('Reply', style: TextStyle(
-                        color: muted, fontSize: 12, fontWeight: FontWeight.w800,
-                      )),
+                      child: Text(
+                        'Reply',
+                        style: TextStyle(
+                          color: muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -7317,18 +7367,23 @@ class _CommentsSheetState extends State<CommentsSheet> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
               color: const Color(0xFF202020),
-              child: Row(children: [
-                Expanded(child: Text(
-                  'Replying to comment: ${(replyingTo!['body'] ?? '').toString()}',
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: muted, fontSize: 12),
-                )),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => setState(() => replyingTo = null),
-                  icon: const Icon(Icons.close, size: 18),
-                ),
-              ]),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Replying to comment: ${(replyingTo!['body'] ?? '').toString()}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: muted, fontSize: 12),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => setState(() => replyingTo = null),
+                    icon: const Icon(Icons.close, size: 18),
+                  ),
+                ],
+              ),
             ),
           SafeArea(
             top: false,
@@ -7362,7 +7417,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
                               onSubmitted: (_) => _send(),
                               style: const TextStyle(fontSize: 14),
                               decoration: InputDecoration(
-                                hintText: replyingTo == null ? 'Add a comment for $postUsername…' : 'Reply to comment…',
+                                hintText: replyingTo == null
+                                    ? 'Add a comment for $postUsername…'
+                                    : 'Reply to comment…',
                                 hintStyle: const TextStyle(
                                   color: muted,
                                   fontSize: 14,

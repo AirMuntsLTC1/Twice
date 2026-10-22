@@ -1,5 +1,3 @@
-##############################################################################
-
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -83,7 +81,8 @@ class InboxController extends ChangeNotifier {
           table: 'messages',
           callback: (payload) {
             final row = Map<String, dynamic>.from(payload.newRecord);
-            final inOpenChat = activeConversationId != null &&
+            final inOpenChat =
+                activeConversationId != null &&
                 (row['conversation_id'] ?? '').toString() ==
                     activeConversationId;
             if (!viewing && !inOpenChat) {
@@ -157,10 +156,7 @@ class InboxController extends ChangeNotifier {
     if (uid == null) return;
     try {
       final rows = await _db
-          .rpc(
-            'twice_unread_conversation_count',
-            params: {'p_user_id': uid},
-          )
+          .rpc('twice_unread_conversation_count', params: {'p_user_id': uid})
           .timeout(const Duration(seconds: 12));
       final count = (rows is int) ? rows : int.tryParse('$rows') ?? 0;
       if (count != messageUnread) {

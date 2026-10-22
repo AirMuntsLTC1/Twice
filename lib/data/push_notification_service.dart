@@ -122,13 +122,19 @@ class PushNotificationService {
   Future<void> registerToken() async {
     if (kIsWeb || !Platform.isAndroid) return;
 
-    final client = Supabase.instance.client;
-    final user = client.auth.currentUser;
-    if (user == null) return;
-
     try {
+      final client = Supabase.instance.client;
+      final user = client.auth.currentUser;
+      if (user == null) {
+        debugPrint('TWICE_PUSH token registration skipped: no signed-in user');
+        return;
+      }
+
       final token = await FirebaseMessaging.instance.getToken();
-      if (token == null || token.isEmpty) return;
+      if (token == null || token.isEmpty) {
+        debugPrint('TWICE_PUSH Firebase returned no FCM token');
+        return;
+      }
 
       await client.from('device_push_tokens').upsert({
         'user_id': user.id,
@@ -137,8 +143,10 @@ class PushNotificationService {
         'device_label': 'Android',
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       }, onConflict: 'token');
+
+      debugPrint('TWICE_PUSH token registered successfully');
     } catch (error) {
-      debugPrint('Twice push token registration failed: $error');
+      debugPrint('TWICE_PUSH token registration failed: $error');
     }
   }
 

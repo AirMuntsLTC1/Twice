@@ -1,5 +1,3 @@
-##############################################################################
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -147,7 +145,9 @@ class NotificationService extends ChangeNotifier {
               conversationId: data['conversationId']?.toString(),
               storyId: data['storyId']?.toString(),
               commentId: data['commentId']?.toString(),
-              createdAt: DateTime.tryParse((data['createdAt'] ?? '').toString()),
+              createdAt: DateTime.tryParse(
+                (data['createdAt'] ?? '').toString(),
+              ),
             );
             onTap?.call(event);
           } catch (e) {
@@ -157,8 +157,10 @@ class NotificationService extends ChangeNotifier {
       );
 
       if (Platform.isAndroid) {
-        final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+        final androidPlugin = _plugin
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin
+            >();
         await androidPlugin?.requestNotificationsPermission();
         await androidPlugin?.createNotificationChannel(
           const AndroidNotificationChannel(
@@ -191,9 +193,11 @@ class NotificationService extends ChangeNotifier {
   /// Enqueue a notification for in-app banner + optional system tray.
   Future<void> present(TwiceNotificationEvent event) async {
     final now = DateTime.now();
-    _recentEvents.removeWhere((_, time) => now.difference(time) > _dedupeWindow);
+    _recentEvents.removeWhere(
+      (_, time) => now.difference(time) > _dedupeWindow,
+    );
     final semanticKey = event.type == 'message'
-        ? 'message|${event.actorId ?? ''}|${event.conversationId ?? ''}|${event.createdAt?.toUtc().millisecondsSinceEpoch ~/ 1000 ?? 0}'
+        ? 'message|${event.actorId ?? ''}|${event.conversationId ?? ''}|${(event.createdAt?.toUtc().millisecondsSinceEpoch ?? 0) ~/ 1000}'
         : '${event.type}|${event.actorId ?? ''}|${event.postId ?? ''}|${event.storyId ?? ''}|${event.commentId ?? ''}|${event.body}';
     final previous = _recentEvents[semanticKey];
     if (previous != null && now.difference(previous) <= _dedupeWindow) return;
@@ -234,8 +238,7 @@ class NotificationService extends ChangeNotifier {
             .timeout(const Duration(seconds: 4));
         if (p != null) {
           final map = Map<String, dynamic>.from(p as Map);
-          actorName =
-              (map['display_name'] ?? map['username'] ?? '').toString();
+          actorName = (map['display_name'] ?? map['username'] ?? '').toString();
           actorAvatar = map['avatar_url']?.toString();
         }
       } catch (_) {}
@@ -301,8 +304,9 @@ class NotificationService extends ChangeNotifier {
     if (!_ready) await init();
     if (!_ready) return;
     try {
-      final channel =
-          event.type == 'message' ? 'twice_messages' : 'twice_social';
+      final channel = event.type == 'message'
+          ? 'twice_messages'
+          : 'twice_social';
       final android = AndroidNotificationDetails(
         channel,
         event.type == 'message' ? 'Twice messages' : 'Twice activity',

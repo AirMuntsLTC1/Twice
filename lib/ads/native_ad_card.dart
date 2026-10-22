@@ -135,7 +135,7 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
   @override
   void initState() {
     super.initState();
-    if (widget.active) _acquire();
+    if (widget.active) _resolve();
   }
 
   @override
@@ -154,7 +154,7 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
   void didUpdateWidget(covariant FeedNativeAdCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.active && !oldWidget.active) {
-      _acquire();
+      _resolve();
       WidgetsBinding.instance.addPostFrameCallback((_) => _checkNear());
     }
     _syncReveal();
@@ -171,9 +171,32 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
     super.dispose();
   }
 
-  Future<void> _acquire() async {
+  /// Starts in the slot's final state when it is already known, so the card
+  /// never changes height after its first layout.
+  void _resolve() {
     if (_requested) return;
     _requested = true;
+    switch (TwiceAds.outcomeOf(widget.placement, widget.slot)) {
+      case AdOutcome.failed:
+        _failed = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) widget.onUnavailable?.call();
+        });
+        return;
+      case AdOutcome.ready:
+        final ready = TwiceAds.tryLease(widget.placement, widget.slot);
+        if (ready != null) {
+          _ad = ready;
+          return;
+        }
+        break;
+      case AdOutcome.unknown:
+        break;
+    }
+    _acquire();
+  }
+
+  Future<void> _acquire() async {
     final ad = await TwiceAds.obtainLease(widget.placement, widget.slot);
     if (!mounted) {
       if (ad != null) TwiceAds.release(widget.placement, widget.slot);

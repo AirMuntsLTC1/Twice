@@ -26,8 +26,11 @@ class TwiceAdConfig {
   /// A loaded ad older than this is re-requested the next time it is needed.
   static const Duration adTtl = Duration(minutes: 50);
 
-  /// After a failed request (no fill / network), wait before asking again.
-  static const Duration failureBackoff = Duration(seconds: 60);
+  /// After a failed request (no fill / network) the slot stays "failed" for
+  /// this long. Cards remember the outcome, so a slot is built in its FINAL
+  /// size and never changes height afterwards (changing height above the
+  /// visible area is what made the feed jump while scrolling up).
+  static const Duration failureBackoff = Duration(minutes: 15);
 
   /// Give up on a single ad request after this long.
   static const Duration loadTimeout = Duration(seconds: 12);

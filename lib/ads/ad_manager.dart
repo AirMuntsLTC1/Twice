@@ -11,6 +11,10 @@ import 'ad_config.dart';
 /// did exactly that and left blank / stuck ads).
 enum AdPlacement { feed, videos }
 
+/// What is already known about a slot. Cards use it to start in their final
+/// size instead of "loading" and then resizing.
+enum AdOutcome { unknown, ready, failed }
+
 class _AdSlot {
   _AdSlot(this.ad) : loadedAt = DateTime.now();
   final NativeAd ad;
@@ -63,12 +67,33 @@ class TwiceAds {
 
   static String _key(AdPlacement p, int slot) => '${p.name}:$slot';
 
+  /// Known outcome for [slot] (see [AdOutcome]).
+  static AdOutcome outcomeOf(AdPlacement placement, int slot) {
+    final key = _key(placement, slot);
+    final s = _slots[key];
+    if (s != null && (!s.stale || s.leases > 0)) return AdOutcome.ready;
+    final failed = _failedAt[key];
+    if (failed != null &&
+        DateTime.now().difference(failed) < TwiceAdConfig.failureBackoff) {
+      return AdOutcome.failed;
+    }
+    return AdOutcome.unknown;
+  }
+
+  /// Synchronous lease of an ad that is already loaded (null if none).
+  static NativeAd? tryLease(AdPlacement placement, int slot) =>
+      _tryLease(placement, slot);
+
   // ------------------------------------------------------------------ init
 
   /// Call once at startup (fire and forget). Also warms feed slot 0.
   static Future<void> init() async {
     if (!await _ensureInit()) return;
-    unawaited(prefetch(AdPlacement.feed, 0));
+    // Resolve the first feed slots early, so their cards are built in their
+    // final size by the time the user scrolls to them.
+    for (var slot = 0; slot < 4; slot++) {
+      unawaited(prefetch(AdPlacement.feed, slot));
+    }
   }
 
   static Future<bool> _ensureInit() {

@@ -295,6 +295,7 @@ class SocialRepository {
     required String username,
     required String bio,
     AssetEntity? avatarAsset,
+    bool? isPrivate,
   }) async {
     final clean = username.trim().replaceFirst(RegExp(r'^@'), '').toLowerCase();
     if (!RegExp(r'^[a-z0-9_]{3,30}$').hasMatch(clean)) {
@@ -308,6 +309,9 @@ class SocialRepository {
       'username': clean,
       'bio': bio.trim(),
     };
+    if (isPrivate != null) {
+      values['is_private'] = isPrivate;
+    }
 
     if (avatarAsset != null) {
       final file = await avatarAsset.file;

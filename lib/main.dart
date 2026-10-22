@@ -7919,10 +7919,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
   late final TextEditingController bio;
   AssetEntity? photo;
   bool saving = false;
+  late bool privateAccount;
 
   @override
   void initState() {
     super.initState();
+    privateAccount = widget.profile['is_private'] == true;
     display = TextEditingController(
       text: (widget.profile['display_name'] ?? '').toString(),
     );
@@ -7978,6 +7980,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         username: username.text,
         bio: bio.text,
         avatarAsset: photo,
+        isPrivate: privateAccount,
       );
       await widget.onSaved();
       if (mounted) {
@@ -8153,6 +8156,36 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     maxLength: 160,
                     textCapitalization: TextCapitalization.sentences,
                     decoration: _decoration('Bio', Icons.notes_rounded),
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: igElevated,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFF363636)),
+                    ),
+                    child: SwitchListTile(
+                      value: privateAccount,
+                      onChanged: saving
+                          ? null
+                          : (value) => setState(() => privateAccount = value),
+                      secondary: Icon(
+                        privateAccount
+                            ? Icons.lock_outline_rounded
+                            : Icons.public_rounded,
+                        color: violet,
+                      ),
+                      title: const Text(
+                        'Private Account',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text(
+                        privateAccount
+                            ? 'Only approved followers can see your posts, photos and videos.'
+                            : 'Anyone can see your posts, photos and videos.',
+                      ),
+                      activeThumbColor: violet,
+                    ),
                   ),
                 ],
               ),

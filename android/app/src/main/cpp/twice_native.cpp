@@ -200,3 +200,60 @@ extern "C" __attribute__((visibility("default"))) int32_t
     }
     return 0;
 }
+
+
+// ---------------------------------------------------------------------------
+// TWICE notification / feed utility core (ABI v2).
+// Pure deterministic helpers: no allocations, locks, I/O, or global state.
+// These are safe for small hot-path scoring and payload validation.
+// ---------------------------------------------------------------------------
+extern "C" __attribute__((visibility("default")))
+int32_t twice_native_abi_version() { return 2; }
+
+extern "C" __attribute__((visibility("default")))
+int32_t twice_native_notification_type_code(const char *type) {
+    if (type == nullptr) return 0;
+    if (std::strcmp(type, "message") == 0) return 1;
+    if (std::strcmp(type, "like") == 0) return 2;
+    if (std::strcmp(type, "comment") == 0) return 3;
+    if (std::strcmp(type, "reply") == 0) return 4;
+    if (std::strcmp(type, "follow") == 0) return 5;
+    if (std::strcmp(type, "follow_request") == 0) return 6;
+    if (std::strcmp(type, "follow_accept") == 0) return 7;
+    if (std::strcmp(type, "story_reaction") == 0) return 8;
+    if (std::strcmp(type, "story_reply") == 0) return 9;
+    if (std::strcmp(type, "save") == 0) return 10;
+    return 0;
+}
+
+// Bounded priority used for ordering work queues, not as a security decision.
+extern "C" __attribute__((visibility("default")))
+int32_t twice_native_notification_priority_v2(
+    int32_t type_code, int32_t is_foreground, int32_t age_seconds) {
+    int32_t score = 10;
+    if (type_code == 1) score = 100;          // direct message
+    else if (type_code == 3 || type_code == 4) score = 70;
+    else if (type_code == 2) score = 55;
+    else if (type_code == 5 || type_code == 6 || type_code == 7) score = 45;
+    else if (type_code >= 8 && type_code <= 10) score = 35;
+    if (is_foreground != 0) score -= 5;
+    if (age_seconds > 0) {
+        const int32_t decay = std::min<int32_t>(30, age_seconds / 120);
+        score -= decay;
+    }
+    return std::max<int32_t>(0, std::min<int32_t>(100, score));
+}
+
+// Validate the target combination before Dart attempts navigation.
+// Message targets need a conversation; social targets need a post or story.
+extern "C" __attribute__((visibility("default")))
+int32_t twice_native_notification_target_valid(
+    int32_t type_code, int32_t has_conversation,
+    int32_t has_post, int32_t has_story) {
+    if (type_code == 1) return has_conversation != 0 ? 1 : 0;
+    if (type_code == 2 || type_code == 3 || type_code == 4 || type_code == 10)
+        return has_post != 0 ? 1 : 0;
+    if (type_code == 8 || type_code == 9)
+        return (has_story != 0 || has_post != 0) ? 1 : 0;
+    return 1;
+}

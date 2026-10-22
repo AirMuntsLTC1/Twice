@@ -174,5 +174,3 @@ class PushNotificationService {
     _started = false;
   }
 }
-
-

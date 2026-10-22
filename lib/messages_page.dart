@@ -72,7 +72,10 @@ DateTime? _asDate(dynamic v) {
 // =============================================================================
 
 class MessagesPage extends StatefulWidget {
-  const MessagesPage({super.key});
+  const MessagesPage({super.key, this.initialConversationId});
+
+  /// Optional deep-link target from a tapped push/system notification.
+  final String? initialConversationId;
 
   @override
   State<MessagesPage> createState() => _MessagesPageState();
@@ -136,6 +139,55 @@ class _MessagesPageState extends State<MessagesPage> {
       } catch (_) {}
     }
     await _refresh();
+    await _openInitialConversationIfRequested();
+  }
+
+  bool _initialConversationHandled = false;
+
+  Future<void> _openInitialConversationIfRequested() async {
+    if (_initialConversationHandled) return;
+    final target = (widget.initialConversationId ?? '').trim();
+    if (target.isEmpty) return;
+    _initialConversationHandled = true;
+    // Inbox refresh may not include a new conversation immediately; retry once
+    // after a short bounded delay, without creating a navigation loop.
+    Map<String, dynamic>? row;
+    for (final candidate in _rows) {
+      if ((candidate['conversation_id'] ?? '').toString() == target) {
+        row = candidate;
+        break;
+      }
+    }
+    if (row == null) {
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      if (!mounted) return;
+      await _refresh();
+      for (final candidate in _rows) {
+        if ((candidate['conversation_id'] ?? '').toString() == target) {
+          row = candidate;
+          break;
+        }
+      }
+    }
+    if (!mounted || row == null) return;
+    await _openConversationRow(row);
+  }
+
+  Future<void> _openConversationRow(Map<String, dynamic> r) async {
+    final convId = (r['conversation_id'] ?? '').toString();
+    if (convId.isEmpty || !mounted) return;
+    _markLocalRead(convId);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ConversationPage(
+          conversationId: convId,
+          title: (r['other_name'] ?? r['other_username'] ?? 'Chat').toString(),
+          otherUserId: (r['other_user_id'] ?? '').toString(),
+          otherAvatar: (r['other_avatar'] ?? '').toString(),
+          otherUsername: (r['other_username'] ?? '').toString(),
+        ),
+      ),
+    );
   }
 
   void _listen() {
@@ -351,19 +403,7 @@ class _MessagesPageState extends State<MessagesPage> {
             key: ValueKey<String>('conv-$convId'),
             data: r,
             onOpen: () async {
-              _markLocalRead(convId);
-              await Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => ConversationPage(
-                    conversationId: convId,
-                    title: (r['other_name'] ?? r['other_username'] ?? 'Chat')
-                        .toString(),
-                    otherUserId: (r['other_user_id'] ?? '').toString(),
-                    otherAvatar: (r['other_avatar'] ?? '').toString(),
-                    otherUsername: (r['other_username'] ?? '').toString(),
-                  ),
-                ),
-              );
+              await _openConversationRow(r);
               // Quiet re-sync in the background; the list stays on screen.
               if (mounted) unawaited(_refresh());
             },
@@ -1969,7 +2009,7 @@ class _TwiceGifPickerState extends State<_TwiceGifPicker> {
     try {
       final endpoint = query.isEmpty ? 'trending' : 'search';
       final uri = Uri.https('api.giphy.com', '/v1/gifs/$endpoint', {
-        'api_key': _giphyApiKey,
+        'api_key': [REDACTED],
         'limit': '40',
         'rating': 'pg-13',
         if (query.isNotEmpty) 'q': query,

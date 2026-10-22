@@ -106,7 +106,7 @@ const muted = Color(0xFFA8A8A8); // secondary text
 const violet = igBlue; // accent (was purple) -> Instagram blue
 const canvas = igBlack; // page background
 
-const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const supabaseUrl = [REDACTED]'SUPABASE_URL');
 const supabasePublishableKey = String.fromEnvironment(
   'SUPABASE_PUBLISHABLE_KEY',
 );
@@ -1374,15 +1374,44 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
     );
   }
 
-  void _handleNotificationTap(TwiceNotificationEvent event) {
+  Future<void> _handleNotificationTap(TwiceNotificationEvent event) async {
     if (!mounted) return;
-    if (event.type == "message") {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const messaging.MessagesPage()),
+    if (event.type == 'message' ||
+        (event.conversationId != null && event.conversationId!.isNotEmpty)) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => messaging.MessagesPage(
+            initialConversationId: event.conversationId,
+          ),
+        ),
       );
-    } else {
-      setState(() => selected = 3);
+      return;
     }
+
+    final postId = (event.postId ?? '').trim();
+    if (postId.isNotEmpty &&
+        {'like', 'comment', 'reply', 'save'}.contains(event.type)) {
+      try {
+        final data = await SocialRepository.instance.postById(postId);
+        if (!mounted) return;
+        if (data != null) {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => PostDetailPage(
+                post: SocialPost(data),
+                openCommentsOnOpen:
+                    event.type == 'comment' || event.type == 'reply',
+              ),
+            ),
+          );
+          return;
+        }
+      } catch (error) {
+        debugPrint('Notification post deep link failed: $error');
+      }
+    }
+    // Follow/story events and unavailable post targets land in Activity.
+    setState(() => selected = 3);
   }
 
   void _message(String message) =>

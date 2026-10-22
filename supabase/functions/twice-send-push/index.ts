@@ -222,13 +222,11 @@ serve(async (req) => {
           body: JSON.stringify({
             message: {
               token: tokenRow.token,
-              notification: { title: text.title, body: text.body },
+              // Data-only: Android must not auto-render a generic
+              // notification; the app's local notification service handles it.
               data,
               android: {
                 priority: "HIGH",
-                notification: {
-                  channel_id: type === "message" ? "twice_messages" : "twice_social",
-                },
               },
             },
           }),

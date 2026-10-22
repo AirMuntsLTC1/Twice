@@ -11,8 +11,46 @@ import 'notification_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> twiceFirebaseBackgroundHandler(RemoteMessage message) async {
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp();
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp();
+    }
+
+    // Data-only pushes need explicit local display in the background.
+    await NotificationService.instance.init();
+    NotificationService.instance.setLifecycle(AppLifecycleState.paused);
+
+    final data = message.data;
+    String? value(String key) {
+      final result = data[key]?.toString();
+      return result == null || result.isEmpty ? null : result;
+    }
+
+    final type = value('type') ?? 'notification';
+    final event = TwiceNotificationEvent(
+      id:
+          value('id') ??
+          message.messageId ??
+          DateTime.now().microsecondsSinceEpoch.toString(),
+      type: type,
+      title: value('title') ?? TwiceNotificationEvent.friendlyTitle(type),
+      body:
+          value('body') ??
+          TwiceNotificationEvent.defaultBody(type, value('actorName') ?? ''),
+      actorId: value('actorId'),
+      actorName: value('actorName'),
+      actorAvatar: value('actorAvatar'),
+      postId: value('postId'),
+      conversationId: value('conversationId'),
+      storyId: value('storyId'),
+      commentId: value('commentId'),
+      createdAt: DateTime.tryParse(value('createdAt') ?? ''),
+    );
+
+    await NotificationService.instance.presentBackground(event);
+  } catch (error, stack) {
+    debugPrint('Twice background notification failed: $error');
+    debugPrintStack(stackTrace: stack);
   }
 }
 

@@ -197,6 +197,14 @@ class NotificationService extends ChangeNotifier {
     lifecycle = state;
   }
 
+  /// Display a system notification from an FCM background isolate.
+  /// Does not enqueue an in-app banner or trigger foreground haptics.
+  Future<void> presentBackground(TwiceNotificationEvent event) async {
+    if (!_ready) await init();
+    if (!_ready) return;
+    await _showSystem(event);
+  }
+
   /// Enqueue a notification for in-app banner + optional system tray.
   Future<void> present(TwiceNotificationEvent event) async {
     final now = DateTime.now();

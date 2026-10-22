@@ -17,6 +17,10 @@ class InboxController extends ChangeNotifier {
   bool viewing = false;
   int version = 0;
 
+  /// Conversation currently open on screen. Incoming messages for it must not
+  /// pop a banner or bump the unread badge (the chat shows them live).
+  String? activeConversationId;
+
   RealtimeChannel? _channel;
   RealtimeChannel? _msgChannel;
   Timer? _poll;
@@ -48,6 +52,13 @@ class InboxController extends ChangeNotifier {
             version++;
             final row = Map<String, dynamic>.from(payload.newRecord);
             final type = (row['type'] ?? '').toString();
+            if (type == 'message' && activeConversationId != null) {
+              final convo = (row['conversation_id'] ?? '').toString();
+              if (convo.isEmpty || convo == activeConversationId) {
+                // Already looking at this chat; it is marked read there.
+                return;
+              }
+            }
             if (viewing) {
               markAllRead();
             } else {
@@ -69,12 +80,15 @@ class InboxController extends ChangeNotifier {
           schema: 'public',
           table: 'messages',
           callback: (payload) {
-            if (!viewing) {
+            final row = Map<String, dynamic>.from(payload.newRecord);
+            final inOpenChat = activeConversationId != null &&
+                (row['conversation_id'] ?? '').toString() ==
+                    activeConversationId;
+            if (!viewing && !inOpenChat) {
               refreshMessageUnread();
             }
-            final row = Map<String, dynamic>.from(payload.newRecord);
             final sender = (row['sender_id'] ?? '').toString();
-            if (sender.isNotEmpty && sender != uid) {
+            if (!inOpenChat && sender.isNotEmpty && sender != uid) {
               // Only toast if we are not already in a focused viewing state
               // for messages; InboxController.viewing is Activity/Messages list.
               // Conversation page sets its own read state.

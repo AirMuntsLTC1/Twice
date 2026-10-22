@@ -40,6 +40,40 @@ class OfflineMediaCache {
     return null;
   }
 
+  /// Copies a local file (for example a photo you just sent) into the cache
+  /// under the same key the downloader would use, so the chat never has to
+  /// download its own media again.
+  Future<String?> storeFile({
+    required String bucket,
+    required String objectPath,
+    required File source,
+  }) async {
+    try {
+      final existing = await existingUri(bucket, objectPath);
+      if (existing != null) return existing;
+      if (!await source.exists()) return null;
+      final dir = await _directory();
+      final target = File(p.join(dir.path, _fileName(bucket, objectPath)));
+      final partial = File('${target.path}.part');
+      await source.copy(partial.path);
+      await partial.rename(target.path);
+      return target.uri.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Removes a cached object (used when a cached file turns out to be corrupt).
+  Future<void> remove(String bucket, String objectPath) async {
+    try {
+      final file = File(p.join(
+        (await _directory()).path,
+        _fileName(bucket, objectPath),
+      ));
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
   /// Returns a file:// URI only after a complete download has been committed.
   /// Large items are skipped rather than exhausting memory or disk.
   Future<String?> cacheFromUrl({
@@ -47,10 +81,12 @@ class OfflineMediaCache {
     required String objectPath,
     required String signedUrl,
     required bool isVideo,
+    int? maxBytesOverride,
   }) async {
     final existing = await existingUri(bucket, objectPath);
     if (existing != null) return existing;
-    final maxBytes = isVideo ? 80 * 1024 * 1024 : 18 * 1024 * 1024;
+    final maxBytes =
+        maxBytesOverride ?? (isVideo ? 80 * 1024 * 1024 : 18 * 1024 * 1024);
     final dir = await _directory();
     final target = File(p.join(dir.path, _fileName(bucket, objectPath)));
     final partial = File('${target.path}.part');

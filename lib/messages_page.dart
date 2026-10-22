@@ -32,7 +32,10 @@ const _igPlaceholder = Color(0xFF1C1C1E);
 /// Stable image provider. Network images are keyed by their storage path (not
 /// by the signed-URL token), cached on disk and decoded at a small size, so
 /// avatars never blink when a signed URL is refreshed.
-ImageProvider<Object>? _avatarProvider(String? source, {int maxDimension = 256}) {
+ImageProvider<Object>? _avatarProvider(
+  String? source, {
+  int maxDimension = 256,
+}) {
   final v = (source ?? '').trim();
   if (v.isEmpty) return null;
   if (v.startsWith('file://')) {
@@ -239,10 +242,7 @@ class _MessagesPageState extends State<MessagesPage> {
     if (_uid.isEmpty) return;
     final serial = [
       for (final r in rows)
-        {
-          ...r,
-          'last_at': _asDate(r['last_at'])?.toIso8601String(),
-        },
+        {...r, 'last_at': _asDate(r['last_at'])?.toIso8601String()},
     ];
     unawaited(
       LocalCache.instance
@@ -323,7 +323,9 @@ class _MessagesPageState extends State<MessagesPage> {
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Open a profile and tap Message to start a chat'),
+                  content: Text(
+                    'Open a profile and tap Message to start a chat',
+                  ),
                 ),
               );
             },
@@ -415,7 +417,11 @@ class _MessagesPageState extends State<MessagesPage> {
 }
 
 class _ConversationTile extends StatelessWidget {
-  const _ConversationTile({super.key, required this.data, required this.onOpen});
+  const _ConversationTile({
+    super.key,
+    required this.data,
+    required this.onOpen,
+  });
   final Map<String, dynamic> data;
   final VoidCallback onOpen;
 
@@ -456,8 +462,9 @@ class _ConversationTile extends StatelessWidget {
               radius: 28,
               backgroundColor: _igElevated,
               backgroundImage: prov,
-              onBackgroundImageError:
-                  prov == null ? null : (exception, stackTrace) {},
+              onBackgroundImageError: prov == null
+                  ? null
+                  : (exception, stackTrace) {},
               child: prov == null
                   ? Text(
                       name.isNotEmpty ? name[0].toUpperCase() : '?',
@@ -705,9 +712,8 @@ class _ConversationPageState extends State<ConversationPage>
       _scrollToNewest();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not send GIF: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not send GIF: $e')));
       }
     }
   }
@@ -761,7 +767,8 @@ class _ConversationPageState extends State<ConversationPage>
                     TextButton(
                       onPressed: selected.isEmpty
                           ? null
-                          : () => Navigator.pop(sheetContext, List.of(selected)),
+                          : () =>
+                                Navigator.pop(sheetContext, List.of(selected)),
                       child: const Text('Send'),
                     ),
                   ],
@@ -853,9 +860,8 @@ class _ConversationPageState extends State<ConversationPage>
       _scrollToNewest();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not send media: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not send media: $e')));
       }
     }
   }
@@ -874,8 +880,9 @@ class _ConversationPageState extends State<ConversationPage>
       subtitle = 'Active ${_relativeTime(_chat.otherLastSeen)}';
       subtitleColor = _igMuted;
     } else {
-      subtitle =
-          widget.otherUsername.isNotEmpty ? '@${widget.otherUsername}' : '';
+      subtitle = widget.otherUsername.isNotEmpty
+          ? '@${widget.otherUsername}'
+          : '';
       subtitleColor = _igMuted;
     }
 
@@ -1049,7 +1056,8 @@ class _ConversationPageState extends State<ConversationPage>
         final prev = index > 0 ? msgs[index - 1] : null;
         final showAvatar =
             !m.isMine && (prev == null || prev.senderId != m.senderId);
-        final showDay = prev == null ||
+        final showDay =
+            prev == null ||
             !_sameDay(prev.createdAt.toLocal(), m.createdAt.toLocal());
         return _ChatBubble(
           key: ValueKey<String>(m.clientId),
@@ -1091,7 +1099,10 @@ class _ConversationPageState extends State<ConversationPage>
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
                   color: _igSurface,
-                  border: Border.all(color: const Color(0xFF303030), width: 0.7),
+                  border: Border.all(
+                    color: const Color(0xFF303030),
+                    width: 0.7,
+                  ),
                   borderRadius: BorderRadius.circular(28),
                 ),
                 child: Row(
@@ -1099,7 +1110,10 @@ class _ConversationPageState extends State<ConversationPage>
                     Expanded(
                       child: TextField(
                         controller: _text,
-                        style: const TextStyle(color: Colors.white, fontSize: 15),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                        ),
                         minLines: 1,
                         maxLines: 5,
                         textInputAction: TextInputAction.send,
@@ -1116,22 +1130,31 @@ class _ConversationPageState extends State<ConversationPage>
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.image_outlined,
-                          color: _igMuted, size: 22),
+                      icon: const Icon(
+                        Icons.image_outlined,
+                        color: _igMuted,
+                        size: 22,
+                      ),
                       onPressed: () => _pickAndSendMedia(video: false),
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
                       tooltip: 'Video',
-                      icon: const Icon(Icons.videocam_outlined,
-                          color: _igMuted, size: 22),
+                      icon: const Icon(
+                        Icons.videocam_outlined,
+                        color: _igMuted,
+                        size: 22,
+                      ),
                       onPressed: () => _pickAndSendMedia(video: true),
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
                       tooltip: 'GIF',
-                      icon: const Icon(Icons.gif_box_outlined,
-                          color: _igMuted, size: 24),
+                      icon: const Icon(
+                        Icons.gif_box_outlined,
+                        color: _igMuted,
+                        size: 24,
+                      ),
                       onPressed: _openGifPicker,
                       visualDensity: VisualDensity.compact,
                     ),
@@ -1159,8 +1182,18 @@ String _dayLabel(DateTime d) {
   if (_sameDay(d, now)) return 'Today';
   if (_sameDay(d, now.subtract(const Duration(days: 1)))) return 'Yesterday';
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${months[d.month - 1]} ${d.day}';
 }
@@ -1185,8 +1218,11 @@ class _JumpToLatest extends StatelessWidget {
               shape: BoxShape.circle,
               border: Border.all(color: const Color(0xFF3A3A3A), width: 0.7),
             ),
-            child: const Icon(Icons.keyboard_arrow_down_rounded,
-                color: Colors.white, size: 26),
+            child: const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: Colors.white,
+              size: 26,
+            ),
           ),
           if (count > 0)
             Positioned(
@@ -1240,11 +1276,7 @@ class _AssetThumbState extends State<_AssetThumb> {
       builder: (context, snapshot) {
         final data = snapshot.data;
         if (data == null) return const ColoredBox(color: Color(0xFF1A1A1A));
-        return Image.memory(
-          data,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-        );
+        return Image.memory(data, fit: BoxFit.cover, gaplessPlayback: true);
       },
     );
   }
@@ -1421,10 +1453,17 @@ class _ChatBubble extends StatelessWidget {
       statusIcon = const SizedBox(
         width: 12,
         height: 12,
-        child: CircularProgressIndicator(strokeWidth: 1.4, color: Colors.white70),
+        child: CircularProgressIndicator(
+          strokeWidth: 1.4,
+          color: Colors.white70,
+        ),
       );
     } else if (m.status == ChatSendStatus.failed) {
-      statusIcon = const Icon(Icons.error_outline, size: 14, color: Colors.redAccent);
+      statusIcon = const Icon(
+        Icons.error_outline,
+        size: 14,
+        color: Colors.redAccent,
+      );
     } else {
       statusIcon = Icon(
         isRead ? Icons.done_all : Icons.done,
@@ -1442,7 +1481,9 @@ class _ChatBubble extends StatelessWidget {
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment: own ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: own
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         children: [
           if (!own) ...[
             if (showAvatar)
@@ -1460,8 +1501,9 @@ class _ChatBubble extends StatelessWidget {
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment:
-                  own ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: own
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 GestureDetector(
                   onTap: onRetry,
@@ -1469,7 +1511,10 @@ class _ChatBubble extends StatelessWidget {
                   child: Container(
                     padding: hasMedia
                         ? const EdgeInsets.all(4)
-                        : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        : const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
                     decoration: BoxDecoration(
                       color: own ? _igBubbleMe : _igBubbleThem,
                       borderRadius: BorderRadius.only(
@@ -1752,7 +1797,8 @@ class _ChatVideoState extends State<_ChatVideo> {
     if (!mounted || _url != null) return;
     setState(() {
       // Offline fallback: same stable key, so an already-cached poster shows.
-      _url = signed ??
+      _url =
+          signed ??
           'https://offline.invalid/storage/v1/object/sign/chat-media/$path';
     });
   }
@@ -1775,8 +1821,11 @@ class _ChatVideoState extends State<_ChatVideo> {
           ? const ColoredBox(
               color: _igPlaceholder,
               child: Center(
-                child: Icon(Icons.play_circle_fill,
-                    color: Colors.white54, size: 48),
+                child: Icon(
+                  Icons.play_circle_fill,
+                  color: Colors.white54,
+                  size: 48,
+                ),
               ),
             )
           : TwiceVideoPoster(
@@ -1902,13 +1951,17 @@ class _TwiceGifCache {
     try {
       final f = File(p.join((await _dir()).path, _name(url, 'preview.gif')));
       return await f.exists() && await f.length() > 0 ? f : null;
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> cachePreview(String url) async {
     try {
       if (await cachedPreview(url) != null) return;
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 12));
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 12));
       if (response.statusCode != 200 || response.bodyBytes.isEmpty) return;
       final f = File(p.join((await _dir()).path, _name(url, 'preview.gif')));
       await f.writeAsBytes(response.bodyBytes, flush: true);
@@ -1923,7 +1976,9 @@ class _TwiceGifCache {
     final target = File(p.join((await _dir()).path, _name(url, 'gif')));
     if (await target.exists() && await target.length() > 0) return target;
     try {
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 25));
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 25));
       if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
         throw HttpException('GIPHY returned ${response.statusCode}');
       }
@@ -1931,8 +1986,9 @@ class _TwiceGifCache {
       return target;
     } catch (_) {
       // If offline, send the already-cached animated preview for this GIF.
-      final previewUrl = (images['fixed_width'] as Map?)?['url']?.toString()
-          ?? (images['preview_gif'] as Map?)?['url']?.toString();
+      final previewUrl =
+          (images['fixed_width'] as Map?)?['url']?.toString() ??
+          (images['preview_gif'] as Map?)?['url']?.toString();
       if (previewUrl != null) {
         final cached = await cachedPreview(previewUrl);
         if (cached != null) return cached;
@@ -1947,9 +2003,14 @@ class _TwiceGifCache {
       if (!await f.exists()) return [];
       final decoded = jsonDecode(await f.readAsString());
       return decoded is List
-          ? decoded.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+          ? decoded
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
           : [];
-    } catch (_) { return []; }
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<void> saveResults(List<Map<String, dynamic>> rows) async {
@@ -1998,47 +2059,66 @@ class _TwiceGifPickerState extends State<_TwiceGifPicker> {
   Future<void> _loadOfflineFirst() async {
     final cached = await _TwiceGifCache.instance.cachedResults();
     if (mounted && cached.isNotEmpty) {
-      setState(() { _gifs = cached; _loading = false; });
+      setState(() {
+        _gifs = cached;
+        _loading = false;
+      });
     }
     await _fetch('');
   }
 
   Future<void> _fetch(String query) async {
     if (!mounted) return;
-    setState(() { _loading = _gifs.isEmpty; _error = null; });
+    setState(() {
+      _loading = _gifs.isEmpty;
+      _error = null;
+    });
     try {
       final endpoint = query.isEmpty ? 'trending' : 'search';
       final uri = Uri.https('api.giphy.com', '/v1/gifs/$endpoint', {
-        'api_key': [REDACTED],
+        'api_key': _giphyApiKey,
         'limit': '40',
         'rating': 'pg-13',
         if (query.isNotEmpty) 'q': query,
       });
       final response = await http.get(uri).timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) throw HttpException('GIPHY ${response.statusCode}');
+      if (response.statusCode != 200) {
+        throw HttpException('GIPHY ${response.statusCode}');
+      }
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       final data = (decoded['data'] as List? ?? const [])
-          .whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
       if (!mounted) return;
-      setState(() { _gifs = data; _loading = false; });
+      setState(() {
+        _gifs = data;
+        _loading = false;
+      });
       if (query.isEmpty) await _TwiceGifCache.instance.saveResults(data);
       for (final gif in data.take(18)) {
         final images = gif['images'] as Map? ?? const {};
-        final preview = (images['fixed_width'] as Map?)?['url']?.toString()
-            ?? (images['preview_gif'] as Map?)?['url']?.toString();
+        final preview =
+            (images['fixed_width'] as Map?)?['url']?.toString() ??
+            (images['preview_gif'] as Map?)?['url']?.toString();
         if (preview != null && preview.isNotEmpty) {
           unawaited(_TwiceGifCache.instance.cachePreview(preview));
         }
       }
     } catch (_) {
-      if (mounted) setState(() { _loading = false; _error = 'Offline: showing cached GIFs'; });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Offline: showing cached GIFs';
+        });
+      }
     }
   }
 
   String? _previewUrl(Map<String, dynamic> gif) {
     final images = gif['images'] as Map? ?? const {};
-    return (images['fixed_width'] as Map?)?['url']?.toString()
-        ?? (images['preview_gif'] as Map?)?['url']?.toString();
+    return (images['fixed_width'] as Map?)?['url']?.toString() ??
+        (images['preview_gif'] as Map?)?['url']?.toString();
   }
 
   @override
@@ -2050,11 +2130,23 @@ class _TwiceGifPickerState extends State<_TwiceGifPicker> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-              child: Row(children: [
-                const Text('GIFs', style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w700)),
-                const Spacer(),
-                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.white)),
-              ]),
+              child: Row(
+                children: [
+                  const Text(
+                    'GIFs',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white),
+                  ),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
@@ -2065,44 +2157,70 @@ class _TwiceGifPickerState extends State<_TwiceGifPicker> {
                   hintText: 'Search for GIFs',
                   hintStyle: const TextStyle(color: _igMuted),
                   prefixIcon: const Icon(Icons.search, color: _igMuted),
-                  filled: true, fillColor: const Color(0xFF242424),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                  filled: true,
+                  fillColor: const Color(0xFF242424),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
+                  ),
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ),
             if (_error != null)
-              Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(_error!, style: const TextStyle(color: _igMuted, fontSize: 12))),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: _igMuted, fontSize: 12),
+                ),
+              ),
             Expanded(
               child: _loading && _gifs.isEmpty
-                  ? const Center(child: CircularProgressIndicator(color: _igBlue))
+                  ? const Center(
+                      child: CircularProgressIndicator(color: _igBlue),
+                    )
                   : _gifs.isEmpty
-                      ? const Center(child: Text('No GIFs found', style: TextStyle(color: _igMuted)))
-                      : GridView.builder(
-                          padding: const EdgeInsets.all(8),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 6, crossAxisSpacing: 6, childAspectRatio: 1.15),
-                          itemCount: _gifs.length,
-                          itemBuilder: (_, index) {
-                            final gif = _gifs[index];
-                            final preview = _previewUrl(gif);
-                            return GestureDetector(
-                              onTap: () => Navigator.pop(context, gif),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: preview == null
-                                    ? Container(color: _igElevated)
-                                    : _GifTile(
-                                        key: ValueKey<String>(preview),
-                                        previewUrl: preview,
-                                      ),
-                              ),
-                            );
-                          },
-                        ),
+                  ? const Center(
+                      child: Text(
+                        'No GIFs found',
+                        style: TextStyle(color: _igMuted),
+                      ),
+                    )
+                  : GridView.builder(
+                      padding: const EdgeInsets.all(8),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 6,
+                            crossAxisSpacing: 6,
+                            childAspectRatio: 1.15,
+                          ),
+                      itemCount: _gifs.length,
+                      itemBuilder: (_, index) {
+                        final gif = _gifs[index];
+                        final preview = _previewUrl(gif);
+                        return GestureDetector(
+                          onTap: () => Navigator.pop(context, gif),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: preview == null
+                                ? Container(color: _igElevated)
+                                : _GifTile(
+                                    key: ValueKey<String>(preview),
+                                    previewUrl: preview,
+                                  ),
+                          ),
+                        );
+                      },
+                    ),
             ),
             const Padding(
               padding: EdgeInsets.all(8),
-              child: Text('Powered by GIPHY', style: TextStyle(color: _igMuted, fontSize: 11)),
+              child: Text(
+                'Powered by GIPHY',
+                style: TextStyle(color: _igMuted, fontSize: 11),
+              ),
             ),
           ],
         ),
@@ -2134,7 +2252,11 @@ class _GifTileState extends State<_GifTile> {
       future: _cached,
       builder: (_, snap) {
         if (snap.data != null) {
-          return Image.file(snap.data!, fit: BoxFit.cover, gaplessPlayback: true);
+          return Image.file(
+            snap.data!,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+          );
         }
         return Image.network(
           widget.previewUrl,

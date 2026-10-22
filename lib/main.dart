@@ -106,7 +106,7 @@ const muted = Color(0xFFA8A8A8); // secondary text
 const violet = igBlue; // accent (was purple) -> Instagram blue
 const canvas = igBlack; // page background
 
-const supabaseUrl = [REDACTED]'SUPABASE_URL');
+const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabasePublishableKey = String.fromEnvironment(
   'SUPABASE_PUBLISHABLE_KEY',
 );
@@ -3051,7 +3051,7 @@ class FeedPage extends StatelessWidget {
     backgroundColor: igElevated,
     child: ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      scrollCacheExtent: ScrollCacheExtent.pixels(2500),
+      scrollCacheExtent: ScrollCacheExtent.pixels(1000),
       padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
       children: [
         StoryStrip(

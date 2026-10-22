@@ -28,6 +28,7 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  app_links: 7.1.1
   path: ^1.9.1
   path_provider: ^2.1.6
   http: ^1.6.0

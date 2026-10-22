@@ -1,4 +1,7 @@
+##############################################################################
+
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
@@ -18,6 +21,8 @@ class TwiceNotificationEvent {
     this.actorAvatar,
     this.postId,
     this.conversationId,
+    this.storyId,
+    this.commentId,
     this.createdAt,
   });
 
@@ -30,6 +35,8 @@ class TwiceNotificationEvent {
   final String? actorAvatar;
   final String? postId;
   final String? conversationId;
+  final String? storyId;
+  final String? commentId;
   final DateTime? createdAt;
 
   static String friendlyTitle(String type) {
@@ -101,6 +108,8 @@ class NotificationService extends ChangeNotifier {
       FlutterLocalNotificationsPlugin();
 
   final List<TwiceNotificationEvent> _queue = [];
+  final Map<String, DateTime> _recentEvents = {};
+  static const Duration _dedupeWindow = Duration(seconds: 5);
   TwiceNotificationEvent? current;
   bool _ready = false;
   bool _presenting = false;
@@ -122,8 +131,28 @@ class NotificationService extends ChangeNotifier {
       await _plugin.initialize(
         const InitializationSettings(android: android, iOS: ios),
         onDidReceiveNotificationResponse: (response) {
-          // Tap on system notification — payload is event id / type.
-          debugPrint('Local notification tapped: ${response.payload}');
+          final raw = response.payload;
+          if (raw == null || raw.isEmpty) return;
+          try {
+            final data = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+            final event = TwiceNotificationEvent(
+              id: (data['id'] ?? '').toString(),
+              type: (data['type'] ?? '').toString(),
+              title: (data['title'] ?? 'Notification').toString(),
+              body: (data['body'] ?? '').toString(),
+              actorId: data['actorId']?.toString(),
+              actorName: data['actorName']?.toString(),
+              actorAvatar: data['actorAvatar']?.toString(),
+              postId: data['postId']?.toString(),
+              conversationId: data['conversationId']?.toString(),
+              storyId: data['storyId']?.toString(),
+              commentId: data['commentId']?.toString(),
+              createdAt: DateTime.tryParse((data['createdAt'] ?? '').toString()),
+            );
+            onTap?.call(event);
+          } catch (e) {
+            debugPrint('Invalid notification payload: $e');
+          }
         },
       );
 
@@ -161,6 +190,14 @@ class NotificationService extends ChangeNotifier {
 
   /// Enqueue a notification for in-app banner + optional system tray.
   Future<void> present(TwiceNotificationEvent event) async {
+    final now = DateTime.now();
+    _recentEvents.removeWhere((_, time) => now.difference(time) > _dedupeWindow);
+    final semanticKey = event.type == 'message'
+        ? 'message|${event.actorId ?? ''}|${event.conversationId ?? ''}|${event.createdAt?.toUtc().millisecondsSinceEpoch ~/ 1000 ?? 0}'
+        : '${event.type}|${event.actorId ?? ''}|${event.postId ?? ''}|${event.storyId ?? ''}|${event.commentId ?? ''}|${event.body}';
+    final previous = _recentEvents[semanticKey];
+    if (previous != null && now.difference(previous) <= _dedupeWindow) return;
+    _recentEvents[semanticKey] = now;
     _queue.add(event);
     unawaited(_drain());
     // System notification when app is not actively focused.
@@ -220,6 +257,8 @@ class NotificationService extends ChangeNotifier {
         actorAvatar: actorAvatar,
         postId: row['post_id']?.toString(),
         conversationId: row['conversation_id']?.toString(),
+        storyId: row['story_id']?.toString(),
+        commentId: row['comment_id']?.toString(),
         createdAt: DateTime.tryParse((row['created_at'] ?? '').toString()),
       ),
     );
@@ -284,7 +323,20 @@ class NotificationService extends ChangeNotifier {
         event.title,
         event.body,
         NotificationDetails(android: android, iOS: ios),
-        payload: '${event.type}|${event.id}',
+        payload: jsonEncode({
+          'id': event.id,
+          'type': event.type,
+          'title': event.title,
+          'body': event.body,
+          'actorId': event.actorId,
+          'actorName': event.actorName,
+          'actorAvatar': event.actorAvatar,
+          'postId': event.postId,
+          'conversationId': event.conversationId,
+          'storyId': event.storyId,
+          'commentId': event.commentId,
+          'createdAt': event.createdAt?.toIso8601String(),
+        }),
       );
     } catch (e) {
       debugPrint('system notification failed: $e');

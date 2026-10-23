@@ -433,7 +433,7 @@ class _TwiceSplashState extends State<_TwiceSplash> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const _TwiceLogo(size: 58),
+            const _TwiceLogo(size: 100),
             const SizedBox(height: 18),
             AnimatedOpacity(
               opacity: _slow ? 1 : 0,
@@ -755,7 +755,7 @@ class _TwiceSignInPageState extends State<TwiceSignInPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Center(child: _TwiceLogo(size: 58)),
+                  const Center(child: _TwiceLogo(size: 80)),
                   const SizedBox(height: 30),
                   const Text(
                     'Welcome to Twice',
@@ -1611,17 +1611,40 @@ class _TwiceLogo extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => Text(
-    'Twice',
-    style: TextStyle(
-      fontFamily: 'cursive',
-      fontFamilyFallback: const ['Billabong', 'Dancing Script', 'serif'],
-      fontStyle: FontStyle.italic,
-      fontWeight: FontWeight.w700,
-      fontSize: size,
-      height: 1.1,
-    ),
+  Widget build(BuildContext context) => CustomPaint(
+    size: Size(size, size),
+    painter: _TwiceLogoPainter(),
   );
+}
+
+class _TwiceLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFFF3040) // Red
+      ..style = PaintingStyle.fill;
+
+    // Scale factor
+    final s = size.width / 100.0;
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+
+    // Draw heart
+    final path = Path()
+      ..moveTo(cx, cy + 25 * s)
+      ..lineTo(cx - 45 * s, cy - 10 * s)
+      ..lineTo(cx + 45 * s, cy - 10 * s)
+      ..close();
+    canvas.drawPath(path, paint);
+
+    // Left circle
+    canvas.drawCircle(Offset(cx - 22.5 * s, cy - 15 * s), 22.5 * s, paint);
+    // Right circle
+    canvas.drawCircle(Offset(cx + 22.5 * s, cy - 15 * s), 22.5 * s, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Heart icon in the top bar. Opens notifications; red badge = unread count.

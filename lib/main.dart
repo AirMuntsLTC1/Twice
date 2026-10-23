@@ -6506,6 +6506,7 @@ class _IgProfileHeader extends StatelessWidget {
     required this.name,
     required this.bio,
     required this.isPrivate,
+    required this.isPremium,
     required this.posts,
     required this.followers,
     required this.following,
@@ -6520,6 +6521,7 @@ class _IgProfileHeader extends StatelessWidget {
   final String name;
   final String bio;
   final bool isPrivate;
+  final bool isPremium;
   final String posts;
   final String followers;
   final String following;
@@ -6558,7 +6560,12 @@ class _IgProfileHeader extends StatelessWidget {
       children: [
         Row(
           children: [
-            _UserAvatar(url: avatar, name: name, size: 86),
+            if (isPremium)
+              PremiumProfileRing(
+                child: _UserAvatar(url: avatar, name: name, size: 80),
+              )
+            else
+              _UserAvatar(url: avatar, name: name, size: 86),
             const SizedBox(width: 18),
             Expanded(
               child: Row(
@@ -6950,6 +6957,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
       name: shownName,
       bio: bio,
       isPrivate: isPrivate,
+      isPremium: profile['is_premium'] == true,
       posts: statsLoaded ? _compactCount(postCount) : '…',
       followers: statsLoaded || followers > 0 ? _compactCount(followers) : '…',
       following: statsLoaded || following > 0 ? _compactCount(following) : '…',
@@ -9222,6 +9230,7 @@ class _ProfilePageState extends State<ProfilePage> {
       name: shownName,
       bio: bio,
       isPrivate: isPrivate,
+      isPremium: profile['is_premium'] == true,
       posts: _postsLoading && _posts.isEmpty
           ? '…'
           : _compactCount(_posts.length),
@@ -10054,6 +10063,75 @@ class _ConfirmSheet extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+
+/// An animated spinning ring for Premium profiles.
+class PremiumProfileRing extends StatefulWidget {
+  const PremiumProfileRing({super.key, required this.child});
+  final Widget child;
+
+  @override
+  State<PremiumProfileRing> createState() => _PremiumProfileRingState();
+}
+
+class _PremiumProfileRingState extends State<PremiumProfileRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        RotationTransition(
+          turns: _c,
+          child: Container(
+            width: 94,
+            height: 94,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: SweepGradient(
+                colors: [
+                  Color(0xFFFF3040), // Red
+                  Color(0xFFFFC107), // Gold
+                  Color(0xFF4F5BD5), // Blue
+                  Color(0xFF962FBF), // Purple
+                  Color(0xFFFF3040), // Loop back
+                ],
+                stops: [0.0, 0.25, 0.5, 0.75, 1.0],
+              ),
+            ),
+          ),
+        ),
+        // Inner black circle to create the "ring" effect
+        Container(
+          width: 86,
+          height: 86,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: igBlack,
+          ),
+        ),
+        widget.child,
+      ],
     );
   }
 }

@@ -75,13 +75,7 @@ class PremiumEmojiTile extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           Center(
-            child: Text(
-              emoji,
-              style: TextStyle(
-                fontSize: 32,
-                color: Colors.white.withValues(alpha: 0.4),
-              ),
-            ),
+            child: AnimatedPremiumEmoji(emoji: emoji),
           ),
           Positioned(
             top: 4,
@@ -144,6 +138,98 @@ class _TwicePremiumBadgeState extends State<TwicePremiumBadge>
         size: widget.size,
         color: const Color(0xFFFFD700), // Gold
       ),
+    );
+  }
+}
+
+/// An animated emoji that bounces/pulses continuously.
+class AnimatedPremiumEmoji extends StatefulWidget {
+  const AnimatedPremiumEmoji({super.key, required this.emoji});
+  final String emoji;
+
+  @override
+  State<AnimatedPremiumEmoji> createState() => _AnimatedPremiumEmojiState();
+}
+
+class _AnimatedPremiumEmojiState extends State<AnimatedPremiumEmoji>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    // Stagger the animation start so they don't all bounce at the exact same time
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    Future.delayed(Duration(milliseconds: widget.emoji.hashCode % 800), () {
+      if (mounted) _c.repeat(reverse: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, child) {
+        // Spin the emoji slightly, make it glow, and bounce it
+        final scale = 0.9 + (_c.value * 0.25);
+        final angle = (_c.value * 0.2) - 0.1; // Slight left/right tilt
+
+        return Transform.rotate(
+          angle: angle,
+          child: Transform.scale(
+            scale: scale,
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.amber.withValues(alpha: 0.3 * _c.value),
+                    blurRadius: 20,
+                    spreadRadius: 5,
+                  ),
+                ],
+              ),
+              child: ShaderMask(
+                shaderCallback: (Rect bounds) {
+                  return LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: const [
+                      Color(0xFFFFD700), // Gold
+                      Color(0xFFFF3040), // Red
+                      Color(0xFF4F5BD5), // Blue
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                  ).createShader(bounds);
+                },
+                child: Text(
+                  widget.emoji,
+                  style: const TextStyle(
+                    fontSize: 32,
+                    color: Colors.white,
+                    shadows: [
+                      Shadow(
+                        blurRadius: 10,
+                        color: Colors.black54,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

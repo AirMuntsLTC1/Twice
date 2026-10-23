@@ -800,9 +800,9 @@ class _EmojiSheet extends StatelessWidget {
                         ),
                     delegate: SliverChildBuilderDelegate(
                       (context, i) => PremiumEmojiTile(
-                        emoji: ['🌟', '🔥', '💎', '👑', '🎉', '🚀'][i % 6],
+                        emoji: ['🦄', '🌟', '🔥', '💎', '👑', '🎉', '🚀', '💖', '🪐', '⚡', '🍀', '🦋', '🎈', '🛸', '🎸', '🏆'][i % 16],
                       ),
-                      childCount: 12,
+                      childCount: 16,
                     ),
                   ),
                 ),

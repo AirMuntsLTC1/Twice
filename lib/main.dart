@@ -3917,6 +3917,136 @@ class _PostCardState extends State<PostCard>
     );
   }
 
+  void _showPostOptions(BuildContext context, SocialPost post) {
+    final isOwn = post.author['id'] == Supabase.instance.client.auth.currentUser?.id;
+    
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: igSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(width: 38, height: 4, decoration: BoxDecoration(color: Colors.grey.shade700, borderRadius: BorderRadius.circular(99))),
+            const SizedBox(height: 10),
+            ListTile(
+              leading: const Icon(Icons.link_rounded),
+              title: const Text('Copy link'),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: 'https://twice.app/p/${post.id}'));
+                Navigator.pop(sheetContext);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied')));
+              },
+            ),
+            if (isOwn) ...[
+              ListTile(
+                leading: Icon((post.data['visibility'] ?? 'public') == 'public' ? Icons.public : Icons.lock),
+                title: Text('Audience: ${(post.data['visibility'] ?? 'public').toString().toUpperCase()}'),
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  await _changeAudience(context, post);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                title: const Text('Delete post', style: TextStyle(color: Colors.red)),
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Delete post?'),
+                      content: const Text('This action cannot be undone.'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                        FilledButton(
+                          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                          onPressed: () => Navigator.pop(ctx, true), 
+                          child: const Text('Delete'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) {
+                    try {
+                      await Supabase.instance.client.from('posts').delete().eq('id', post.id);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post deleted')));
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
+                      }
+                    }
+                  }
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _changeAudience(BuildContext context, SocialPost post) async {
+    final current = (post.data['visibility'] ?? 'public').toString();
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Who can see this?'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'public'),
+            child: Row(
+              children: [
+                Icon(current == 'public' ? Icons.radio_button_checked : Icons.radio_button_off),
+                const SizedBox(width: 10),
+                const Text('Public (Everyone)'),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'followers'),
+            child: Row(
+              children: [
+                Icon(current == 'followers' ? Icons.radio_button_checked : Icons.radio_button_off),
+                const SizedBox(width: 10),
+                const Text('Followers only'),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'connected'),
+            child: Row(
+              children: [
+                Icon(current == 'connected' ? Icons.radio_button_checked : Icons.radio_button_off),
+                const SizedBox(width: 10),
+                const Text('Mutuals (Follow back)'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (selected != null && selected != current) {
+      try {
+        await Supabase.instance.client.from('posts').update({'visibility': selected}).eq('id', post.id);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Audience changed to $selected')));
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update audience: $e')));
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final post = widget.post;
@@ -3976,24 +4106,9 @@ class _PostCardState extends State<PostCard>
                     profileId: post.author['id'].toString(),
                     onChanged: widget.onCommentChanged,
                   ),
-                PopupMenuButton<String>(
-                  tooltip: 'Post options',
+                IconButton(
                   icon: const Icon(Icons.more_horiz_rounded, color: ink),
-                  onSelected: (value) {
-                    if (value == 'share') _share();
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
-                      value: 'share',
-                      child: Row(
-                        children: [
-                          Icon(Icons.ios_share_rounded, size: 19),
-                          SizedBox(width: 10),
-                          Text('Share'),
-                        ],
-                      ),
-                    ),
-                  ],
+                  onPressed: () => _showPostOptions(context, widget.post),
                 ),
               ],
             ),
@@ -7396,16 +7511,62 @@ class _CommentsSheetState extends State<CommentsSheet> {
       userId: userId,
       profile: Map<String, dynamic>.from(p),
     );
-    return Padding(
-      padding: EdgeInsets.only(bottom: 16, left: isReply ? 34 : 0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: openProfile,
-            child: _commentAvatar(p, name),
+    final isOwnComment = userId == Supabase.instance.client.auth.currentUser?.id;
+
+    return GestureDetector(
+      onLongPress: () {
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: igSurface,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          builder: (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.copy_rounded),
+                  title: const Text('Copy text'),
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: body));
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied to clipboard')));
+                  },
+                ),
+                if (isOwnComment)
+                  ListTile(
+                    leading: const Icon(Icons.delete_outline, color: Colors.red),
+                    title: const Text('Delete comment', style: TextStyle(color: Colors.red)),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final commentId = row?['id']?.toString();
+                      if (commentId == null) return;
+                      try {
+                        await Supabase.instance.client.from('comments').delete().eq('id', commentId);
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Comment deleted')));
+                        }
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
+                        }
+                      }
+                    },
+                  ),
+              ],
+            ),
           ),
+        );
+      },
+      child: Padding(
+        padding: EdgeInsets.only(bottom: 16, left: isReply ? 34 : 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: openProfile,
+              child: _commentAvatar(p, name),
+            ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -7464,8 +7625,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
                 ],
               ],
             ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

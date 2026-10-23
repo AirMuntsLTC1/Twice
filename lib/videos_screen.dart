@@ -1342,7 +1342,7 @@ class _VideoReelState extends State<_VideoReel> {
 
   Widget _commentBand() {
     final me = widget.myProfile;
-    final myName = (me['display_name'] ?? me['username'] ?? 'You').toString();
+    final myName = (me['display_name'] ?? me['username'] ?? '').toString();
     final disabled = widget.post.data['comments_enabled'] == false;
     return Container(
       color: Colors.black,
@@ -1363,7 +1363,9 @@ class _VideoReelState extends State<_VideoReel> {
                 child: Text(
                   disabled
                       ? 'Comments are turned off'
-                      : 'Add a comment as $myName',
+                      : (myName.isEmpty
+                            ? 'Add a comment…'
+                            : 'Add a comment as $myName'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white70, fontSize: 15),
@@ -1973,6 +1975,7 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
   String? _error;
   Map<String, dynamic>? _replyTo; // top-level comment being replied to
   String _replyName = '';
+  Map<String, dynamic> _me = <String, dynamic>{};
 
   SupabaseClient get _db => Supabase.instance.client;
   String? get _uid => _db.auth.currentUser?.id;
@@ -1981,6 +1984,8 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
   @override
   void initState() {
     super.initState();
+    _me = Map<String, dynamic>.from(widget.myProfile);
+    _loadMe();
     _load();
     if (widget.autofocus && !_commentsOff) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1994,6 +1999,17 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
     _input.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadMe() async {
+    if ((_me['username'] ?? '').toString().isNotEmpty &&
+        (_me['avatar_url'] ?? '').toString().isNotEmpty) {
+      return;
+    }
+    try {
+      final me = await SocialRepository.instance.commentAuthorProfile();
+      if (mounted) setState(() => _me = me);
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -2134,15 +2150,19 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
     _focus.requestFocus();
   }
 
-  Future<void> _send() async {
+  Future<void> _send(String text, CommentAttachment? attachment) async {
     if (_sending) return;
-    final text = _input.text.trim();
     final uid = _uid;
-    if (text.isEmpty || uid == null) return;
+    if ((text.isEmpty && attachment == null) || uid == null) return;
     final parent = _replyTo;
     final parentId = parent?['id']?.toString();
     final id = _newTwiceUuid();
-    final me = widget.myProfile;
+    if ((_me['username'] ?? '').toString().isEmpty) {
+      try {
+        _me = await SocialRepository.instance.commentAuthorProfile();
+      } catch (_) {}
+    }
+    final me = _me;
     final optimistic = <String, dynamic>{
       'id': id,
       'post_id': widget.post.id,
@@ -2153,9 +2173,13 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
       'profiles': <String, dynamic>{
         'id': uid,
         'username': me['username'],
-        'display_name': me['display_name'] ?? me['username'] ?? 'You',
+        'display_name': me['display_name'] ?? me['username'],
         'avatar_url': me['avatar_url'],
       },
+      if (attachment != null && attachment.isPhoto)
+        '_local_path': attachment.file!.path,
+      if (attachment != null && !attachment.isPhoto) 'media_url': attachment.url,
+      if (attachment != null) 'media_type': attachment.type,
       '_pending': true,
       '_fresh': true,
     };
@@ -2171,32 +2195,29 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
     widget.onCountChanged(_rows.length);
 
     try {
-      if (parentId == null) {
-        final synced = await SocialRepository.instance.addComment(
-          widget.post.id,
-          text,
-          commentId: id,
+      String? mediaUrl = attachment?.isPhoto == true ? null : attachment?.url;
+      if (attachment != null && attachment.isPhoto) {
+        mediaUrl = await SocialRepository.instance.uploadCommentPhoto(
+          attachment.file!,
         );
-        if (mounted && !synced) {
-          setState(() => optimistic['_queued'] = true);
-          _videoSnack(
-            context,
-            'Saved offline. It will sync when you reconnect.',
-          );
-        }
-      } else {
-        await _db
-            .from('comments')
-            .insert(<String, dynamic>{
-              'id': id,
-              'post_id': widget.post.id,
-              'user_id': uid,
-              'parent_id': parentId,
-              'body': text,
-            })
-            .timeout(const Duration(seconds: 15));
       }
-      if (mounted) setState(() => optimistic.remove('_pending'));
+      final synced = await SocialRepository.instance.addComment(
+        widget.post.id,
+        text,
+        commentId: id,
+        parentId: parentId,
+        mediaUrl: mediaUrl,
+        mediaType: attachment?.type,
+      );
+      if (!mounted) return;
+      setState(() {
+        optimistic.remove('_pending');
+        if (mediaUrl != null) optimistic['media_url'] = mediaUrl;
+        if (!synced) optimistic['_queued'] = true;
+      });
+      if (!synced) {
+        _videoSnack(context, 'Saved offline. It will sync when you reconnect.');
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -2414,14 +2435,17 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                           style: const TextStyle(fontSize: 11.5, color: muted),
                         ),
                         const SizedBox(height: 3),
-                        Text(
-                          '${row['body']}',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            height: 1.25,
-                            color: ink,
+                        if ('${row['body']}'.trim().isNotEmpty)
+                          Text(
+                            '${row['body']}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              height: 1.25,
+                              color: ink,
+                            ),
                           ),
-                        ),
+                        if (CommentMediaView.hasMedia(row))
+                          CommentMediaView(row: row, maxWidth: 200),
                       ],
                     ),
                   ),
@@ -2590,8 +2614,8 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
         ),
       );
     }
-    final me = widget.myProfile;
-    final myName = (me['display_name'] ?? me['username'] ?? 'You').toString();
+    final me = _me;
+    final myName = (me['display_name'] ?? me['username'] ?? '').toString();
     return Container(
       decoration: const BoxDecoration(
         color: igSurface,
@@ -2630,54 +2654,21 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                 ],
               ),
             ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _UserAvatar(
-                url: (me['avatar_url'] ?? '').toString(),
-                name: myName,
-                size: 34,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _input,
-                  focusNode: _focus,
-                  minLines: 1,
-                  maxLines: 4,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(
-                    hintText: _replyTo == null
-                        ? 'Comment as $myName…'
-                        : 'Reply to $_replyName…',
-                    filled: true,
-                    fillColor: _fbGrey,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 11,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(22),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-              ),
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _input,
-                builder: (context, value, child) {
-                  final can = value.text.trim().isNotEmpty && !_sending;
-                  return IconButton(
-                    onPressed: can ? _send : null,
-                    icon: Icon(
-                      Icons.send_rounded,
-                      color: can ? violet : Colors.black26,
-                    ),
-                  );
-                },
-              ),
-            ],
+          CommentInputBar(
+            controller: _input,
+            focusNode: _focus,
+            sending: _sending,
+            sendColor: violet,
+            fillColor: _fbGrey,
+            hintText: _replyTo == null
+                ? (myName.isEmpty ? 'Add a comment…' : 'Comment as $myName…')
+                : 'Reply to $_replyName…',
+            leading: _UserAvatar(
+              url: (me['avatar_url'] ?? '').toString(),
+              name: myName,
+              size: 34,
+            ),
+            onSubmit: _send,
           ),
         ],
       ),
@@ -2844,3 +2835,4 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
     );
   }
 }
+

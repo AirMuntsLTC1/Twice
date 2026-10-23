@@ -1690,7 +1690,7 @@ class SocialRepository {
       final rows = await _db
           .from('comments')
           .select(
-            'id,post_id,user_id,parent_id,body,created_at,profiles!comments_user_id_fkey(id,username,display_name,avatar_url)',
+            'id,post_id,user_id,parent_id,body,media_url,media_type,created_at,profiles!comments_user_id_fkey(id,username,display_name,avatar_url)',
           )
           .eq('post_id', postId)
           .order('created_at')
@@ -1792,11 +1792,14 @@ class SocialRepository {
     String body, {
     String? commentId,
     String? parentId,
+    String? mediaUrl,
+    String? mediaType,
   }) async {
     final uid = _db.auth.currentUser?.id;
     if (uid == null) throw AuthException('Please sign in again.');
     final text = body.trim();
-    if (text.isEmpty) return true;
+    final hasMedia = mediaUrl != null && mediaUrl.trim().isNotEmpty;
+    if (text.isEmpty && !hasMedia) return true;
     final id = commentId ?? _newCommentId();
 
     // Use the cached profile for immediate/offline comments. If the profile
@@ -1825,6 +1828,8 @@ class SocialRepository {
       'body': text,
       if (parentId != null && parentId.trim().isNotEmpty)
         'parent_id': parentId.trim(),
+      if (hasMedia) 'media_url': mediaUrl.trim(),
+      if (hasMedia) 'media_type': (mediaType ?? 'gif'),
     };
     try {
       await _db
@@ -1869,6 +1874,95 @@ class SocialRepository {
         await _cache.put(uid, 'comments', rows, id: postId);
       }
       return false;
+    }
+  }
+
+  /// Current user's profile for instant (optimistic) comments: cached first so
+  /// the real avatar and username show immediately instead of "You".
+  Future<Map<String, dynamic>> commentAuthorProfile() async {
+    final uid = _db.auth.currentUser?.id;
+    Map<String, dynamic>? profile;
+    try {
+      profile = await cachedMyProfile();
+      if (profile != null && profile.isNotEmpty) {
+        profile = await _resolveProfileAvatar(Map<String, dynamic>.from(profile));
+      }
+    } catch (_) {}
+    if (profile == null || profile['username'] == null) {
+      try {
+        profile = await myProfile();
+      } catch (_) {
+        profile ??= <String, dynamic>{};
+      }
+    }
+    final user = _db.auth.currentUser;
+    final meta = user?.userMetadata ?? const <String, dynamic>{};
+    profile['id'] ??= uid;
+    profile['username'] ??=
+        (meta['username'] ?? user?.email?.split('@').first ?? 'user')
+            .toString();
+    profile['display_name'] ??= profile['username'];
+    return profile;
+  }
+
+  /// Uploads a comment photo (images only) and returns its public URL.
+  Future<String> uploadCommentPhoto(File file) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null) throw AuthException('Please sign in again.');
+    final ext = file.path.split('.').last.toLowerCase();
+    final safeExt = const {'jpg', 'jpeg', 'png', 'webp'}.contains(ext)
+        ? ext
+        : 'jpg';
+    final mime = switch (safeExt) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => 'image/jpeg',
+    };
+    final path = '$uid/${DateTime.now().microsecondsSinceEpoch}.$safeExt';
+    await _db.storage
+        .from('comment-media')
+        .upload(path, file, fileOptions: FileOptions(contentType: mime))
+        .timeout(const Duration(seconds: 60));
+    return _db.storage.from('comment-media').getPublicUrl(path);
+  }
+
+  /// Publishes a story from an already-edited file (overlays flattened).
+  Future<void> publishStoryFile(
+    File file, {
+    required bool isVideo,
+    required String caption,
+  }) async {
+    final ext = file.path.split('.').last.toLowerCase();
+    final row = await _db
+        .from('stories')
+        .insert({
+          'user_id': userId,
+          'media_url': 'pending',
+          'media_type': isVideo ? 'video' : 'image',
+          'caption': caption.trim(),
+        })
+        .select('id')
+        .single();
+    final id = row['id'].toString();
+    final objectPath =
+        '$userId/$id/${DateTime.now().microsecondsSinceEpoch}.$ext';
+    try {
+      await _db.storage
+          .from('stories')
+          .upload(
+            objectPath,
+            file,
+            fileOptions: FileOptions(contentType: _mime(ext), upsert: false),
+          );
+      await _db.from('stories').update({'media_url': objectPath}).eq('id', id);
+    } catch (_) {
+      try {
+        await _db.storage.from('stories').remove([objectPath]);
+      } catch (_) {}
+      try {
+        await _db.from('stories').delete().eq('id', id);
+      } catch (_) {}
+      rethrow;
     }
   }
 
@@ -2408,3 +2502,4 @@ Future<List<Map<String, dynamic>>> messages(String conversationId) async {
   return messagesDetailed(conversationId);
 }
 }
+

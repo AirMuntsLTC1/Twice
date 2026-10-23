@@ -28,6 +28,8 @@ import 'data/local_cache.dart';
 import 'data/twice_media.dart';
 import 'ads/ad_config.dart';
 import 'widgets/ig_icons.dart';
+import 'comments/comment_media.dart';
+import 'stories/story_editor.dart';
 import 'ads/ad_manager.dart';
 import 'ads/feed_entries.dart';
 import 'ads/native_ad_card.dart';
@@ -1484,8 +1486,16 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
                   storyStripKey: _storyStripKey,
                   profile: profile,
                   stories: stories,
-                  onCreateStory: (asset, caption) async {
-                    await repo.publishStory(asset, caption);
+                  onCreateStory: (asset, caption, {File? editedFile}) async {
+                    if (editedFile != null) {
+                      await repo.publishStoryFile(
+                        editedFile,
+                        isVideo: false,
+                        caption: caption,
+                      );
+                    } else {
+                      await repo.publishStory(asset, caption);
+                    }
                     await _loadAll();
                   },
                   posts: posts,
@@ -1719,7 +1729,12 @@ class StoryStrip extends StatefulWidget {
     required this.stories,
   });
 
-  final Future<void> Function(AssetEntity asset, String caption) onCreateStory;
+  final Future<void> Function(
+    AssetEntity asset,
+    String caption, {
+    File? editedFile,
+  })
+  onCreateStory;
   final Map<String, dynamic> profile;
   final List<Map<String, dynamic>> stories;
 
@@ -1938,49 +1953,13 @@ class StoryStripState extends State<StoryStrip> {
     );
     if (asset == null || !context.mounted) return;
 
-    final controller = TextEditingController();
-    final caption = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          20,
-          16,
-          MediaQuery.of(sheetContext).viewInsets.bottom + 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Create story',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              maxLength: 300,
-              decoration: const InputDecoration(
-                hintText: 'Write a caption (optional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.pop(sheetContext, controller.text),
-                child: const Text('Share story'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    controller.dispose();
-    if (caption == null || !context.mounted) return;
+    // Full-screen preview where the user can add text, emoji and stickers.
+    final edit = await openStoryEditor(context, asset);
+    if (edit == null || !context.mounted) return;
+    final caption = edit.caption;
 
     try {
-      await widget.onCreateStory(asset, caption);
+      await widget.onCreateStory(asset, caption, editedFile: edit.editedFile);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Story shared for 24 hours.')),
@@ -3044,7 +3023,12 @@ class FeedPage extends StatelessWidget {
   final GlobalKey<StoryStripState> storyStripKey;
   final Map<String, dynamic> profile;
   final List<Map<String, dynamic>> stories;
-  final Future<void> Function(AssetEntity asset, String caption) onCreateStory;
+  final Future<void> Function(
+    AssetEntity asset,
+    String caption, {
+    File? editedFile,
+  })
+  onCreateStory;
   final List<SocialPost> posts;
   final ValueChanged<SocialPost> onLike;
   final Future<void> Function() onRefresh;
@@ -7053,16 +7037,28 @@ class _CommentsSheetState extends State<CommentsSheet> {
   final controller = TextEditingController();
   List<Map<String, dynamic>> rows = [];
   Map<String, dynamic>? replyingTo;
+  Map<String, dynamic> _me = <String, dynamic>{};
+  final FocusNode _inputFocus = FocusNode();
   bool busy = true;
   @override
   void initState() {
     super.initState();
     _load();
+    _loadMe();
+  }
+
+  // Real avatar + username for instant comments (never "You" / an initial).
+  Future<void> _loadMe() async {
+    try {
+      final me = await SocialRepository.instance.commentAuthorProfile();
+      if (mounted) setState(() => _me = me);
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     controller.dispose();
+    _inputFocus.dispose();
     super.dispose();
   }
 
@@ -7095,25 +7091,41 @@ class _CommentsSheetState extends State<CommentsSheet> {
     }
   }
 
-  Future<void> _send() async {
+  Future<void> _send(String text, CommentAttachment? attachment) async {
     if (sending) return;
-    final text = controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && attachment == null) return;
 
     FocusScope.of(context).unfocus();
 
+    if (_me.isEmpty || _me['username'] == null) {
+      try {
+        _me = await SocialRepository.instance.commentAuthorProfile();
+      } catch (_) {}
+    }
+    final uid = Supabase.instance.client.auth.currentUser?.id ?? '';
+    final parentId = replyingTo?['id']?.toString();
+    final id = _newTwiceUuid();
     final optimistic = <String, dynamic>{
-      'id': _newTwiceUuid(),
+      'id': id,
       'post_id': widget.post.id,
-      'user_id': Supabase.instance.client.auth.currentUser?.id ?? '',
+      'user_id': uid,
       'body': text,
-      if (replyingTo != null) 'parent_id': replyingTo!['id'].toString(),
+      'parent_id': ?parentId,
       'created_at': DateTime.now().toIso8601String(),
-      'profiles': <String, dynamic>{'display_name': 'You'},
+      // Full profile so the real avatar and username show immediately.
+      'profiles': <String, dynamic>{
+        'id': uid,
+        'username': _me['username'],
+        'display_name': _me['display_name'] ?? _me['username'],
+        'avatar_url': _me['avatar_url'],
+      },
+      if (attachment != null && attachment.isPhoto)
+        '_local_path': attachment.file!.path,
+      if (attachment != null && !attachment.isPhoto) 'media_url': attachment.url,
+      if (attachment != null) 'media_type': attachment.type,
       '_pending': true,
     };
 
-    // Render immediately and clear the composer before network work begins.
     setState(() {
       rows = [...rows, optimistic];
       controller.clear();
@@ -7123,16 +7135,25 @@ class _CommentsSheetState extends State<CommentsSheet> {
       sending = true;
     });
 
-    // Persist in the background; no comments refresh or feed reload.
     try {
+      String? mediaUrl = attachment?.isPhoto == true ? null : attachment?.url;
+      if (attachment != null && attachment.isPhoto) {
+        mediaUrl = await SocialRepository.instance.uploadCommentPhoto(
+          attachment.file!,
+        );
+      }
       final synced = await SocialRepository.instance.addComment(
         widget.post.id,
         text,
-        commentId: optimistic['id'].toString(),
+        commentId: id,
+        parentId: parentId,
+        mediaUrl: mediaUrl,
+        mediaType: attachment?.type,
       );
       if (!mounted) return;
       setState(() {
         optimistic.remove('_pending');
+        if (mediaUrl != null) optimistic['media_url'] = mediaUrl;
         if (!synced) optimistic['_queued'] = true;
       });
       if (!synced) {
@@ -7153,7 +7174,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Comment is visible but could not sync: $e'),
+          content: Text('Comment could not be sent: $e'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -7162,32 +7183,69 @@ class _CommentsSheetState extends State<CommentsSheet> {
     }
   }
 
+  void _startReply(Map<String, dynamic> row) {
+    // Replies always attach to the top-level comment (Instagram style); when
+    // replying to a reply we prefill @username.
+    final byId = {for (final r in rows) r['id']?.toString() ?? '': r};
+    var root = row;
+    var guard = 0;
+    while (guard++ < 20) {
+      final pid = root['parent_id']?.toString();
+      if (pid == null || pid.isEmpty || pid == 'null' || !byId.containsKey(pid)) {
+        break;
+      }
+      root = byId[pid]!;
+    }
+    final profile = row['profiles'] as Map? ?? {};
+    final username = (profile['username'] ?? '').toString();
+    setState(() => replyingTo = root);
+    if (!identical(root, row) && username.isNotEmpty) {
+      controller.text = '@$username ';
+      controller.selection = TextSelection.collapsed(
+        offset: controller.text.length,
+      );
+    }
+    _inputFocus.requestFocus();
+  }
+
   List<Widget> _buildCommentThread() {
-    final ids = rows.map((r) => r['id']?.toString() ?? '').toSet();
+    final byId = {for (final r in rows) r['id']?.toString() ?? '': r};
+    String rootOf(Map<String, dynamic> row) {
+      var cur = row;
+      var guard = 0;
+      while (guard++ < 20) {
+        final pid = cur['parent_id']?.toString() ?? '';
+        if (pid.isEmpty || pid == 'null' || !byId.containsKey(pid)) break;
+        cur = byId[pid]!;
+      }
+      return cur['id']?.toString() ?? '';
+    }
+
     final roots = <Map<String, dynamic>>[];
     final children = <String, List<Map<String, dynamic>>>{};
     for (final row in rows) {
-      final parent = row['parent_id']?.toString() ?? '';
-      if (parent.isEmpty || parent == 'null' || !ids.contains(parent)) {
+      final pid = row['parent_id']?.toString() ?? '';
+      if (pid.isEmpty || pid == 'null' || !byId.containsKey(pid)) {
         roots.add(row);
       } else {
-        children.putIfAbsent(parent, () => <Map<String, dynamic>>[]).add(row);
+        children
+            .putIfAbsent(rootOf(row), () => <Map<String, dynamic>>[])
+            .add(row);
       }
     }
     final result = <Widget>[];
     for (final row in roots) {
-      result.add(
-        _buildOneComment(
-          row,
-          onReply: () {
-            setState(() => replyingTo = row);
-          },
-        ),
-      );
+      result.add(_buildOneComment(row, onReply: () => _startReply(row)));
       final replies =
           children[row['id']?.toString() ?? ''] ?? <Map<String, dynamic>>[];
       for (final reply in replies) {
-        result.add(_buildOneComment(reply, isReply: true));
+        result.add(
+          _buildOneComment(
+            reply,
+            isReply: true,
+            onReply: () => _startReply(reply),
+          ),
+        );
       }
     }
     return result;
@@ -7209,7 +7267,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
       body: (row['body'] ?? '').toString(),
       time: _timeAgo(row['created_at']),
       isReply: isReply,
-      onReply: isReply ? null : onReply,
+      onReply: row['_pending'] == true ? null : onReply,
+      row: row,
       status: row['_queued'] == true
           ? const Padding(
               padding: EdgeInsets.only(top: 4),
@@ -7261,6 +7320,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
     Widget? status,
     VoidCallback? onReply,
     bool isReply = false,
+    Map<String, dynamic>? row,
   }) {
     void openProfile() => _openUserProfile(
       context,
@@ -7305,6 +7365,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
                     ],
                   ),
                 ),
+                if (row != null && CommentMediaView.hasMedia(row))
+                  CommentMediaView(row: row),
                 if (time != null) ...[
                   const SizedBox(height: 4),
                   Text(
@@ -7344,7 +7406,6 @@ class _CommentsSheetState extends State<CommentsSheet> {
     final post = widget.post;
     final postAuthor = post.author;
     final postUsername = post.username.replaceFirst(RegExp(r'^@'), '');
-    final hasText = controller.text.trim().isNotEmpty;
 
     Widget list() {
       if (busy) {
@@ -7461,79 +7522,25 @@ class _CommentsSheetState extends State<CommentsSheet> {
               padding: EdgeInsets.fromLTRB(
                 12,
                 10,
-                12,
+                8,
                 10 + MediaQuery.viewInsetsOf(context).bottom,
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.only(left: 16, right: 4),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: const Color(0xFF363636)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: controller,
-                              minLines: 1,
-                              maxLines: 4,
-                              onChanged: (_) => setState(() {}),
-                              textCapitalization: TextCapitalization.sentences,
-                              textInputAction: TextInputAction.send,
-                              onSubmitted: (_) => _send(),
-                              style: const TextStyle(fontSize: 14),
-                              decoration: InputDecoration(
-                                hintText: replyingTo == null
-                                    ? 'Add a comment for $postUsername…'
-                                    : 'Reply to comment…',
-                                hintStyle: const TextStyle(
-                                  color: muted,
-                                  fontSize: 14,
-                                ),
-                                filled: false,
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                              ),
-                            ),
-                          ),
-                          sending
-                              ? const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 14),
-                                  child: SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                )
-                              : TextButton(
-                                  onPressed: hasText ? _send : null,
-                                  child: Text(
-                                    'Post',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 14,
-                                      color: hasText
-                                          ? igBlue
-                                          : const Color(0x800095F6),
-                                    ),
-                                  ),
-                                ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+              child: CommentInputBar(
+                controller: controller,
+                focusNode: _inputFocus,
+                sending: sending,
+                bordered: true,
+                fillColor: Colors.transparent,
+                hintText: replyingTo == null
+                    ? 'Add a comment for $postUsername…'
+                    : 'Reply to comment…',
+                leading: _UserAvatar(
+                  url: (_me['avatar_url'] ?? '').toString(),
+                  name: (_me['username'] ?? _me['display_name'] ?? '')
+                      .toString(),
+                  size: 34,
+                ),
+                onSubmit: _send,
               ),
             ),
           ),
@@ -9671,3 +9678,4 @@ class _SocialNavPainter extends CustomPainter {
       oldDelegate.stroke != stroke ||
       oldDelegate.selected != selected;
 }
+

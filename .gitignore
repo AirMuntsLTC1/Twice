@@ -56,3 +56,4 @@ backups/
 *.bak.*
 backup/
 lib.bak.*/
+.update_backup_*/

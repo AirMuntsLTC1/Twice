@@ -54,3 +54,5 @@ backups/
 *.pem-backup
 *.backup-*
 *.bak.*
+backup/
+lib.bak.*/

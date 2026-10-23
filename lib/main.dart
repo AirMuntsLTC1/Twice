@@ -3234,6 +3234,7 @@ class _PostMediaItemState extends State<_PostMediaItem> {
   double _visibleFraction = 0;
   Timer? _controlsTimer;
   Timer? _releaseTimer;
+  int _releaseGen = 0;
 
   bool get _isVideo =>
       (widget.media['media_type'] ?? '').toString().toLowerCase() == 'video';
@@ -3349,7 +3350,15 @@ class _PostMediaItemState extends State<_PostMediaItem> {
 
   void _scheduleRelease() {
     _releaseTimer?.cancel();
-    _releaseTimer = Timer(const Duration(seconds: 4), _releaseController);
+    final gen = ++_releaseGen;
+    _releaseTimer = Timer(const Duration(seconds: 4), () {
+      // The widget must not have re-armed itself (via _ensureController)
+      // between this timer being scheduled and firing. If it did,
+      // _releaseGen was incremented again and we must not dispose the
+      // controller that the user is about to see.
+      if (gen != _releaseGen) return;
+      _releaseController();
+    });
   }
 
   void _releaseController() {
@@ -4793,18 +4802,10 @@ class _MediaPicker extends StatefulWidget {
 
 class _MediaPickerState extends State<_MediaPicker> {
   final Set<AssetEntity> chosen = {};
-  final Map<String, Future<Uint8List?>> _thumbnailFutures = {};
-
-  @override
-  void initState() {
-    super.initState();
-    for (final asset in widget.assets) {
-      _thumbnailFutures.putIfAbsent(
-        asset.id,
-        () => asset.thumbnailDataWithSize(const ThumbnailSize(220, 220)),
-      );
-    }
-  }
+  // The picker used to decode every thumbnail eagerly in initState (up to
+  // 300 futures at once). AssetThumb lives in widgets/asset_thumb.dart and
+  // loads each thumbnail lazily, once, with a small LRU. This is the same
+  // pattern already used by the chat gallery and story picker.
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -4891,22 +4892,10 @@ class _MediaPickerState extends State<_MediaPicker> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    FutureBuilder<Uint8List?>(
-                      future: _thumbnailFutures[asset.id],
-                      builder: (_, snapshot) {
-                        final bytes = snapshot.data;
-                        if (bytes == null || bytes.isEmpty) {
-                          return const ColoredBox(color: canvas);
-                        }
-                        return Image.memory(
-                          bytes,
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          filterQuality: FilterQuality.low,
-                          errorBuilder: (_, _, _) =>
-                              const ColoredBox(color: canvas),
-                        );
-                      },
+                    AssetThumb(
+                      key: ValueKey<String>(asset.id),
+                      asset: asset,
+                      size: 220,
                     ),
                     if (asset.type == AssetType.video)
                       const Positioned(
@@ -5299,7 +5288,7 @@ class _PostThumb extends StatelessWidget {
       children: [
         if (src.isNotEmpty)
           Image(
-            image: _twiceImageProvider(src, maxDimension: 480),
+            image: TwiceThumbCache.get(src, targetLongEdge: 480),
             fit: BoxFit.cover,
             gaplessPlayback: true,
             errorBuilder: (_, _, _) => placeholder,

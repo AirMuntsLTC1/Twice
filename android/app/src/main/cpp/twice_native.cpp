@@ -203,6 +203,90 @@ extern "C" __attribute__((visibility("default"))) int32_t
 
 
 // ---------------------------------------------------------------------------
+// Media helpers (added). Pure C, allocation-free, no I/O, no globals.
+// These are additive; they do not change any existing exported symbol
+// or the ABI version returned by twice_native_abi_version().
+// ---------------------------------------------------------------------------
+
+// Parse EXIF orientation (1..8) from the leading bytes of a JPEG/HEIC
+// file. Returns 1 (normal) if the tag is missing or the input is not a
+// valid EXIF/TIFF structure. Never allocates, never reads past len.
+extern "C" __attribute__((visibility("default"))) int32_t
+twice_native_exif_orientation(const uint8_t *buf, int64_t len) {
+    if (buf == nullptr || len < 14) return 1;
+    // JPEG: FF D8 ... FF E1 (APP1) ... 'Exif\0\0' ... TIFF header.
+    if (!(buf[0] == 0xFF && buf[1] == 0xD8)) return 1;
+    int64_t i = 2;
+    // Bounded scan for APP1.
+    while (i + 4 <= len) {
+        if (buf[i] != 0xFF) return 1;
+        const uint8_t marker = buf[i + 1];
+        if (marker == 0xD8 || (marker >= 0xD0 && marker <= 0xD7)) {
+            i += 2;
+            continue;
+        }
+        if (marker == 0xD9 || marker == 0xDA) return 1;
+        if (i + 4 > len) return 1;
+        const int32_t seg_len =
+            (static_cast<int32_t>(buf[i + 2]) << 8) | buf[i + 3];
+        if (seg_len < 2 || i + 2 + seg_len > len) return 1;
+        if (marker == 0xE1 && seg_len >= 8) {
+            const int64_t base = i + 4;
+            if (buf[base] == 'E' && buf[base + 1] == 'x' &&
+                buf[base + 2] == 'i' && buf[base + 3] == 'f' &&
+                buf[base + 4] == 0 && buf[base + 5] == 0) {
+                const int64_t tiff = base + 6;
+                if (tiff + 8 > len) return 1;
+                const bool little =
+                    buf[tiff] == 'I' && buf[tiff + 1] == 'I';
+                const bool big =
+                    buf[tiff] == 'M' && buf[tiff + 1] == 'M';
+                if (!little && !big) return 1;
+                auto rd16 = [&](int64_t off) -> uint16_t {
+                    if (little) {
+                        return static_cast<uint16_t>(
+                            buf[off] | (buf[off + 1] << 8));
+                    }
+                    return static_cast<uint16_t>(
+                        (buf[off] << 8) | buf[off + 1]);
+                };
+                auto rd32 = [&](int64_t off) -> uint32_t {
+                    if (little) {
+                        return static_cast<uint32_t>(
+                            buf[off] | (buf[off + 1] << 8) |
+                            (buf[off + 2] << 16) |
+                            (static_cast<uint32_t>(buf[off + 3]) << 24));
+                    }
+                    return static_cast<uint32_t>(
+                        (static_cast<uint32_t>(buf[off]) << 24) |
+                        (buf[off + 1] << 16) | (buf[off + 2] << 8) |
+                        buf[off + 3]);
+                };
+                const uint16_t magic = rd16(tiff + 2);
+                if (magic != 0x002A) return 1;
+                const uint32_t ifd0_off = rd32(tiff + 4);
+                if (ifd0_off < 8 || tiff + ifd0_off + 2 > len) return 1;
+                const uint16_t count = rd16(tiff + ifd0_off);
+                int64_t p = tiff + ifd0_off + 2;
+                for (uint16_t k = 0; k < count; k++) {
+                    if (p + 12 > len) return 1;
+                    const uint16_t tag = rd16(p);
+                    if (tag == 0x0112) {
+                        const uint16_t val = rd16(p + 8);
+                        if (val >= 1 && val <= 8) return val;
+                        return 1;
+                    }
+                    p += 12;
+                }
+                return 1;
+            }
+        }
+        i += 2 + seg_len;
+    }
+    return 1;
+}
+
+// ---------------------------------------------------------------------------
 // TWICE notification / feed utility core (ABI v2).
 // Pure deterministic helpers: no allocations, locks, I/O, or global state.
 // These are safe for small hot-path scoring and payload validation.

@@ -59,6 +59,36 @@ class TwiceMedia {
   static final Map<String, Future<String?>> _videoJobs = {};
   static Directory? _thumbDirectory;
 
+  /// Poster file paths that were generated successfully and whose file
+  /// still exists on disk. When a poster widget is remounted (carousel
+  /// rebuild, bubble re-adopt, tab switch), the existing file is used
+  /// without re-running VideoThumbnail.thumbnailData.
+  static final Map<String, String> _thumbPaths = <String, String>{};
+  static const int _thumbPathLimit = 128;
+
+  /// Synchronous lookup for an already-generated poster file, or null.
+  /// Returns the path only if the file still exists.
+  static String? videoPosterSync(String videoUrl) {
+    if (videoUrl.isEmpty) return null;
+    final key = stableKey(videoUrl);
+    final known = _thumbPaths[key];
+    if (known == null) return null;
+    try {
+      if (File(known).existsSync()) return known;
+    } catch (_) {}
+    _thumbPaths.remove(key);
+    return null;
+  }
+
+  static void _rememberThumbPath(String key, String path) {
+    if (key.isEmpty || path.isEmpty) return;
+    _thumbPaths.remove(key);
+    _thumbPaths[key] = path;
+    while (_thumbPaths.length > _thumbPathLimit) {
+      _thumbPaths.remove(_thumbPaths.keys.first);
+    }
+  }
+
   /// Debug-only counters. Zero in release builds because nothing reads them.
   static int debugHits = 0;
   static int debugMisses = 0;
@@ -172,11 +202,22 @@ class TwiceMedia {
   /// A JPEG poster generated from the video itself (cached on disk).
   static Future<String?> videoThumbnailFile(String videoUrl) {
     final key = stableKey(videoUrl);
-    return _thumbJobs.putIfAbsent(key, () async {
+    // Fast path: poster was generated earlier this session and the
+    // file still exists. No VideoThumbnail call, no disk write.
+    final known = videoPosterSync(videoUrl);
+    if (known != null) return Future<String?>.value(known);
+
+    final running = _thumbJobs[key];
+    if (running != null) return running;
+
+    final work = () async {
       try {
         final dir = await _thumbDir();
         final out = File(p.join(dir.path, '${_hash(key)}.jpg'));
-        if (await out.exists() && await out.length() > 0) return out.path;
+        if (await out.exists() && await out.length() > 0) {
+          _rememberThumbPath(key, out.path);
+          return out.path;
+        }
 
         var source = videoUrl;
         if (videoUrl.startsWith('file://')) {
@@ -194,17 +235,18 @@ class TwiceMedia {
             timeMs: 300,
           ).timeout(const Duration(seconds: 25)),
         );
-        if (bytes == null || bytes.isEmpty) {
-          _thumbJobs.remove(key);
-          return null;
-        }
+        if (bytes == null || bytes.isEmpty) return null;
         await out.writeAsBytes(bytes, flush: true);
+        _rememberThumbPath(key, out.path);
         return out.path;
       } catch (_) {
-        _thumbJobs.remove(key);
         return null;
+      } finally {
+        unawaited(Future<void>.microtask(() => _thumbJobs.remove(key)));
       }
-    });
+    }();
+    _thumbJobs[key] = work;
+    return work;
   }
 
   /// Background-save a video you are watching so replays are instant/offline.
@@ -342,6 +384,76 @@ class TwiceNetworkImage extends ImageProvider<TwiceNetworkImage> {
   String toString() => 'TwiceNetworkImage($_stable)';
 }
 
+/// Stable image providers for grid thumbnails (profile grid, explore,
+/// search results). Route every grid/post/preview image through this so a
+/// given (bucket, path, targetLongEdge) is decoded ONCE and shared by all
+/// live widgets, instead of each Image widget re-decoding its own provider.
+///
+/// Without this, a 3-column profile grid with 30 posts decodes 30 x 480x480
+/// bitmaps (~28 MB) even though only ~4 are on screen. With it, a single
+/// 480-long-edge bitmap per unique source is decoded and reused.
+class TwiceThumbCache {
+  TwiceThumbCache._();
+
+  static const int _limit = 96;
+  static final Map<String, ImageProvider<Object>> _providers =
+      <String, ImageProvider<Object>>{};
+
+  static String _key(String url, int targetLongEdge) =>
+      '${TwiceMedia.stableKey(url)}@${targetLongEdge}';
+
+  /// Returns a shared, stable provider for [url] at [targetLongEdge].
+  /// The LRU keeps at most [_limit] entries; the oldest is evicted.
+  static ImageProvider<Object> get(String url, {int targetLongEdge = 480}) {
+    if (url.isEmpty) return const _EmptyImageProvider();
+    final k = _key(url, targetLongEdge);
+    final known = _providers.remove(k);
+    if (known != null) {
+      _providers[k] = known;  // bump to most-recent
+      return known;
+    }
+    final fresh = TwiceNetworkImage(url, maxDimension: targetLongEdge);
+    _providers[k] = fresh;
+    while (_providers.length > _limit) {
+      _providers.remove(_providers.keys.first);
+    }
+    return fresh;
+  }
+
+  static void clear() => _providers.clear();
+}
+
+/// Renders nothing. Returned by TwiceThumbCache for empty sources so
+/// callers never need a null-check on ImageProvider.
+class _EmptyImageProvider extends ImageProvider<_EmptyImageProvider> {
+  const _EmptyImageProvider();
+
+  @override
+  Future<_EmptyImageProvider> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_EmptyImageProvider>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _EmptyImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
+    return OneFrameImageStreamCompleter(
+      SynchronousFuture<ImageInfo>(_transparent),
+    );
+  }
+
+  static final ImageInfo _transparent = ImageInfo(
+    image: _createTransparent(),
+  );
+
+  static ui.Image _createTransparent() {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(const Rect.fromLTWH(0, 0, 1, 1), Paint());
+    return recorder.endRecording().toImageSync(1, 1);
+  }
+}
+
 /// Always-visible video poster: uploaded thumbnail, else generated frame.
 class TwiceVideoPoster extends StatefulWidget {
   const TwiceVideoPoster({
@@ -392,11 +504,25 @@ class _TwiceVideoPosterState extends State<TwiceVideoPoster> {
   );
 
   @override
+  void initState() {
+    super.initState();
+    // If a poster file was already produced this session, use it
+    // synchronously so the first frame of a remounted poster is the
+    // real frame, not a blank box waiting on FutureBuilder.
+    final known = TwiceMedia.videoPosterSync(widget.videoUrl);
+    if (known != null) {
+      _generated = Future<String?>.value(known);
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant TwiceVideoPoster oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (TwiceMedia.stableKey(oldWidget.videoUrl) !=
         TwiceMedia.stableKey(widget.videoUrl)) {
       _generated = null;
+      final known = TwiceMedia.videoPosterSync(widget.videoUrl);
+      if (known != null) _generated = Future<String?>.value(known);
     }
   }
 

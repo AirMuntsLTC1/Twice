@@ -999,7 +999,9 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
     InboxController.instance.start();
     unawaited(TwiceVerified.start());
     unawaited(NotificationService.instance.init());
-    NotificationService.instance.onTap = _handleNotificationTap;
+    NotificationService.instance.onTap = (event) {
+      unawaited(_handleNotificationTap(event));
+    };
     unawaited(_startPushNotifications());
     _loadAll();
   }
@@ -3048,7 +3050,7 @@ class FeedPage extends StatelessWidget {
     backgroundColor: igElevated,
     child: ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      scrollCacheExtent: ScrollCacheExtent.pixels(1000),
+      scrollCacheExtent: ScrollCacheExtent.pixels(600),
       padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
       children: [
         StoryStrip(

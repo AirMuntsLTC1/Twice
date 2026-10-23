@@ -81,17 +81,21 @@ class InboxController extends ChangeNotifier {
     _connect();
   }
 
+  bool _connecting = false;
+
   void _connect() {
     final uid = _db.auth.currentUser?.id;
     if (uid == null) return;
     if (_uid == uid && _channel != null) return;
+    if (_connecting) return;
+    _connecting = true;
     _teardown();
     _uid = uid;
     unawaited(NotificationService.instance.init());
     refreshUnread();
     refreshMessageUnread();
     _channel = _db
-        .channel('twice-inbox-$uid')
+        .channel('twice-inbox-v2-$uid')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
@@ -125,9 +129,13 @@ class InboxController extends ChangeNotifier {
         )
         .subscribe();
 
-    // Fallback when the notification trigger is delayed for DMs.
+    // Notification presentation for DMs is handled once by the
+    // notifications channel above (trigger twice_message_notify creates a row
+    // for every message). Subscribing to messages here previously caused a
+    // second banner/system notification for the same DM. This channel only
+    // refreshes the unread count.
     _msgChannel = _db
-        .channel('twice-messages-$uid')
+        .channel('twice-messages-count-v2-$uid')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
@@ -140,25 +148,6 @@ class InboxController extends ChangeNotifier {
                     activeConversationId;
             if (!viewing && !inOpenChat) {
               refreshMessageUnread();
-            }
-            final sender = (row['sender_id'] ?? '').toString();
-            if (!inOpenChat &&
-                sender.isNotEmpty &&
-                sender != uid &&
-                _foreground) {
-              // Only toast if we are not already in a focused viewing state
-              // for messages; InboxController.viewing is Activity/Messages list.
-              // Conversation page sets its own read state.
-              unawaited(
-                NotificationService.instance.presentFromRow({
-                  'id': row['id'],
-                  'type': 'message',
-                  'actor_id': sender,
-                  'body': (row['body'] ?? '').toString(),
-                  'created_at': row['created_at'],
-                  'conversation_id': row['conversation_id'],
-                }),
-              );
             }
           },
         )
@@ -175,6 +164,7 @@ class InboxController extends ChangeNotifier {
   }
 
   void _teardown() {
+    _connecting = false;
     _poll?.cancel();
     _poll = null;
     final ch = _channel;

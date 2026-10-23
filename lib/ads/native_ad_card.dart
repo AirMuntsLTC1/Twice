@@ -127,7 +127,6 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
   bool _revealed = false;
   bool _warmedNext = false;
   Timer? _revealTimer;
-  ScrollPosition? _position;
 
   bool get _attached =>
       widget.active && _ad != null && (_near || widget.fullPage);
@@ -141,13 +140,9 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final position = Scrollable.maybeOf(context)?.position;
-    if (!identical(position, _position)) {
-      _position?.removeListener(_checkNear);
-      _position = position;
-      _position?.addListener(_checkNear);
+    if (widget.fullPage) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkNear());
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkNear());
   }
 
   @override
@@ -163,7 +158,6 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
   @override
   void dispose() {
     _revealTimer?.cancel();
-    _position?.removeListener(_checkNear);
     if (_ad != null) {
       TwiceAds.release(widget.placement, widget.slot);
       _ad = null;
@@ -214,31 +208,20 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
 
   /// Is this card within [TwiceAdConfig.mountLookahead] viewports of the
   /// visible area? Only then is the native view attached.
-  bool _isNear() {
-    if (widget.fullPage) return true;
-    try {
-      final ro = context.findRenderObject();
-      final pos = _position;
-      if (ro is! RenderBox || !ro.attached || !ro.hasSize || pos == null) {
-        return true;
-      }
-      if (!pos.hasPixels || !pos.hasViewportDimension) return true;
-      final viewport = RenderAbstractViewport.maybeOf(ro);
-      if (viewport == null) return true;
-      final start = viewport.getOffsetToReveal(ro, 0.0).offset;
-      final end = start + ro.size.height;
-      final top = pos.pixels;
-      final bottom = pos.pixels + pos.viewportDimension;
-      final margin = pos.viewportDimension * TwiceAdConfig.mountLookahead;
-      return end > top - margin && start < bottom + margin;
-    } catch (_) {
-      return true;
+  // VisibilityDetector gives visibleFraction cheaply. Inline ads attach
+  // when any part is visible and detach when fully offscreen, without any
+  // layout queries on the scroll path.
+  void _checkNear() {
+    if (!mounted) return;
+    if (widget.fullPage && !_near) {
+      setState(() => _near = true);
+      _syncReveal();
     }
   }
 
-  void _checkNear() {
+  void _onVisibilityFraction(double fraction) {
     if (!mounted) return;
-    final near = _isNear();
+    final near = fraction > 0.0;
     if (near != _near) {
       setState(() => _near = near);
       _syncReveal();
@@ -304,7 +287,10 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
     }
     return VisibilityDetector(
       key: ValueKey<String>('twice-ad-${widget.placement.name}-${widget.slot}'),
-      onVisibilityChanged: _onVisibility,
+      onVisibilityChanged: (info) {
+        _onVisibility(info);
+        _onVisibilityFraction(info.visibleFraction);
+      },
       child: Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: Column(

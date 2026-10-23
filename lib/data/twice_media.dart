@@ -118,7 +118,7 @@ class TwiceMedia {
 
   static String stableKey(String url) {
     final id = identify(url);
-    return '${id.bucket}:${id.path}';
+    return '$id.bucket:${id.path}';
   }
 
   static String _hash(String input) {
@@ -400,7 +400,7 @@ class TwiceThumbCache {
       <String, ImageProvider<Object>>{};
 
   static String _key(String url, int targetLongEdge) =>
-      '${TwiceMedia.stableKey(url)}@${targetLongEdge}';
+      '${TwiceMedia.stableKey(url)}@$targetLongEdge';
 
   /// Returns a shared, stable provider for [url] at [targetLongEdge].
   /// The LRU keeps at most [_limit] entries; the oldest is evicted.

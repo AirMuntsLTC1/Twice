@@ -2,6 +2,8 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
+
 /// Dart binding for the pure-C EXIF orientation helper added to
 /// android/app/src/main/cpp/twice_native.cpp as
 /// `twice_native_exif_orientation(const uint8_t*, int64_t)`.

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
@@ -202,6 +203,25 @@ class SocialRepository {
       !value.startsWith('http://') &&
       !value.startsWith('https://');
 
+  /// Resize + JPEG-compress an image file. Returns a File to upload.
+  /// Throws only if the compressor fails; callers fall back to the original.
+  Future<File> _compressImage(
+    File source, {
+    required int maxDim,
+    required int quality,
+  }) async {
+    final out = await FlutterImageCompress.compressAndGetFile(
+      source.absolute.path,
+      '${source.path}.compressed_$maxDim.jpg',
+      minWidth: maxDim,
+      minHeight: maxDim,
+      quality: quality,
+      format: CompressFormat.jpeg,
+    );
+    if (out == null) return source;
+    return File(out.path);
+  }
+
   Future<Map<String, dynamic>> _ensureProfileImpl() async {
     final user = _db.auth.currentUser;
     if (user == null) throw AuthException('Please sign in again.');
@@ -318,7 +338,16 @@ class SocialRepository {
       if (file == null) {
         throw Exception('Could not read the selected profile photo.');
       }
-      final ext = file.path.split('.').last.toLowerCase();
+      File upload = file;
+      String ext = file.path.split('.').last.toLowerCase();
+      if (ext != 'gif') {
+        try {
+          upload = await _compressImage(file, maxDim: 512, quality: 85);
+          ext = 'jpg';
+        } catch (_) {
+          upload = file;
+        }
+      }
       final objectPath =
           '$userId/avatar_${DateTime.now().microsecondsSinceEpoch}.$ext';
 
@@ -326,7 +355,7 @@ class SocialRepository {
           .from('post-media')
           .upload(
             objectPath,
-            file,
+            upload,
             fileOptions: FileOptions(contentType: _mime(ext), upsert: false),
           );
 
@@ -459,8 +488,13 @@ class SocialRepository {
         final url = (raw['resolved_url'] ?? '').toString().trim();
         final thumbPath = (raw['thumbnail_url'] ?? '').toString().trim();
         final thumbUrl = (raw['resolved_thumbnail_url'] ?? '').toString().trim();
+        // Thumbnail first. If a thumbnail exists, do NOT prefetch the full
+        // image for image/gif media; the widget will fetch it lazily if the
+        // user actually opens that post. Only videos skip the thumbnail.
         jobs.add(() => add(thumbPath, thumbUrl, false));
-        if (type != 'video') jobs.add(() => add(path, url, false));
+        if (type == 'video') continue;
+        if (thumbPath.isNotEmpty) continue;
+        jobs.add(() => add(path, url, false));
       }
     }
     var next = 0;
@@ -739,12 +773,29 @@ class SocialRepository {
     try {
       var position = 0;
       for (final asset in assets) {
-        final file = await asset.file;
-        if (file == null) continue;
-        final ext = file.path.split('.').last.toLowerCase();
-        final type = asset.type == AssetType.video
+        final original = await asset.file;
+        if (original == null) continue;
+        final isVideo = asset.type == AssetType.video;
+        final originalExt = original.path.split('.').last.toLowerCase();
+        final isGif = !isVideo && originalExt == 'gif';
+
+        // Compression is applied to photos (not videos, not GIFs). Fall back
+        // to the original file if the compressor fails for any reason.
+        File file = original;
+        String ext = originalExt;
+        if (!isVideo && !isGif) {
+          try {
+            file = await _compressImage(original, maxDim: 2048, quality: 82);
+            ext = 'jpg';
+          } catch (_) {
+            file = original;
+            ext = originalExt;
+          }
+        }
+
+        final type = isVideo
             ? 'video'
-            : (ext == 'gif' ? 'gif' : 'image');
+            : (isGif ? 'gif' : 'image');
         final objectPath =
             '$userId/$postId/${DateTime.now().microsecondsSinceEpoch}_$position.$ext';
         await _db.storage
@@ -781,9 +832,27 @@ class SocialRepository {
               uploadedPaths.add(candidate);
               thumbnailPath = candidate;
             }
-          } catch (_) {
-            // Thumbnail extraction is optional; preserve the video upload.
-          }
+          } catch (_) {}
+        } else if (type == 'image') {
+          // Feed-preview thumbnail: small JPEG so the feed never downloads
+          // the full 2048px image. Best-effort; ignored if it fails.
+          try {
+            final thumb = await _compressImage(file, maxDim: 720, quality: 80);
+            final candidate =
+                '$userId/$postId/${DateTime.now().microsecondsSinceEpoch}_${position}_thumb.jpg';
+            await _db.storage
+                .from('post-media')
+                .upload(
+                  candidate,
+                  thumb,
+                  fileOptions: const FileOptions(
+                    contentType: 'image/jpeg',
+                    upsert: false,
+                  ),
+                );
+            uploadedPaths.add(candidate);
+            thumbnailPath = candidate;
+          } catch (_) {}
         }
 
         await _db.from('post_media').insert({

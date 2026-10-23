@@ -11,6 +11,10 @@ class OfflineMediaCache {
   OfflineMediaCache._();
   static final OfflineMediaCache instance = OfflineMediaCache._();
 
+  /// In-flight downloads keyed by "bucket:objectPath". Two concurrent requests
+  /// for the same object share one network download instead of racing.
+  final Map<String, Future<String?>> _inflight = {};
+
   Future<Directory> _directory() async {
     final support = await getApplicationSupportDirectory();
     final dir = Directory(p.join(support.path, 'twice_media_cache'));
@@ -77,6 +81,28 @@ class OfflineMediaCache {
   /// Returns a file:// URI only after a complete download has been committed.
   /// Large items are skipped rather than exhausting memory or disk.
   Future<String?> cacheFromUrl({
+    required String bucket,
+    required String objectPath,
+    required String signedUrl,
+    required bool isVideo,
+    int? maxBytesOverride,
+  }) {
+    final key = '$bucket:$objectPath';
+    final running = _inflight[key];
+    if (running != null) return running;
+    final work = _cacheFromUrlImpl(
+      bucket: bucket,
+      objectPath: objectPath,
+      signedUrl: signedUrl,
+      isVideo: isVideo,
+      maxBytesOverride: maxBytesOverride,
+    );
+    _inflight[key] = work;
+    work.whenComplete(() { _inflight.remove(key); });
+    return work;
+  }
+
+  Future<String?> _cacheFromUrlImpl({
     required String bucket,
     required String objectPath,
     required String signedUrl,

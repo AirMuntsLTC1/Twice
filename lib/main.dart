@@ -193,7 +193,7 @@ Future<void> main() async {
   unawaited(PushNotificationService.registerBackgroundHandler());
   unawaited(TwiceAds.init());
   unawaited(_bootSupabase());
-  unawaited(TwiceMedia.trimDiskCache());
+  TwiceMedia.scheduleTrimDiskCache();
   unawaited(LocalCache.instance.pruneOldCacheEntries());
 }
 
@@ -990,6 +990,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
 
   DateTime? _lastResumeRefresh;
   bool _refreshingOnResume = false;
+  int _refreshGen = 0;
 
   @override
   void initState() {
@@ -1050,7 +1051,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
 
   Future<void> _refreshQuietly() async {
     if (!mounted) return;
-
+    final gen = ++_refreshGen;
     try {
       final values = await Future.wait<dynamic>([
         repo.myProfile(),
@@ -1177,6 +1178,8 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
       }
 
       if (!mounted) return;
+      // A slow refresh must never overwrite a newer one.
+      if (gen != _refreshGen) return;
       setState(() {
         profile = freshProfile;
         posts = mergedPosts;

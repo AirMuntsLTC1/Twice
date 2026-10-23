@@ -59,6 +59,11 @@ class TwiceMedia {
   static final Map<String, Future<String?>> _videoJobs = {};
   static Directory? _thumbDirectory;
 
+  /// Debug-only counters. Zero in release builds because nothing reads them.
+  static int debugHits = 0;
+  static int debugMisses = 0;
+  static void resetDebugCounters() { debugHits = 0; debugMisses = 0; }
+
   /// Call once at startup.
   static void configure() {
     final cache = PaintingBinding.instance.imageCache;
@@ -112,6 +117,11 @@ class TwiceMedia {
           id.bucket,
           id.path,
         );
+        if (uri != null) {
+          debugHits++;
+        } else {
+          debugMisses++;
+        }
         if (uri == null) {
           for (var attempt = 0; attempt < 3 && uri == null; attempt++) {
             if (attempt > 0) {
@@ -220,10 +230,17 @@ class TwiceMedia {
     });
   }
 
+  /// Runs the disk-cache trim on a background microtask so it does not jank
+  /// the first frame. Single pass over the directory, one stat per file.
+  static void scheduleTrimDiskCache({int maxBytes = 600 * 1024 * 1024}) {
+    Future<void>.delayed(const Duration(seconds: 8), () {
+      trimDiskCache(maxBytes: maxBytes).catchError((Object _) {});
+    });
+  }
+
   /// Keeps the on-disk cache under [maxBytes] by deleting the oldest files.
   static Future<void> trimDiskCache({int maxBytes = 600 * 1024 * 1024}) async {
     try {
-      await Future<void>.delayed(const Duration(seconds: 8));
       final support = await getApplicationSupportDirectory();
       final root = Directory(p.join(support.path, 'twice_media_cache'));
       if (!await root.exists()) return;

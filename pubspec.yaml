@@ -30,6 +30,8 @@ environment:
 dependencies:
   app_links: 7.1.1
   path: ^1.9.1
+  url_launcher: ^6.3.0
+  webview_flutter: ^4.10.0
   path_provider: ^2.1.6
   http: ^1.6.0
   sqflite: ^2.4.2

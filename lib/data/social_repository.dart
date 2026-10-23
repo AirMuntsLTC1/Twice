@@ -1432,6 +1432,37 @@ class SocialRepository {
 
   /// Posts matching [query] (caption). With an empty query this is the explore
   /// feed. [kind] is 'all', 'photos' or 'videos'.
+  Future<List<Map<String, dynamic>>> postsByHashtag(
+    String tag, {
+    int limit = 40,
+  }) async {
+    var clean = tag.trim();
+    if (clean.startsWith('#')) clean = clean.substring(1);
+    if (clean.isEmpty) return [];
+    final safe = clean
+        .replaceAll('%', r'\%')
+        .replaceAll('_', r'\_')
+        .replaceAll(',', ' ');
+    try {
+      final rows = await _db
+          .from('posts')
+          .select(_postColumns)
+          .ilike('caption', '%#$safe%')
+          .order('created_at', ascending: false)
+          .limit(limit)
+          .timeout(const Duration(seconds: 25));
+      return await _hydratePosts(_asMapList(rows));
+    } catch (e) {
+      if (_looksLikeNetworkFailure(e)) {
+        final cached = _asMapList(
+          await _cache.get(userId, 'hashtag', id: clean.toLowerCase()),
+        );
+        if (cached.isNotEmpty) return cached;
+      }
+      rethrow;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> searchPosts(
     String query, {
     String kind = 'all',

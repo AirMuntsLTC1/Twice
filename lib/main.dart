@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 
 import 'messages_page.dart' as messaging;
 
@@ -28,6 +29,8 @@ import 'data/local_cache.dart';
 import 'data/twice_media.dart';
 import 'ads/ad_config.dart';
 import 'widgets/ig_icons.dart';
+import 'links/link_handler.dart';
+import 'hashtags/hashtag_feed_page.dart';
 import 'comments/comment_media.dart';
 import 'stories/story_editor.dart';
 import 'ads/ad_manager.dart';
@@ -4147,20 +4150,62 @@ String _withCommas(int value) => value.toString().replaceAllMapped(
 );
 
 /// Caption text with #hashtags and @mentions highlighted in Instagram blue.
-List<InlineSpan> _captionSpans(String text) {
+List<InlineSpan> _captionSpans(String text, {BuildContext? context}) {
   final spans = <InlineSpan>[];
   var last = 0;
-  final pattern = RegExp(r'(#[\p{L}\p{N}_]+|@[\w.]+)', unicode: true);
+  final pattern = RegExp(
+    r'(#([\p{L}\p{N}_]+)|@([\w.]+)|https?://[^\s<>"]+)',
+    unicode: true,
+  );
   for (final match in pattern.allMatches(text)) {
     if (match.start > last) {
       spans.add(TextSpan(text: text.substring(last, match.start)));
     }
-    spans.add(
-      TextSpan(
-        text: match.group(0),
-        style: const TextStyle(color: igHashtagBlue),
-      ),
-    );
+    final value = match.group(0)!;
+    if (value.startsWith('http')) {
+      spans.add(
+        TextSpan(
+          text: value,
+          style: const TextStyle(color: igHashtagBlue),
+          recognizer: context == null
+              ? null
+              : (TapGestureRecognizer()
+                ..onTap = () => twiceOpenLink(context, value)),
+        ),
+      );
+    } else if (value.startsWith('#')) {
+      spans.add(
+        TextSpan(
+          text: value,
+          style: const TextStyle(color: igHashtagBlue),
+          recognizer: context == null
+              ? null
+              : (TapGestureRecognizer()
+                ..onTap = () {
+                    final tag = value.substring(1);
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => HashtagFeedPage(
+                          tag: tag,
+                          gridTileBuilder: (row, onTap) => GestureDetector(
+                            onTap: onTap,
+                            child: const ColoredBox(color: Color(0xFF262626)),
+                          ),
+                          onOpenPost: (_) {},
+                        ),
+                      ),
+                    );
+                  }),
+        ),
+      );
+    } else {
+      spans.add(
+        TextSpan(
+          text: value,
+          style: const TextStyle(color: igHashtagBlue),
+        ),
+      );
+    }
     last = match.end;
   }
   if (last < text.length) spans.add(TextSpan(text: text.substring(last)));

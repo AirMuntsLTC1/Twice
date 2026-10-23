@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'main.dart';
 
 import 'comments/comment_media.dart';
 
@@ -1445,6 +1446,70 @@ class _ChatBubble extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onDiscard;
 
+  Widget _buildMessageText(BuildContext context, String text) {
+    // Check if it's a shared post link
+    final postLinkRegex = RegExp(r'https://twice\.app/p/([a-zA-Z0-9-]+)');
+    final match = postLinkRegex.firstMatch(text);
+
+    if (match != null) {
+      final postId = match.group(1)!;
+      final displayText = text.replaceAll(match.group(0)!, '').trim();
+      return GestureDetector(
+        onTap: () async {
+          try {
+            final data = await SocialRepository.instance.postById(postId);
+            if (data != null && context.mounted) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PostDetailPage(post: SocialPost(data)),
+                ),
+              );
+            }
+          } catch (e) {
+            debugPrint('Could not open shared post: $e');
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (displayText.isNotEmpty) ...[
+                Text(displayText, style: const TextStyle(color: Colors.white, fontSize: 15)),
+                const SizedBox(height: 6),
+              ],
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.link, color: Color(0xFF0095F6), size: 16),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Tap to view shared post',
+                    style: TextStyle(color: Color(0xFF0095F6), fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Text(
+      text,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 15,
+        height: 1.3,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final m = message;
@@ -1605,14 +1670,7 @@ class _ChatBubble extends StatelessWidget {
                             padding: hasMedia
                                 ? const EdgeInsets.fromLTRB(8, 0, 8, 6)
                                 : EdgeInsets.zero,
-                            child: Text(
-                              body,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                height: 1.3,
-                              ),
-                            ),
+                            child: _buildMessageText(context, body),
                           ),
                         ],
                       ],

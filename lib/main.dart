@@ -16,7 +16,6 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 
 import 'data/social_repository.dart';
 import 'data/inbox_controller.dart';
@@ -29,6 +28,7 @@ import 'data/local_cache.dart';
 import 'data/twice_media.dart';
 import 'ads/ad_config.dart';
 import 'widgets/ig_icons.dart';
+import 'widgets/share_sheet.dart';
 import 'links/link_handler.dart';
 import 'hashtags/hashtag_feed_page.dart';
 import 'comments/comment_media.dart';
@@ -3816,13 +3816,20 @@ class _PostCardState extends State<PostCard>
 
   Future<void> _share() async {
     final post = widget.post;
-    try {
-      await SharePlus.instance.share(
-        ShareParams(text: '${post.username} on Twice: ${post.caption}'.trim()),
-      );
-    } catch (e) {
-      debugPrint('Share failed: $e');
+    String thumbUrl = '';
+    if (post.media.isNotEmpty) {
+      thumbUrl = (post.media.first['resolved_url'] ?? '').toString();
     }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ShareSheet(
+        postId: post.id,
+        postCaption: post.caption,
+        postThumbnailUrl: thumbUrl,
+      ),
+    );
   }
 
   void _toggleSave() {

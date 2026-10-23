@@ -990,14 +990,21 @@ class _VideoReelState extends State<_VideoReel> {
   }
 
   Future<void> _share() async {
-    final p = widget.post;
-    final text = StringBuffer('${p.name} (@${p.username}) on Twice');
-    if (p.caption.trim().isNotEmpty) text.write(': ${p.caption.trim()}');
-    try {
-      await SharePlus.instance.share(ShareParams(text: text.toString()));
-    } catch (e) {
-      if (mounted) _videoSnack(context, 'Could not share: $e');
+    final post = widget.post;
+    String thumbUrl = '';
+    if (post.media.isNotEmpty) {
+      thumbUrl = (post.media.first['resolved_url'] ?? '').toString();
     }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ShareSheet(
+        postId: post.id,
+        postCaption: post.caption,
+        postThumbnailUrl: thumbUrl,
+      ),
+    );
   }
 
   Future<void> _openComments({bool focus = false}) async {

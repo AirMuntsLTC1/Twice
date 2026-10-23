@@ -23,6 +23,7 @@ import 'data/notification_service.dart';
 import 'data/push_notification_service.dart';
 import 'widgets/in_app_notification_banner.dart';
 import 'widgets/asset_thumb.dart';
+import 'widgets/verified_badge.dart';
 import 'data/local_cache.dart';
 import 'data/twice_media.dart';
 import 'ads/ad_config.dart';
@@ -990,6 +991,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     InboxController.instance.start();
+    unawaited(TwiceVerified.start());
     unawaited(NotificationService.instance.init());
     NotificationService.instance.onTap = _handleNotificationTap;
     unawaited(_startPushNotifications());
@@ -1031,6 +1033,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
     _refreshingOnResume = true;
 
     try {
+      unawaited(TwiceVerified.refresh());
       await repo.syncPendingLikes();
       if (mounted) await _refreshQuietly();
     } catch (e) {
@@ -2716,6 +2719,15 @@ class _StoryViewerState extends State<StoryViewer>
                                       fontSize: 14,
                                     ),
                                   ),
+                                  verifiedSpan(
+                                    (_story['user_id'] ?? user['id'] ?? '')
+                                        .toString(),
+                                    size: 14,
+                                    name: (user['display_name'] ?? '')
+                                        .toString(),
+                                    username: (user['username'] ?? '')
+                                        .toString(),
+                                  ),
                                   // Timestamp of this story, e.g. "3h".
                                   TextSpan(
                                     text:
@@ -3907,14 +3919,19 @@ class _PostCardState extends State<PostCard>
                         _avatar(post.avatarUrl),
                         const SizedBox(width: 10),
                         Flexible(
-                          child: Text(
-                            username,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: ink,
+                          child: VerifiedName(
+                            userId: (post.author['id'] ?? '').toString(),
+                            name: post.name,
+                            username: username,
+                            child: Text(
+                              username,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: ink,
+                              ),
                             ),
                           ),
                         ),
@@ -5840,14 +5857,19 @@ class _RecentTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    name.isEmpty ? username : name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14.5,
-                      color: ink,
+                  VerifiedName(
+                    userId: (user['id'] ?? '').toString(),
+                    name: name,
+                    username: username,
+                    child: Text(
+                      name.isEmpty ? username : name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14.5,
+                        color: ink,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -6023,6 +6045,12 @@ class _PersonTileState extends State<_PersonTile> {
                                 color: ink,
                               ),
                             ),
+                          ),
+                          VerifiedBadge(
+                            userId: (user['id'] ?? '').toString(),
+                            size: 15,
+                            name: name,
+                            username: username,
                           ),
                           if (user['is_private'] == true) ...[
                             const SizedBox(width: 4),
@@ -6331,6 +6359,8 @@ class _ProfileTabsDelegate extends SliverPersistentHeaderDelegate {
 /// Following on the right, name + bio underneath and a row of action buttons.
 class _IgProfileHeader extends StatelessWidget {
   const _IgProfileHeader({
+    this.userId = '',
+    this.username = '',
     required this.avatar,
     required this.name,
     required this.bio,
@@ -6343,6 +6373,8 @@ class _IgProfileHeader extends StatelessWidget {
     required this.actions,
   });
 
+  final String userId;
+  final String username;
   final String avatar;
   final String name;
   final String bio;
@@ -6412,6 +6444,12 @@ class _IgProfileHeader extends StatelessWidget {
                   color: ink,
                 ),
               ),
+            ),
+            VerifiedBadge(
+              userId: userId,
+              size: 17,
+              name: name,
+              username: username,
             ),
             if (isPrivate) ...[
               const SizedBox(width: 6),
@@ -6762,6 +6800,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
     final avatar = (profile['avatar_url'] ?? '').toString();
     final bio = (profile['bio'] ?? '').toString().trim();
     return _IgProfileHeader(
+      userId: widget.userId,
+      username: username,
       avatar: avatar,
       name: shownName,
       bio: bio,
@@ -6959,11 +6999,17 @@ class _UserProfilePageState extends State<UserProfilePage> {
                 onPressed: () => Navigator.of(context).pop(),
                 icon: const Icon(Icons.arrow_back_rounded),
               ),
-              title: Text(
-                username.isEmpty ? 'Profile' : username,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
+              title: VerifiedName(
+                userId: widget.userId,
+                size: 16,
+                name: shownName,
+                username: username,
+                child: Text(
+                  username.isEmpty ? 'Profile' : username,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
               actions: [
@@ -7245,9 +7291,16 @@ class _CommentsSheetState extends State<CommentsSheet> {
                     ),
                     children: [
                       TextSpan(
-                        text: '$name ',
+                        text: name,
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
+                      verifiedSpan(
+                        userId,
+                        size: 14,
+                        name: name,
+                        username: (p['username'] ?? '').toString(),
+                      ),
+                      const TextSpan(text: ' '),
                       ..._captionSpans(body),
                     ],
                   ),
@@ -7733,6 +7786,12 @@ class _ActivityPageState extends State<ActivityPage> {
                               ),
                             ),
                           ),
+                        ),
+                        verifiedSpan(
+                          (actor['id'] ?? row['actor_id'] ?? '').toString(),
+                          size: 14,
+                          name: name,
+                          username: (actor['username'] ?? '').toString(),
                         ),
                         TextSpan(text: ' ${_action(row)}'),
                       ],
@@ -8465,13 +8524,18 @@ class _FollowListPageState extends State<FollowListPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    name.isEmpty ? username : name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 15,
+                                  VerifiedName(
+                                    userId: (user['id'] ?? '').toString(),
+                                    name: name,
+                                    username: username,
+                                    child: Text(
+                                      name.isEmpty ? username : name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 15,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 3),
@@ -8887,6 +8951,9 @@ class _ProfilePageState extends State<ProfilePage> {
     final bio = (profile['bio'] ?? '').toString().trim();
     final isPrivate = profile['is_private'] == true;
     return _IgProfileHeader(
+      userId: (profile['id'] ?? Supabase.instance.client.auth.currentUser?.id ?? '')
+          .toString(),
+      username: username,
       avatar: avatar,
       name: shownName,
       bio: bio,

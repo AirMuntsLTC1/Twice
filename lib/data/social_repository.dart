@@ -1099,7 +1099,7 @@ class SocialRepository {
     final posts = await _db
         .from('posts')
         .select(
-          'id,user_id,caption,created_at,profiles!posts_user_id_fkey(username,display_name,avatar_url)',
+          'id,user_id,caption,created_at,profiles!posts_user_id_fkey(id,username,display_name,avatar_url)',
         )
         .ilike('caption', '%$safe%')
         .order('created_at', ascending: false)
@@ -1953,7 +1953,7 @@ class SocialRepository {
     final rows = await _db
         .from('notifications')
         .select(
-          'id,type,is_read,created_at,profiles!notifications_actor_id_fkey(username,display_name,avatar_url),posts(caption)',
+          'id,type,is_read,created_at,actor_id,profiles!notifications_actor_id_fkey(id,username,display_name,avatar_url),posts(caption)',
         )
         .eq('recipient_id', userId)
         .order('created_at', ascending: false)

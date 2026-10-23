@@ -1262,15 +1262,21 @@ class _VideoReelState extends State<_VideoReel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      post.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        shadows: _reelShadow,
+                    VerifiedName(
+                      userId: (post.author['id'] ?? '').toString(),
+                      name: post.name,
+                      username: post.username,
+                      size: 15,
+                      child: Text(
+                        post.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          shadows: _reelShadow,
+                        ),
                       ),
                     ),
                     Row(
@@ -2372,6 +2378,13 @@ class _VideoCommentsSheetState extends State<_VideoCommentsSheet> {
                                   ),
                                 ),
                               ),
+                            ),
+                            VerifiedBadge(
+                              userId: (p['id'] ?? row['user_id'] ?? '')
+                                  .toString(),
+                              size: 14,
+                              name: name,
+                              username: (p['username'] ?? '').toString(),
                             ),
                             if (isAuthor) ...[
                               const SizedBox(width: 6),

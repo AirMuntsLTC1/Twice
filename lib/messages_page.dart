@@ -18,6 +18,7 @@ import 'data/local_cache.dart';
 import 'data/social_repository.dart';
 import 'data/twice_media.dart';
 import 'widgets/skeleton.dart';
+import 'widgets/verified_badge.dart';
 
 // Design tokens (match main.dart dark IG theme)
 const _igBlack = Color(0xFF000000);
@@ -493,14 +494,19 @@ class _ConversationTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
+                  VerifiedName(
+                    userId: (data['other_user_id'] ?? '').toString(),
+                    name: name,
+                    username: username,
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
+                      ),
                     ),
                   ),
                   if (username.isNotEmpty) ...[
@@ -923,14 +929,19 @@ class _ConversationPageState extends State<ConversationPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    widget.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
+                  VerifiedName(
+                    userId: widget.otherUserId,
+                    name: widget.title,
+                    username: widget.otherUsername,
+                    child: Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                   if (subtitle.isNotEmpty)

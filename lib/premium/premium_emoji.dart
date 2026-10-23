@@ -104,3 +104,46 @@ class PremiumEmojiTile extends StatelessWidget {
     );
   }
 }
+
+/// A premium badge to show next to premium users' names.
+class TwicePremiumBadge extends StatefulWidget {
+  const TwicePremiumBadge({super.key, this.size = 16});
+  final double size;
+
+  @override
+  State<TwicePremiumBadge> createState() => _TwicePremiumBadgeState();
+}
+
+class _TwicePremiumBadgeState extends State<TwicePremiumBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: Tween<double>(begin: 1.0, end: 1.15).animate(
+        CurvedAnimation(parent: _c, curve: Curves.easeInOut),
+      ),
+      child: Icon(
+        Icons.workspace_premium_rounded,
+        size: widget.size,
+        color: const Color(0xFFFFD700), // Gold
+      ),
+    );
+  }
+}

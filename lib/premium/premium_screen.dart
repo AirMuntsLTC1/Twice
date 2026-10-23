@@ -164,7 +164,7 @@ class _TwicePremiumScreenState extends State<TwicePremiumScreen>
                                       color: Colors.white,
                                       fontWeight: FontWeight.w700)),
                               SizedBox(height: 4),
-                              Text('₱149',
+                              Text('₱59',
                                   style: TextStyle(
                                       color: _igBlue,
                                       fontSize: 22,

@@ -112,7 +112,6 @@ class InboxController extends ChangeNotifier {
             if (type == 'message' && activeConversationId != null) {
               final convo = (row['conversation_id'] ?? '').toString();
               if (convo.isEmpty || convo == activeConversationId) {
-                // Already looking at this chat; it is marked read there.
                 return;
               }
             }
@@ -123,7 +122,8 @@ class InboxController extends ChangeNotifier {
               if (type == 'message') messageUnread++;
             }
             notifyListeners();
-            // Top slide banner + system notification
+            // Always surface the notification as an in-app banner AND a
+            // native system notification, whether or not the app is open.
             unawaited(NotificationService.instance.presentFromRow(row));
           },
         )

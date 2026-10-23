@@ -1044,6 +1044,8 @@ class _VideoReelState extends State<_VideoReel> {
 
   void _openMore() {
     final post = widget.post;
+    final isOwn = post.author['id'] == Supabase.instance.client.auth.currentUser?.id;
+
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: igSurface,
@@ -1065,46 +1067,121 @@ class _VideoReelState extends State<_VideoReel> {
             ),
             const SizedBox(height: 6),
             ListTile(
-              leading: Icon(
-                post.saved
-                    ? Icons.bookmark_rounded
-                    : Icons.bookmark_border_rounded,
-              ),
+              leading: const Icon(Icons.link_rounded),
+              title: const Text('Copy link'),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: 'https://twice.app/p/${post.id}'));
+                Navigator.of(sheetContext).pop();
+                _videoSnack(context, 'Link copied');
+              },
+            ),
+            ListTile(
+              leading: Icon(post.saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded),
               title: Text(post.saved ? 'Remove from saved' : 'Save video'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 _toggleSave();
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.ios_share_rounded),
-              title: const Text('Share'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _share();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.person_outline_rounded),
-              title: Text('View ${post.name}’s profile'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _openProfile();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.speed_rounded),
-              title: const Text('Playback speed & settings'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _showVideoSettings(context);
-              },
-            ),
+            if (isOwn) ...[
+              ListTile(
+                leading: Icon((post.data['visibility'] ?? 'public') == 'public' ? Icons.public : Icons.lock),
+                title: Text('Audience: ${(post.data['visibility'] ?? 'public').toString().toUpperCase()}'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _changeAudience();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                title: const Text('Delete video', style: TextStyle(color: Colors.red)),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Delete video?'),
+                      content: const Text('This action cannot be undone.'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                        FilledButton(
+                          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                          onPressed: () => Navigator.pop(ctx, true), 
+                          child: const Text('Delete'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) {
+                    try {
+                      await Supabase.instance.client.from('posts').delete().eq('id', post.id);
+                      _videoSnack(context, 'Video deleted');
+                      // Optionally refresh feed here
+                    } catch (e) {
+                      _videoSnack(context, 'Failed to delete: $e');
+                    }
+                  }
+                },
+              ),
+            ],
             const SizedBox(height: 6),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _changeAudience() async {
+    final current = (widget.post.data['visibility'] ?? 'public').toString();
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Who can see this?'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'public'),
+            child: Row(
+              children: [
+                Icon(current == 'public' ? Icons.radio_button_checked : Icons.radio_button_off),
+                const SizedBox(width: 10),
+                const Text('Public (Everyone)'),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'followers'),
+            child: Row(
+              children: [
+                Icon(current == 'followers' ? Icons.radio_button_checked : Icons.radio_button_off),
+                const SizedBox(width: 10),
+                const Text('Followers only'),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'connected'),
+            child: Row(
+              children: [
+                Icon(current == 'connected' ? Icons.radio_button_checked : Icons.radio_button_off),
+                const SizedBox(width: 10),
+                const Text('Mutuals (Follow back)'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (selected != null && selected != current) {
+      try {
+        await Supabase.instance.client.from('posts').update({'visibility': selected}).eq('id', widget.post.id);
+        widget.post.data['visibility'] = selected;
+        setState(() {});
+        _videoSnack(context, 'Audience changed to $selected');
+      } catch (e) {
+        _videoSnack(context, 'Failed to update audience: $e');
+      }
+    }
   }
 
   // ---- UI ----------------------------------------------------------------

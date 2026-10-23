@@ -1357,6 +1357,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
       await repo.publishPost(caption, media, visibility: visibility);
       if (!mounted) return;
       setState(() => selected = 0);
+      Navigator.of(context).pop();
       await _loadAll();
       if (mounted) _message('Post published.');
     } catch (e) {
@@ -3922,132 +3923,91 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  void _showPostOptions(BuildContext context, SocialPost post) {
-    final isOwn = post.author['id'] == Supabase.instance.client.auth.currentUser?.id;
-    
-    showModalBottomSheet<void>(
+  Future<void> _showPostOptions(BuildContext context, SocialPost post) async {
+    final isOwn =
+        post.author['id'] == Supabase.instance.client.auth.currentUser?.id;
+    final visibility = (post.data['visibility'] ?? 'public').toString();
+    final action = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: igSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(width: 38, height: 4, decoration: BoxDecoration(color: Colors.grey.shade700, borderRadius: BorderRadius.circular(99))),
-            const SizedBox(height: 10),
-            ListTile(
-              leading: const Icon(Icons.link_rounded),
-              title: const Text('Copy link'),
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: 'https://twice.app/p/${post.id}'));
-                Navigator.pop(sheetContext);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied')));
-              },
-            ),
-            if (isOwn) ...[
-              ListTile(
-                leading: Icon((post.data['visibility'] ?? 'public') == 'public' ? Icons.public : Icons.lock),
-                title: Text('Audience: ${(post.data['visibility'] ?? 'public').toString().toUpperCase()}'),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  await _changeAudience(context, post);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
-                title: const Text('Delete post', style: TextStyle(color: Colors.red)),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Delete post?'),
-                      content: const Text('This action cannot be undone.'),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                        FilledButton(
-                          style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                          onPressed: () => Navigator.pop(ctx, true), 
-                          child: const Text('Delete'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirm == true) {
-                    try {
-                      await Supabase.instance.client.from('posts').delete().eq('id', post.id);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post deleted')));
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
-                      }
-                    }
-                  }
-                },
-              ),
-            ],
-          ],
-        ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => _PostOptionsSheet(
+        isOwn: isOwn,
+        visibility: visibility,
+        onCopyLink: () => Navigator.pop(sheetContext, 'copy'),
+        onAudience: () => Navigator.pop(sheetContext, 'audience'),
+        onDelete: () => Navigator.pop(sheetContext, 'delete'),
       ),
     );
+    if (!context.mounted || action == null) return;
+    switch (action) {
+      case 'copy':
+        await Clipboard.setData(
+          ClipboardData(text: 'https://twice.app/p/${post.id}'),
+        );
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Link copied to clipboard')),
+        );
+      case 'audience':
+        await _changeAudience(context, post);
+      case 'delete':
+        await _confirmDeletePost(context, post);
+    }
   }
 
   Future<void> _changeAudience(BuildContext context, SocialPost post) async {
     final current = (post.data['visibility'] ?? 'public').toString();
-    final selected = await showDialog<String>(
+    final selected = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Who can see this?'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, 'public'),
-            child: Row(
-              children: [
-                Icon(current == 'public' ? Icons.radio_button_checked : Icons.radio_button_off),
-                const SizedBox(width: 10),
-                const Text('Public (Everyone)'),
-              ],
-            ),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, 'followers'),
-            child: Row(
-              children: [
-                Icon(current == 'followers' ? Icons.radio_button_checked : Icons.radio_button_off),
-                const SizedBox(width: 10),
-                const Text('Followers only'),
-              ],
-            ),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, 'connected'),
-            child: Row(
-              children: [
-                Icon(current == 'connected' ? Icons.radio_button_checked : Icons.radio_button_off),
-                const SizedBox(width: 10),
-                const Text('Mutuals (Follow back)'),
-              ],
-            ),
-          ),
-        ],
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AudienceSheet(current: current),
+    );
+    if (!context.mounted || selected == null || selected == current) return;
+    try {
+      await Supabase.instance.client
+          .from('posts')
+          .update({'visibility': selected})
+          .eq('id', post.id);
+      post.data['visibility'] = selected;
+      if (context.mounted) setState(() {});
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not update: $e')));
+      }
+    }
+  }
+
+  Future<void> _confirmDeletePost(
+    BuildContext context,
+    SocialPost post,
+  ) async {
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _ConfirmSheet(
+        icon: Icons.delete_outline_rounded,
+        iconColor: const Color(0xFFD92D20),
+        title: 'Delete this post?',
+        body: "This can't be undone. All likes and comments will be gone.",
+        confirmLabel: 'Delete post',
+        confirmColor: const Color(0xFFD92D20),
+        onConfirm: () => Navigator.pop(sheetContext, true),
       ),
     );
-
-    if (selected != null && selected != current) {
-      try {
-        await Supabase.instance.client.from('posts').update({'visibility': selected}).eq('id', post.id);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Audience changed to $selected')));
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update audience: $e')));
-        }
+    if (!context.mounted || ok != true) return;
+    try {
+      await Supabase.instance.client.from('posts').delete().eq('id', post.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Post deleted')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not delete: $e')));
       }
     }
   }
@@ -5397,10 +5357,18 @@ class _PostThumb extends StatelessWidget {
     if (first != null) {
       final thumb = (first['resolved_thumbnail_url'] ?? '').toString();
       final full = (first['resolved_url'] ?? '').toString();
+      final rawThumb = (first['thumbnail_url'] ?? '').toString();
       if (_isImageSource(thumb)) {
         src = thumb;
-      } else if (!isVideo && _isImageSource(full)) {
+      } else if (_isImageSource(full)) {
         src = full;
+      } else if (rawThumb.isNotEmpty && !rawThumb.startsWith('http')) {
+        SocialRepository.instance
+            .refreshMediaUrl(rawThumb)
+            .then((fresh) {
+          if (fresh != null) first['resolved_thumbnail_url'] = fresh;
+        })
+            .catchError((Object _) {});
       }
     }
     final placeholder = DecoratedBox(
@@ -7232,6 +7200,42 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Map<String, dynamic> _me = <String, dynamic>{};
   final FocusNode _inputFocus = FocusNode();
   bool busy = true;
+  final Map<String, int> _likeCounts = <String, int>{};
+  final Set<String> _myLikes = <String>{};
+
+  Future<void> _loadCommentLikes() async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+    final ids = rows.map((r) => r['id'].toString()).toList();
+    if (ids.isEmpty) return;
+    final counts = <String, int>{};
+    final mine = <String>{};
+    for (var i = 0; i < ids.length; i += 50) {
+      final chunk = ids.sublist(i, min(i + 50, ids.length));
+      try {
+        final likes = await Supabase.instance.client
+            .from('comment_likes')
+            .select('comment_id,user_id')
+            .inFilter('comment_id', chunk);
+        for (final raw in likes as List) {
+          final row = raw as Map;
+          final cid = row['comment_id'].toString();
+          counts[cid] = (counts[cid] ?? 0) + 1;
+          if (row['user_id'] == uid) mine.add(cid);
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() {
+      _likeCounts
+        ..clear()
+        ..addAll(counts);
+      _myLikes
+        ..clear()
+        ..addAll(mine);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -7272,6 +7276,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
           busy = false;
           loadError = null;
         });
+        unawaited(_loadCommentLikes());
       }
     } catch (e) {
       if (mounted) {
@@ -7634,6 +7639,17 @@ class _CommentsSheetState extends State<CommentsSheet> {
               ],
             ),
             ),
+            if (row != null &&
+                (row['id'] ?? '').toString().isNotEmpty &&
+                row['_pending'] != true)
+              Padding(
+                padding: const EdgeInsets.only(left: 6, top: 2),
+                child: CommentHeartButton(
+                  commentId: row['id'].toString(),
+                  initialLiked: _myLikes.contains(row['id'].toString()),
+                  initialCount: _likeCounts[row['id'].toString()] ?? 0,
+                ),
+              ),
           ],
         ),
       ),
@@ -9749,6 +9765,293 @@ class _ProfileNavAvatar extends StatelessWidget {
             fontSize: 13,
             fontWeight: FontWeight.w700,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PostOptionsSheet extends StatelessWidget {
+  const _PostOptionsSheet({
+    required this.isOwn,
+    required this.visibility,
+    required this.onCopyLink,
+    required this.onAudience,
+    required this.onDelete,
+  });
+  final bool isOwn;
+  final String visibility;
+  final VoidCallback onCopyLink;
+  final VoidCallback onAudience;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final visIcon = visibility == 'public'
+        ? Icons.public_rounded
+        : visibility == 'followers'
+        ? Icons.group_rounded
+        : Icons.lock_rounded;
+    final visLabel = visibility == 'public'
+        ? 'Public'
+        : visibility == 'followers'
+        ? 'Followers only'
+        : 'Mutuals only';
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        decoration: BoxDecoration(
+          color: igSurface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFF262626)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFF3A3A3A),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _action(Icons.link_rounded, igBlue, 'Copy link',
+                'Share this post anywhere', onCopyLink),
+            if (isOwn) ...[
+              _action(visIcon, igBlue, 'Audience', visLabel, onAudience),
+              _action(Icons.delete_outline_rounded,
+                  const Color(0xFFD92D20), 'Delete post',
+                  "This action can't be undone", onDelete,
+                  destructive: true),
+            ],
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _action(IconData icon, Color tint, String title, String subtitle,
+      VoidCallback onTap, {bool destructive = false}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: tint.withValues(alpha: .14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: tint, size: 21),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: TextStyle(
+                        color: destructive ? const Color(0xFFD92D20) : ink,
+                        fontSize: 15, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text(subtitle, style: const TextStyle(
+                          color: muted, fontSize: 12.5)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AudienceSheet extends StatelessWidget {
+  const _AudienceSheet({required this.current});
+  final String current;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget option(String value, IconData icon, String title, String subtitle) {
+      final selected = current == value;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
+        child: Material(
+          color: selected ? igElevated : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => Navigator.pop(context, value),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(icon, color: selected ? igBlue : ink, size: 22),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: const TextStyle(
+                            color: ink, fontSize: 15,
+                            fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 2),
+                        Text(subtitle, style: const TextStyle(
+                            color: muted, fontSize: 12.5)),
+                      ],
+                    ),
+                  ),
+                  if (selected)
+                    const Icon(Icons.check_circle_rounded,
+                        color: igBlue, size: 22),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        decoration: BoxDecoration(
+          color: igSurface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFF262626)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFF3A3A3A),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text('Who can see this?',
+                style: TextStyle(color: ink, fontSize: 18,
+                    fontWeight: FontWeight.w800)),
+            const SizedBox(height: 12),
+            option('public', Icons.public_rounded,
+                'Public', 'Anyone on Twice can see this post'),
+            option('followers', Icons.group_rounded,
+                'Followers only', 'Only your followers can see this post'),
+            option('connected', Icons.lock_rounded,
+                'Mutuals only', 'People you follow back can see this'),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfirmSheet extends StatelessWidget {
+  const _ConfirmSheet({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.body,
+    required this.confirmLabel,
+    required this.confirmColor,
+    required this.onConfirm,
+  });
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String body;
+  final String confirmLabel;
+  final Color confirmColor;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        decoration: BoxDecoration(
+          color: igSurface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFF262626)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52, height: 52,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: .14),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: iconColor, size: 26),
+            ),
+            const SizedBox(height: 14),
+            Text(title, textAlign: TextAlign.center,
+                style: const TextStyle(color: ink, fontSize: 17,
+                    fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            Text(body, textAlign: TextAlign.center,
+                style: const TextStyle(color: muted, fontSize: 13.5,
+                    height: 1.35)),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 46,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ink,
+                        side: const BorderSide(color: Color(0xFF363636)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text('Cancel',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: 46,
+                    child: FilledButton(
+                      onPressed: onConfirm,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: confirmColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: Text(confirmLabel,
+                          style: const TextStyle(fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

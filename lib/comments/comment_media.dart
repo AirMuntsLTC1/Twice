@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/giphy_config.dart';
 
@@ -613,3 +615,150 @@ class _MiniIcon extends StatelessWidget {
     );
   }
 }
+
+
+/// Instagram-style animated heart on a comment. Optimistic + rolled back
+/// on error. Uses the existing `comment_likes` table.
+class CommentHeartButton extends StatefulWidget {
+  const CommentHeartButton({
+    super.key,
+    required this.commentId,
+    required this.initialLiked,
+    required this.initialCount,
+    this.size = 15,
+  });
+
+  final String commentId;
+  final bool initialLiked;
+  final int initialCount;
+  final double size;
+
+  @override
+  State<CommentHeartButton> createState() => _CommentHeartButtonState();
+}
+
+class _CommentHeartButtonState extends State<CommentHeartButton>
+    with SingleTickerProviderStateMixin {
+  late bool _liked = widget.initialLiked;
+  late int _count = widget.initialCount;
+  bool _busy = false;
+
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 340),
+  );
+  late final Animation<double> _scale = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(begin: 1.0, end: 1.4)
+          .chain(CurveTween(curve: Curves.easeOut)),
+      weight: 45,
+    ),
+    TweenSequenceItem(
+      tween: Tween(begin: 1.4, end: 1.0)
+          .chain(CurveTween(curve: Curves.easeInOut)),
+      weight: 55,
+    ),
+  ]).animate(_c);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  Future<void> _tap() async {
+    if (_busy) return;
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    final wasLiked = _liked;
+    final newLiked = !wasLiked;
+    HapticFeedback.lightImpact();
+    _c.forward(from: 0);
+    setState(() {
+      _liked = newLiked;
+      _count = (_count + (newLiked ? 1 : -1)).clamp(0, 1 << 30);
+      _busy = true;
+    });
+
+    try {
+      final db = Supabase.instance.client;
+      if (newLiked) {
+        await db.from('comment_likes').upsert(
+          {'comment_id': widget.commentId, 'user_id': uid},
+          onConflict: 'comment_id,user_id',
+          ignoreDuplicates: true,
+        );
+      } else {
+        await db
+            .from('comment_likes')
+            .delete()
+            .eq('comment_id', widget.commentId)
+            .eq('user_id', uid);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _liked = wasLiked;
+          _count = (_count + (wasLiked ? 1 : -1)).clamp(0, 1 << 30);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update heart: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _tap,
+      child: SizedBox(
+        width: 34,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ScaleTransition(
+              scale: _scale,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 120),
+                transitionBuilder: (child, anim) =>
+                    ScaleTransition(scale: anim, child: child),
+                child: Icon(
+                  _liked
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  key: ValueKey<bool>(_liked),
+                  size: widget.size,
+                  color: _liked
+                      ? const Color(0xFFFF3040)
+                      : const Color(0xFFA8A8A8),
+                ),
+              ),
+            ),
+            if (_count > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Text(
+                  _count >= 1000
+                      ? '${(_count / 1000).toStringAsFixed(1)}k'
+                      : '$_count',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: _liked
+                        ? const Color(0xFFFF3040)
+                        : const Color(0xFFA8A8A8),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

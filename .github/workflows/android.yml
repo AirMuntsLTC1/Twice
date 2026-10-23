@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: twice-android-${{ github.ref }}
@@ -180,6 +180,17 @@ jobs:
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: latest
+          name: "Twice Latest Build"
+          body: "Download the latest Twice APK here."
+          files: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          draft: false
+          prerelease: false
 
   verify:
     name: Verify Dart code and tests

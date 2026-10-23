@@ -25,6 +25,7 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import 'offline_media_cache.dart';
+import 'social_repository.dart';
 
 class _Gate {
   _Gate(this.limit);
@@ -346,14 +347,30 @@ class TwiceNetworkImage extends ImageProvider<TwiceNetworkImage> {
     ImageDecoderCallback decode,
   ) async {
     Uint8List? bytes;
-    final file = await TwiceMedia.imageFile(key.url);
-    if (file != null) {
-      bytes = await file.readAsBytes();
-    } else {
+    try {
+      final file = await TwiceMedia.imageFile(key.url);
+      if (file != null) bytes = await file.readAsBytes();
+    } catch (_) {}
+    if (bytes == null || bytes.isEmpty) {
+      try {
+        final id = TwiceMedia.identify(key.url);
+        final fresh = await SocialRepository.instance.refreshMediaUrl(
+          id.path,
+          bucket: id.bucket,
+        );
+        if (fresh != null && fresh.startsWith('http')) {
+          bytes = await TwiceMedia._directBytes(fresh);
+        }
+      } catch (_) {}
+    }
+    if (bytes == null || bytes.isEmpty) {
       bytes = await TwiceMedia._directBytes(key.url);
     }
     if (bytes == null || bytes.isEmpty) {
-      throw StateError('Twice image unavailable: ${key._stable}');
+      final buffer = await ui.ImmutableBuffer.fromUint8List(
+        Uint8List.fromList(const [0, 0, 0, 0]),
+      );
+      return decode(buffer);
     }
     final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
     final limit = key.maxDimension;

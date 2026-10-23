@@ -303,6 +303,15 @@ class NotificationService extends ChangeNotifier {
         ? (actorName.isEmpty ? bodyText : '$actorName: $bodyText')
         : TwiceNotificationEvent.defaultBody(type, actorName);
 
+    // Always try to attach a picture so the native system notification
+    // shows the sender / actor. Falls back to a post thumbnail when the
+    // actor has no avatar.
+    var picture = actorAvatar ?? '';
+    if (picture.isEmpty) {
+      final postThumb = row['post_thumbnail_url']?.toString() ?? '';
+      if (postThumb.isNotEmpty) picture = postThumb;
+    }
+
     await present(
       TwiceNotificationEvent(
         id: id,
@@ -311,7 +320,7 @@ class NotificationService extends ChangeNotifier {
         body: body,
         actorId: actorId,
         actorName: actorName.isEmpty ? null : actorName,
-        actorAvatar: actorAvatar,
+        actorAvatar: picture.isEmpty ? null : picture,
         postId: row['post_id']?.toString(),
         conversationId: row['conversation_id']?.toString(),
         storyId: row['story_id']?.toString(),
@@ -354,7 +363,20 @@ class NotificationService extends ChangeNotifier {
   Future<File?> _downloadNotificationAvatar(String? url) async {
     if (url == null || url.isEmpty) return null;
 
-    final uri = Uri.tryParse(url);
+    var resolved = url;
+    if (!resolved.startsWith('http')) {
+      // Supabase storage path: sign it so the large icon can be downloaded.
+      try {
+        resolved = await Supabase.instance.client.storage
+            .from('post-media')
+            .createSignedUrl(resolved, 3600)
+            .timeout(const Duration(seconds: 6));
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final uri = Uri.tryParse(resolved);
     if (uri == null ||
         (uri.scheme != 'https' && uri.scheme != 'http') ||
         uri.host.isEmpty) {
@@ -435,15 +457,25 @@ class NotificationService extends ChangeNotifier {
         priority: isMessage ? Priority.high : Priority.low,
         playSound: !silent && isMessage,
         enableVibration: !silent && isMessage,
-        onlyAlertOnce: true,
+        onlyAlertOnce: !isMessage,
         icon: '@mipmap/ic_launcher',
         groupKey: groupKey,
         largeIcon: avatar,
-        styleInformation: BigTextStyleInformation(
-          event.body,
-          contentTitle: event.title,
-          summaryText: 'Twice',
-        ),
+        // Big picture keeps the avatar / post thumbnail visible when the
+        // notification is expanded, like Instagram and Messenger.
+        styleInformation: avatarFile != null
+            ? BigPictureStyleInformation(
+                FilePathAndroidBitmap(avatarFile.path),
+                largeIcon: avatar,
+                contentTitle: event.title,
+                summaryText: event.body,
+                hideExpandedLargeIcon: false,
+              )
+            : BigTextStyleInformation(
+                event.body,
+                contentTitle: event.title,
+                summaryText: 'Twice',
+              ),
       );
 
       final payload = jsonEncode({

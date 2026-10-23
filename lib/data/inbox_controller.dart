@@ -25,14 +25,67 @@ class InboxController extends ChangeNotifier {
   RealtimeChannel? _msgChannel;
   Timer? _poll;
   String? _uid;
+  StreamSubscription<AuthState>? _authSub;
+  bool _foreground = true;
+  Timer? _notifyDebounce;
+
+  /// Coalesces bursts of unread changes into one rebuild (stops the badge
+  /// from flickering when several realtime events + polls land together).
+  void _notifySoon() {
+    if (_notifyDebounce?.isActive ?? false) return;
+    _notifyDebounce = Timer(const Duration(milliseconds: 60), notifyListeners);
+  }
+
+  /// Called by the shell on every lifecycle change. Polling and live channels
+  /// are paused while the app is in the background (push covers that case)
+  /// and everything is refreshed once when the app comes back.
+  void setForeground(bool value) {
+    if (_foreground == value) return;
+    _foreground = value;
+    if (value) {
+      if (_uid != null) {
+        refreshUnread();
+        refreshMessageUnread();
+      }
+      _startPolling();
+    } else {
+      _poll?.cancel();
+      _poll = null;
+    }
+  }
+
+  void _startPolling() {
+    _poll?.cancel();
+    if (_uid == null || !_foreground) return;
+    _poll = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (!_foreground) return;
+      refreshUnread();
+      refreshMessageUnread();
+    });
+  }
 
   SupabaseClient get _db => Supabase.instance.client;
 
   void start() {
+    _authSub ??= _db.auth.onAuthStateChange.listen((event) {
+      final id = event.session?.user.id;
+      if (id == null) {
+        _teardown();
+        unread = 0;
+        messageUnread = 0;
+        notifyListeners();
+      } else if (id != _uid) {
+        _connect();
+      }
+    });
+    _connect();
+  }
+
+  void _connect() {
     final uid = _db.auth.currentUser?.id;
     if (uid == null) return;
     if (_uid == uid && _channel != null) return;
-    stop();
+    _teardown();
     _uid = uid;
     unawaited(NotificationService.instance.init());
     refreshUnread();
@@ -89,7 +142,10 @@ class InboxController extends ChangeNotifier {
               refreshMessageUnread();
             }
             final sender = (row['sender_id'] ?? '').toString();
-            if (!inOpenChat && sender.isNotEmpty && sender != uid) {
+            if (!inOpenChat &&
+                sender.isNotEmpty &&
+                sender != uid &&
+                _foreground) {
               // Only toast if we are not already in a focused viewing state
               // for messages; InboxController.viewing is Activity/Messages list.
               // Conversation page sets its own read state.
@@ -108,13 +164,17 @@ class InboxController extends ChangeNotifier {
         )
         .subscribe();
 
-    _poll = Timer.periodic(const Duration(seconds: 45), (_) {
-      refreshUnread();
-      refreshMessageUnread();
-    });
+    _startPolling();
   }
 
   void stop() {
+    _authSub?.cancel();
+    _authSub = null;
+    _notifyDebounce?.cancel();
+    _teardown();
+  }
+
+  void _teardown() {
     _poll?.cancel();
     _poll = null;
     final ch = _channel;
@@ -144,7 +204,7 @@ class InboxController extends ChangeNotifier {
       final count = (rows as List).length;
       if (count != unread) {
         unread = count;
-        notifyListeners();
+        _notifySoon();
       }
     } catch (_) {}
   }
@@ -161,7 +221,7 @@ class InboxController extends ChangeNotifier {
       final count = (rows is int) ? rows : int.tryParse('$rows') ?? 0;
       if (count != messageUnread) {
         messageUnread = count;
-        notifyListeners();
+        _notifySoon();
       }
     } catch (_) {
       // RPC may not exist yet — fall back to notification type=message count.
@@ -206,14 +266,29 @@ class InboxController extends ChangeNotifier {
           .update({'last_read_at': DateTime.now().toUtc().toIso8601String()})
           .eq('conversation_id', conversationId)
           .eq('user_id', uid);
-      // Mark related message notifications as read.
+      // Mark only THIS chat's message notifications as read. The
+      // notifications table has no conversation_id column, so match on the
+      // other members of the conversation (previously every chat's
+      // notifications were cleared whenever any single chat was opened).
       try {
-        await _db
-            .from('notifications')
-            .update({'is_read': true})
-            .eq('recipient_id', uid)
-            .eq('type', 'message')
-            .eq('is_read', false);
+        final members = await _db
+            .from('conversation_members')
+            .select('user_id')
+            .eq('conversation_id', conversationId)
+            .neq('user_id', uid);
+        final others = (members as List)
+            .map((row) => (row as Map)['user_id']?.toString() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toList();
+        if (others.isNotEmpty) {
+          await _db
+              .from('notifications')
+              .update({'is_read': true})
+              .eq('recipient_id', uid)
+              .eq('type', 'message')
+              .eq('is_read', false)
+              .inFilter('actor_id', others);
+        }
       } catch (_) {}
       await refreshMessageUnread();
       await refreshUnread();

@@ -119,7 +119,20 @@ class NotificationService extends ChangeNotifier {
   /// Optional navigation hooks set by the shell.
   void Function(TwiceNotificationEvent event)? onTap;
 
-  Future<void> init() async {
+  Future<void>? _initFuture;
+
+  /// Safe to call many times / concurrently. [background] is true inside the
+  /// FCM background isolate, where there is no Activity: asking for the
+  /// notification permission there throws or hangs and used to leave the
+  /// service "not ready", so background pushes were never shown.
+  Future<void> init({bool background = false}) {
+    if (_ready) return Future<void>.value();
+    return _initFuture ??= _initImpl(background: background).whenComplete(() {
+      _initFuture = null;
+    });
+  }
+
+  Future<void> _initImpl({required bool background}) async {
     if (_ready) return;
     try {
       const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -164,7 +177,13 @@ class NotificationService extends ChangeNotifier {
               AndroidFlutterLocalNotificationsPlugin
             >();
 
-        await androidPlugin?.requestNotificationsPermission();
+        if (!background) {
+          try {
+            await androidPlugin?.requestNotificationsPermission();
+          } catch (e) {
+            debugPrint('Notification permission request failed: $e');
+          }
+        }
 
         // Versioned IDs apply the new importance settings without trying
         // to overwrite channel settings already saved by Android.
@@ -200,7 +219,7 @@ class NotificationService extends ChangeNotifier {
   /// Display a system notification from an FCM background isolate.
   /// Does not enqueue an in-app banner or trigger foreground haptics.
   Future<void> presentBackground(TwiceNotificationEvent event) async {
-    if (!_ready) await init();
+    if (!_ready) await init(background: true);
     if (!_ready) return;
     await _showSystem(event);
   }
@@ -212,7 +231,7 @@ class NotificationService extends ChangeNotifier {
       (_, time) => now.difference(time) > _dedupeWindow,
     );
     final semanticKey = event.type == 'message'
-        ? 'message|${event.actorId ?? ''}|${event.conversationId ?? ''}|${(event.createdAt?.toUtc().millisecondsSinceEpoch ?? 0) ~/ 1000}'
+        ? 'message|${event.actorId ?? ''}|${event.conversationId ?? ''}|${event.body}'
         : '${event.type}|${event.actorId ?? ''}|${event.postId ?? ''}|${event.storyId ?? ''}|${event.commentId ?? ''}|${event.body}';
     final previous = _recentEvents[semanticKey];
     if (previous != null && now.difference(previous) <= _dedupeWindow) return;

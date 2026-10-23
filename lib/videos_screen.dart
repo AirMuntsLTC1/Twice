@@ -1884,6 +1884,7 @@ class _ReelFollowButtonState extends State<_ReelFollowButton> {
         await repo.unfollow(widget.profileId);
       } else {
         final isPrivate = await repo.isPrivateAccount(widget.profileId);
+        if (!mounted) return;
         setState(() => _label = isPrivate ? 'Requested' : 'Following');
         await repo.follow(widget.profileId, privateAccount: isPrivate);
       }

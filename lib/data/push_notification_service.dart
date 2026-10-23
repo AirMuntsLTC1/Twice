@@ -17,7 +17,7 @@ Future<void> twiceFirebaseBackgroundHandler(RemoteMessage message) async {
     }
 
     // Data-only pushes need explicit local display in the background.
-    await NotificationService.instance.init();
+    await NotificationService.instance.init(background: true);
     NotificationService.instance.setLifecycle(AppLifecycleState.paused);
 
     final data = message.data;
@@ -64,16 +64,36 @@ class PushNotificationService {
   StreamSubscription<RemoteMessage>? _openedSubscription;
   StreamSubscription<AuthState>? _authSubscription;
   bool _started = false;
+  Future<void>? _initFuture;
+  static bool _backgroundHandlerRegistered = false;
 
-  Future<void> init() async {
-    if (_started || kIsWeb || !Platform.isAndroid) return;
+  /// Registers the FCM background handler. Call from main() BEFORE the UI is
+  /// ready: it does not depend on Supabase, sign-in or the shell, so pushes
+  /// that arrive while the app is closed are always handled.
+  static Future<void> registerBackgroundHandler() async {
+    if (_backgroundHandlerRegistered || kIsWeb || !Platform.isAndroid) return;
+    try {
+      if (Firebase.apps.isEmpty) await Firebase.initializeApp();
+      FirebaseMessaging.onBackgroundMessage(twiceFirebaseBackgroundHandler);
+      _backgroundHandlerRegistered = true;
+    } catch (error) {
+      debugPrint('Twice background handler registration failed: $error');
+    }
+  }
+
+  Future<void> init() {
+    if (_started || kIsWeb || !Platform.isAndroid) return Future<void>.value();
+    return _initFuture ??= _initImpl().whenComplete(() => _initFuture = null);
+  }
+
+  Future<void> _initImpl() async {
+    if (_started) return;
 
     try {
+      await registerBackgroundHandler();
       if (Firebase.apps.isEmpty) await Firebase.initializeApp();
 
       await NotificationService.instance.init();
-
-      FirebaseMessaging.onBackgroundMessage(twiceFirebaseBackgroundHandler);
 
       final messaging = FirebaseMessaging.instance;
       await messaging.requestPermission();
@@ -92,10 +112,11 @@ class PushNotificationService {
 
       _authSubscription = Supabase.instance.client.auth.onAuthStateChange
           .listen((event) {
-            if (event.session != null) {
+            final kind = event.event;
+            if (event.session != null &&
+                (kind == AuthChangeEvent.signedIn ||
+                    kind == AuthChangeEvent.initialSession)) {
               unawaited(registerToken());
-            } else {
-              unawaited(clearToken());
             }
           });
 

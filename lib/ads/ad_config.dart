@@ -53,7 +53,7 @@ class TwiceAdConfig {
   /// While true, a Home-feed ad that cannot load shows a small grey line with
   /// the reason (no fill, network, ...) instead of silently disappearing.
   /// Set to false once ads are confirmed working.
-  static const bool showDiagnostics = true;
+  static const bool showDiagnostics = false;
 
   /// The native view is only attached to the screen while the card is within
   /// this many viewport-heights of the visible area. Keeps the number of live

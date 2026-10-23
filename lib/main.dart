@@ -22,6 +22,7 @@ import 'data/inbox_controller.dart';
 import 'data/notification_service.dart';
 import 'data/push_notification_service.dart';
 import 'widgets/in_app_notification_banner.dart';
+import 'widgets/asset_thumb.dart';
 import 'data/local_cache.dart';
 import 'data/twice_media.dart';
 import 'ads/ad_config.dart';
@@ -183,6 +184,7 @@ Future<void> main() async {
   TwiceMedia.configure();
   unawaited(LocalCache.instance.prewarm());
   runApp(const TwiceApp());
+  unawaited(PushNotificationService.registerBackgroundHandler());
   unawaited(TwiceAds.init());
   unawaited(_bootSupabase());
   unawaited(TwiceMedia.trimDiskCache());
@@ -1010,6 +1012,7 @@ class _TwiceShellState extends State<TwiceShell> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     NotificationService.instance.setLifecycle(state);
+    InboxController.instance.setForeground(state == AppLifecycleState.resumed);
     if (state != AppLifecycleState.resumed || !mounted) return;
 
     final now = DateTime.now();
@@ -1871,24 +1874,16 @@ class StoryStripState extends State<StoryStrip> {
                     final item = assets[index];
                     final tooLong =
                         item.type == AssetType.video && item.duration > 60;
-                    return FutureBuilder<Uint8List?>(
-                      future: item.thumbnailDataWithSize(
-                        const ThumbnailSize(240, 240),
-                      ),
-                      builder: (context, snapshot) => InkWell(
+                    return KeyedSubtree(
+                      key: ValueKey<String>('picker-${item.id}'),
+                      child: InkWell(
                         onTap: tooLong
                             ? null
                             : () => Navigator.pop(sheetContext, item),
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            if (snapshot.data != null)
-                              Image.memory(snapshot.data!, fit: BoxFit.cover)
-                            else
-                              const ColoredBox(
-                                color: Color(0xFF262626),
-                                child: Icon(Icons.image_outlined),
-                              ),
+                            AssetThumb(asset: item, size: 240),
                             if (item.type == AssetType.video)
                               Positioned(
                                 right: 6,
@@ -3652,11 +3647,13 @@ class _PostFollowButtonState extends State<_PostFollowButton> {
         await repo.unfollow(widget.profileId);
       } else {
         final privateAccount = await repo.isPrivateAccount(widget.profileId);
+        if (!mounted) return;
         setState(() {
           _label = privateAccount ? 'Requested' : 'Following';
         });
         await repo.follow(widget.profileId, privateAccount: privateAccount);
       }
+      if (!mounted) return;
       await _load();
       widget.onChanged();
     } catch (e) {
@@ -4383,9 +4380,20 @@ class _CreatePageState extends State<CreatePage> {
     setState(() => publishing = true);
     try {
       await widget.onPost(controller.text, selectedMedia, visibility);
+      if (!mounted) return;
       controller.clear();
       setState(() => selectedMedia.clear());
-    } catch (_) {
+    } catch (error) {
+      // Failures used to be swallowed, so a post that did not upload looked
+      // like a button that "does nothing". Tell the user and keep the draft.
+      debugPrint('Twice publish failed: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not publish your post. Check your connection and try again.'),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => publishing = false);
     }
@@ -4626,30 +4634,12 @@ class _CreatePageState extends State<CreatePage> {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: FutureBuilder<Uint8List?>(
-                              future: asset.thumbnailDataWithSize(
-                                const ThumbnailSize(360, 360),
-                              ),
-                              builder: (_, snapshot) {
-                                if (snapshot.data == null) {
-                                  return Container(
-                                    width: 108,
-                                    height: 108,
-                                    color: const Color(0xFF262626),
-                                    child: const Center(
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
-                                  );
-                                }
-                                return Image.memory(
-                                  snapshot.data!,
-                                  width: 108,
-                                  height: 108,
-                                  fit: BoxFit.cover,
-                                );
-                              },
+                            child: AssetThumb(
+                              key: ValueKey<String>('sel-${asset.id}'),
+                              asset: asset,
+                              size: 360,
+                              width: 108,
+                              height: 108,
                             ),
                           ),
                           if (asset.type == AssetType.video)
@@ -6656,6 +6646,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
           previous == 'Connected' ||
           previous == 'Requested') {
         await repo.unfollow(widget.userId);
+        if (!mounted) return;
         setState(() {
           followLabel = 'Follow';
           if (previous != 'Requested') followers = max(0, followers - 1);
@@ -6663,6 +6654,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
       } else {
         final priv = await repo.isPrivateAccount(widget.userId);
         await repo.follow(widget.userId, privateAccount: priv);
+        if (!mounted) return;
         setState(() {
           followLabel = priv ? 'Requested' : 'Following';
           if (!priv) followers += 1;
@@ -8062,20 +8054,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                   width: 112,
                                   height: 112,
                                   child: photo != null
-                                      ? FutureBuilder<Uint8List?>(
-                                          future: photo!.thumbnailDataWithSize(
-                                            const ThumbnailSize(360, 360),
+                                      ? AssetThumb(
+                                          key: ValueKey<String>(
+                                            'avatar-${photo!.id}',
                                           ),
-                                          builder: (_, snap) =>
-                                              snap.data == null
-                                              ? const Center(
-                                                  child:
-                                                      CircularProgressIndicator(),
-                                                )
-                                              : Image.memory(
-                                                  snap.data!,
-                                                  fit: BoxFit.cover,
-                                                ),
+                                          asset: photo!,
+                                          size: 360,
                                         )
                                       : avatar.isNotEmpty
                                       ? Image(
@@ -8631,6 +8615,13 @@ class _ProfilePageState extends State<ProfilePage> {
     if (confirmed != true || !mounted) return;
 
     try {
+      // Must run BEFORE signOut: afterwards there is no session, RLS rejects
+      // the delete and the old account kept receiving pushes on this phone.
+      await PushNotificationService.instance.clearToken().timeout(
+        const Duration(seconds: 6),
+        onTimeout: () {},
+      );
+      InboxController.instance.stop();
       await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
       // TwiceAuthGate listens to onAuthStateChange and returns to sign-in.
     } catch (_) {

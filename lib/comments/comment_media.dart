@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/giphy_config.dart';
+import '../premium/premium_emoji.dart';
 
 /// An attachment waiting to be sent with a comment.
 /// [type] is one of: photo, gif, sticker, emoji.
@@ -284,37 +285,117 @@ class _GiphySheetState extends State<_GiphySheet> {
                     )
                   : _items.isEmpty
                   ? const Center(child: Text('Nothing found'))
-                  : GridView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.all(8),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: cols,
-                        crossAxisSpacing: 6,
-                        mainAxisSpacing: 6,
-                        childAspectRatio: _kind == GiphyKind.gifs ? 1.3 : 1,
-                      ),
-                      itemCount: _items.length,
-                      itemBuilder: (context, i) {
-                        final item = _items[i];
-                        return GestureDetector(
-                          onTap: () => _pick(item),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: ColoredBox(
-                              color: const Color(0xFF1E1E1E),
-                              child: Image.network(
-                                item.previewUrl,
-                                fit: _kind == GiphyKind.gifs
-                                    ? BoxFit.cover
-                                    : BoxFit.contain,
-                                gaplessPlayback: true,
-                                errorBuilder: (_, _, _) =>
-                                    const SizedBox.shrink(),
+                  : CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: Row(
+                              children: [
+                                const TwicePremiumEmojiBadge(size: 18),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Premium Emojis',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFFFF3040),
+                                        Color(0xFF4F5BD5),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(99),
+                                  ),
+                                  child: const Text(
+                                    'Unlock',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          sliver: SliverGrid(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 6,
+                                ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, i) => PremiumEmojiTile(
+                                emoji: ['🌟', '🔥', '💎', '👑', '🎉', '🚀'][i % 6],
+                              ),
+                              childCount: 12,
+                            ),
+                          ),
+                        ),
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                            child: Text(
+                              'Standard',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
-                        );
-                      },
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.all(8),
+                          sliver: SliverGrid(
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: cols,
+                              crossAxisSpacing: 6,
+                              mainAxisSpacing: 6,
+                              childAspectRatio:
+                                  _kind == GiphyKind.gifs ? 1.3 : 1,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, i) {
+                                final item = _items[i];
+                                return GestureDetector(
+                                  onTap: () => _pick(item),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: ColoredBox(
+                                      color: const Color(0xFF1E1E1E),
+                                      child: Image.network(
+                                        item.previewUrl,
+                                        fit: _kind == GiphyKind.gifs
+                                            ? BoxFit.cover
+                                            : BoxFit.contain,
+                                        gaplessPlayback: true,
+                                        errorBuilder: (_, _, _) =>
+                                            const SizedBox.shrink(),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                              childCount: _items.length,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
             ),
             const Padding(
@@ -762,3 +843,8 @@ class _CommentHeartButtonState extends State<CommentHeartButton>
   }
 }
 
+
+
+/// Animated multi-color badge used next to Premium emojis
+
+/// A locked premium emoji tile

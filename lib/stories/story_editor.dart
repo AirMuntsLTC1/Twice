@@ -10,6 +10,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
 import '../comments/comment_media.dart';
+import '../premium/premium_emoji.dart';
 
 /// Result of the story editor. [editedFile] is non-null only when overlays
 /// were added to a photo (they are flattened into a new PNG).
@@ -745,20 +746,105 @@ class _EmojiSheet extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(10),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 6,
-              ),
-              itemCount: _kEmoji.length,
-              itemBuilder: (context, i) => InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () =>
-                    Navigator.pop(context, _StickerChoice(emoji: _kEmoji[i])),
-                child: Center(
-                  child: Text(_kEmoji[i], style: const TextStyle(fontSize: 30)),
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Row(
+                      children: [
+                        const TwicePremiumEmojiBadge(size: 18),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Premium Emojis',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [
+                                Color(0xFFFF3040),
+                                Color(0xFF4F5BD5),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: const Text(
+                            'Unlock',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  sliver: SliverGrid(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 6,
+                        ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) => PremiumEmojiTile(
+                        emoji: ['🌟', '🔥', '💎', '👑', '🎉', '🚀'][i % 6],
+                      ),
+                      childCount: 12,
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                    child: Text(
+                      'Standard',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.all(10),
+                  sliver: SliverGrid(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 6,
+                        ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) => InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => Navigator.pop(
+                          context,
+                          _StickerChoice(emoji: _kEmoji[i]),
+                        ),
+                        child: Center(
+                          child: Text(
+                            _kEmoji[i],
+                            style: const TextStyle(fontSize: 30),
+                          ),
+                        ),
+                      ),
+                      childCount: _kEmoji.length,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

@@ -6914,8 +6914,11 @@ class _UserProfilePageState extends State<UserProfilePage> {
       ClipboardData(text: 'https://twice.app/@$username'),
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Profile link copied')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Profile link copied. Send it to friends!'),
+      ),
+    );
   }
 
   void _openFollowList(bool showFollowers) {
@@ -8985,7 +8988,9 @@ class _ProfilePageState extends State<ProfilePage> {
     final username = (widget.profile['username'] ?? '').toString().trim();
     if (username.isEmpty || !mounted) return;
 
-    final profileUrl = 'https://twice.app/@$username';
+    // Since twice.app isn't live yet, we point the QR and link directly to the download page.
+    // Once you buy a domain, you can change this to 'https://twice.app/@$username'
+    final profileUrl = 'https://github.com/AirMuntLTC/Twice/releases/latest';
     final avatarUrl = (widget.profile['avatar_url'] ?? '').toString().trim();
     final displayName = (widget.profile['display_name'] ?? '')
         .toString()
@@ -9097,20 +9102,20 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  const Row(
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.qr_code_scanner_rounded,
+                      const Icon(
+                        Icons.download_rounded,
                         size: 18,
                         color: violet,
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          'Scan to find this profile on Twice',
+                          'Scan to download Twice\nand follow @$username',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: muted,
                             fontSize: 13,
                             fontWeight: FontWeight.w600,

@@ -48,3 +48,9 @@ app.*.map.json
 .widget_preview/
 .backup_fbfix_*/
 supabase/migrations/*_twice_notification_push_trigger.sql
+
+backups/
+*.bak
+*.pem-backup
+*.backup-*
+*.bak.*

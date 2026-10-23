@@ -1621,26 +1621,31 @@ class _TwiceLogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFFFF3040) // Red
+      ..color = const Color(0xFFFF3040) // Beautiful Twice Red
       ..style = PaintingStyle.fill;
 
-    // Scale factor
     final s = size.width / 100.0;
     final cx = size.width / 2;
     final cy = size.height / 2;
 
-    // Draw heart
+    // Use a proper curved path for a real heart shape
     final path = Path()
-      ..moveTo(cx, cy + 25 * s)
-      ..lineTo(cx - 45 * s, cy - 10 * s)
-      ..lineTo(cx + 45 * s, cy - 10 * s)
+      ..moveTo(cx, cy + 45 * s)
+      // Left curve
+      ..cubicTo(
+        cx - 60 * s, cy + 10 * s,
+        cx - 60 * s, cy - 50 * s,
+        cx, cy - 20 * s
+      )
+      // Right curve
+      ..cubicTo(
+        cx + 60 * s, cy - 50 * s,
+        cx + 60 * s, cy + 10 * s,
+        cx, cy + 45 * s
+      )
       ..close();
-    canvas.drawPath(path, paint);
 
-    // Left circle
-    canvas.drawCircle(Offset(cx - 22.5 * s, cy - 15 * s), 22.5 * s, paint);
-    // Right circle
-    canvas.drawCircle(Offset(cx + 22.5 * s, cy - 15 * s), 22.5 * s, paint);
+    canvas.drawPath(path, paint);
   }
 
   @override

@@ -3,13 +3,17 @@ import 'dart:io';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'comments/comment_media.dart';
 
 import 'data/chat_controller.dart';
 import 'data/chat_media.dart';
@@ -1113,9 +1117,10 @@ class _ConversationPageState extends State<ConversationPage>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            // 1. Camera icon -> opens native phone camera
             IconButton(
               icon: const Icon(Icons.camera_alt_outlined, color: _igMuted),
-              onPressed: () => _pickAndSendMedia(video: false),
+              onPressed: _openCamera,
             ),
             Expanded(
               child: Container(
@@ -1152,6 +1157,7 @@ class _ConversationPageState extends State<ConversationPage>
                         ),
                       ),
                     ),
+                    // 2. Gallery icon (1 custom picker)
                     IconButton(
                       icon: const Icon(
                         Icons.image_outlined,
@@ -1161,16 +1167,18 @@ class _ConversationPageState extends State<ConversationPage>
                       onPressed: () => _pickAndSendMedia(video: false),
                       visualDensity: VisualDensity.compact,
                     ),
+                    // 3. Sticker/Emoji icon (replaces video icon)
                     IconButton(
-                      tooltip: 'Video',
+                      tooltip: 'Stickers & Emoji',
                       icon: const Icon(
-                        Icons.videocam_outlined,
+                        Icons.emoji_emotions_outlined,
                         color: _igMuted,
                         size: 22,
                       ),
-                      onPressed: () => _pickAndSendMedia(video: true),
+                      onPressed: _openStickers,
                       visualDensity: VisualDensity.compact,
                     ),
+                    // 4. GIF icon
                     IconButton(
                       tooltip: 'GIF',
                       icon: const Icon(
@@ -1194,6 +1202,46 @@ class _ConversationPageState extends State<ConversationPage>
         ),
       ),
     );
+  }
+
+  Future<void> _openCamera() async {
+    try {
+      final picker = ImagePicker();
+      final x = await picker.pickImage(source: ImageSource.camera);
+      if (x == null || !mounted) return;
+      _stickToBottom = true;
+      unawaited(_chat.sendMediaFile(file: File(x.path), mediaType: 'image'));
+      _scrollToNewest();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not open camera: $e')));
+      }
+    }
+  }
+
+  Future<void> _openStickers() async {
+    final picked = await showGiphyPicker(context, initial: GiphyKind.stickers);
+    if (picked == null || picked.url == null || !mounted) return;
+    
+    // Download the Giphy sticker and send as media
+    try {
+      final response = await http.get(Uri.parse(picked.url!));
+      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+        final dir = await getApplicationSupportDirectory();
+        final file = File('${dir.path}/sticker_${DateTime.now().millisecondsSinceEpoch}.gif');
+        await file.writeAsBytes(response.bodyBytes);
+        
+        _stickToBottom = true;
+        unawaited(_chat.sendMediaFile(file: file, mediaType: 'image'));
+        _scrollToNewest();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not send sticker: $e')));
+      }
+    }
   }
 }
 
@@ -1739,6 +1787,17 @@ class _ChatImageState extends State<_ChatImage> {
     );
   }
 
+  void _openFullScreen(BuildContext context, ImageProvider provider) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _FullScreenMediaView(
+          isVideo: false,
+          imageProvider: provider,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final file = _file;
@@ -1747,28 +1806,31 @@ class _ChatImageState extends State<_ChatImage> {
     if (file == null) {
       content = _placeholder();
     } else {
-      content = Image(
-        image: ResizeImage.resizeIfNeeded(
-          (widget.width * dpr).round(),
-          null,
-          FileImage(File(file)),
+      content = GestureDetector(
+        onTap: () => _openFullScreen(context, FileImage(File(file))),
+        child: Image(
+          image: ResizeImage.resizeIfNeeded(
+            (widget.width * dpr).round(),
+            null,
+            FileImage(File(file)),
+          ),
+          fit: BoxFit.cover,
+          width: widget.width,
+          height: widget.height,
+          gaplessPlayback: true,
+          frameBuilder: (context, child, frame, wasSync) {
+            if (wasSync) return child;
+            return AnimatedOpacity(
+              opacity: frame == null ? 0 : 1,
+              duration: const Duration(milliseconds: 160),
+              child: child,
+            );
+          },
+          errorBuilder: (_, _, _) {
+            _recoverFromBadFile();
+            return _placeholder();
+          },
         ),
-        fit: BoxFit.cover,
-        width: widget.width,
-        height: widget.height,
-        gaplessPlayback: true,
-        frameBuilder: (context, child, frame, wasSync) {
-          if (wasSync) return child;
-          return AnimatedOpacity(
-            opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 160),
-            child: child,
-          );
-        },
-        errorBuilder: (_, _, _) {
-          _recoverFromBadFile();
-          return _placeholder();
-        },
       );
     }
     return SizedBox(
@@ -1851,11 +1913,21 @@ class _ChatVideoState extends State<_ChatVideo> {
                 ),
               ),
             )
-          : TwiceVideoPoster(
-              videoUrl: url,
-              thumbnailUrl: '',
-              imageProviderFor: (s) => TwiceNetworkImage(s),
-              fit: BoxFit.cover,
+          : GestureDetector(
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => _FullScreenMediaView(
+                    isVideo: true,
+                    url: url,
+                  ),
+                ),
+              ),
+              child: TwiceVideoPoster(
+                videoUrl: url,
+                thumbnailUrl: '',
+                imageProviderFor: (s) => TwiceNetworkImage(s),
+                fit: BoxFit.cover,
+              ),
             ),
     );
   }
@@ -2288,6 +2360,99 @@ class _GifTileState extends State<_GifTile> {
           errorBuilder: (_, _, _) => Container(color: _igElevated),
         );
       },
+    );
+  }
+}
+
+
+// =============================================================================
+// FULL SCREEN MEDIA VIEWER
+// =============================================================================
+
+class _FullScreenMediaView extends StatefulWidget {
+  const _FullScreenMediaView({
+    this.isVideo = false,
+    this.url,
+    this.imageProvider,
+  });
+
+  final bool isVideo;
+  final String? url;
+  final ImageProvider? imageProvider;
+
+  @override
+  State<_FullScreenMediaView> createState() => _FullScreenMediaViewState();
+}
+
+class _FullScreenMediaViewState extends State<_FullScreenMediaView> {
+  VideoPlayerController? _controller;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isVideo && widget.url != null) {
+      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url!))
+        ..initialize().then((_) {
+          if (mounted) {
+            setState(() => _initialized = true);
+            _controller?.play();
+          }
+        });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Center(
+        child: widget.isVideo
+            ? (_initialized && _controller != null
+                ? AspectRatio(
+                    aspectRatio: _controller!.value.aspectRatio,
+                    child: Stack(
+                      alignment: Alignment.bottomCenter,
+                      children: [
+                        VideoPlayer(_controller!),
+                        VideoProgressIndicator(_controller!, allowScrubbing: true),
+                        IconButton(
+                          icon: Icon(
+                            _controller!.value.isPlaying
+                                ? Icons.pause
+                                : Icons.play_arrow,
+                            color: Colors.white,
+                            size: 48,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _controller!.value.isPlaying
+                                  ? _controller!.pause()
+                                  : _controller!.play();
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  )
+                : const CircularProgressIndicator(color: Colors.white))
+            : (widget.imageProvider != null
+                ? InteractiveViewer(
+                    child: Image(image: widget.imageProvider!, fit: BoxFit.contain),
+                  )
+                : const SizedBox.shrink()),
+      ),
     );
   }
 }
